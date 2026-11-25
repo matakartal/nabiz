@@ -1,9 +1,9 @@
 name: Build
 
+# Run by hand only (Actions → Build → Run workflow): private-repo macOS minutes are paid, and without them every
+# automatic run fails before starting and sends an email. release.sh runs the same tests locally before each release.
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
 
 jobs:
   build:
