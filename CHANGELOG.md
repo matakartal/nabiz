@@ -1,6 +1,15 @@
 # Changelog
 
-## Unreleased
+## 1.2.0
+
+- Heat row (macOS thermal state), battery health (capacity and cycle count) and the charger's wattage while charging.
+- Security check: FileVault, firewall, Gatekeeper, SIP and automatic updates. Any that are off become a suggestion
+  that opens the right Settings pane.
+- Smart alerts (with Notifications on): CPU above 90% for 3 minutes, naming the busiest app; disk under 10 GB;
+  battery at 10%.
+- Lighter when idle: the panel is not drawn while closed, and the per-app scan runs less often in the background
+  (about 70 MB, 0% CPU at rest).
+- Shorter section titles.
 
 - Burn rate for AI limits: each window shows where an even pace would be, turns orange or red when it is heading
   for the limit, and says when it runs out at the current speed ("out in 3h 20m"). The faster of the window average

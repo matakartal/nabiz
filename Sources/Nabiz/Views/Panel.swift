@@ -14,10 +14,23 @@ struct PanelActions: Sendable {
 struct PanelView: View {
     let monitor: Monitor
     let actions: PanelActions
+    /// Snapshots render without the panel being open.
+    var alwaysRender = false
     @AppStorage(Prefs.language) private var language = "system"
     @State private var contentHeight: CGFloat = 0
 
     var body: some View {
+        // While the panel is closed nothing is drawn: a placeholder holds its last size, so it reopens without a jump.
+        if monitor.panelVisible || alwaysRender {
+            content
+        } else {
+            Color.clear.frame(width: Theme.menuPanelWidth, height: height)
+        }
+    }
+
+    private var height: CGFloat { min(max(contentHeight, Theme.menuRow), Theme.menuPanelMaxHeight) }
+
+    private var content: some View {
         ScrollView {
             PanelContent(monitor: monitor, actions: actions)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
@@ -25,7 +38,7 @@ struct PanelView: View {
         .scrollIndicators(.never)
         .background(HiddenScrollers())
         .scrollBounceBehavior(.basedOnSize)
-        .frame(width: Theme.menuPanelWidth, height: min(max(contentHeight, Theme.menuRow), Theme.menuPanelMaxHeight))
+        .frame(width: Theme.menuPanelWidth, height: height)
         // The window behind is the native menu material (frosted), like system menus.
         .environment(\.panelOpen, monitor.panelVisible)
         .environment(\.flash, actions.flash)
@@ -156,11 +169,43 @@ private struct StatusSection: View {
                     TwoColumns(batteryDetail(battery), Format.percent(Double(battery.percent) / 100),
                                color: !battery.plugged && battery.percent <= 15 ? Theme.warning.mark : Theme.textMuted)
                 }
+                if let health = monitor.batteryHealth, let capacity = health.health {
+                    PanelRow(icon: .symbol("heart.text.square"), title: L("Pil sağlığı", "Battery health")) { _ in
+                        TwoColumns(health.cycles.map { L("\($0) döngü", "\($0) cycles") } ?? "", Format.percent(capacity),
+                                   color: capacity < 0.8 ? Theme.warning.mark : Theme.textMuted)
+                    }
+                    .help(L("Tam şarj kapasitesinin, pilin ilk hâline oranı. %80'in altı yıpranmış sayılır.",
+                            "Full-charge capacity against the battery's original. Under 80% counts as worn."))
+                }
+            }
+            PanelRow(icon: .symbol("thermometer.medium"), title: L("Isı", "Heat")) { _ in
+                Value(thermalLabel(system.thermal), color: system.thermal >= 2 ? Theme.warning.mark : Theme.textMuted)
+            }
+            .help(L("macOS'un ısı durumu. Sıcakken işlemci kendini yavaşlatır.", "macOS's thermal state. When hot, the processor slows itself down."))
+            if !monitor.security.isEmpty {
+                let off = monitor.security.filter { !$0.on }
+                PanelRow(icon: .symbol(off.isEmpty ? "checkmark.shield" : "exclamationmark.shield"), title: L("Güvenlik", "Security"),
+                         action: off.first.map { check in { if let url = check.settingsURL { NSWorkspace.shared.open(url) } } }) { _ in
+                    Value(off.isEmpty ? L("\(monitor.security.count)/\(monitor.security.count) açık", "all \(monitor.security.count) on")
+                                      : L("\(off[0].title) kapalı", "\(off[0].title) off"),
+                          color: off.isEmpty ? Palette.green.mark : Theme.warning.mark)
+                }
+                .help(monitor.security.map { ($0.on ? "✓ " : "✗ ") + $0.title }.joined(separator: "\n"))
             }
         }
     }
 
+    private func thermalLabel(_ state: Int) -> String {
+        switch state {
+        case 0: L("Normal", "Normal")
+        case 1: L("Ilık", "Warm")
+        case 2: L("Sıcak", "Hot")
+        default: L("Kritik", "Critical")
+        }
+    }
+
     private func batteryDetail(_ battery: BatteryState) -> String {
+        if battery.charging, let watts = monitor.batteryHealth?.adapterWatts { return "⚡︎ \(watts) W" }
         if battery.charging { return L("şarj oluyor", "charging") }
         if battery.plugged { return L("prizde", "plugged in") }
         guard let minutes = battery.minutesLeft else { return "" }

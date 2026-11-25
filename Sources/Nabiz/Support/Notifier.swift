@@ -8,6 +8,9 @@ final class Notifier {
     static let shared = Notifier()
 
     private var memoryWasCritical = false
+    private var cpuWarned = false
+    private var diskWarned = false
+    private var batteryWarned = false
     private var warnedLimits: Set<String> = []
     private var burning: Set<String> = []
     private var reminded: Set<String> = []
@@ -31,6 +34,42 @@ final class Notifier {
                  body: advice?.detail ?? L("Ağır uygulamaları kapat.", "Quit heavy apps."))
         }
         memoryWasCritical = critical
+
+        // CPU pinned above 90% for three minutes: name what is doing it.
+        if let since = monitor.busySince, Date().timeIntervalSince(since) >= 180 {
+            if !cpuWarned {
+                cpuWarned = true
+                let top = monitor.top(by: .cpu, count: 1).first
+                send(id: "cpu", title: L("İşlemci 3 dakikadır çok yoğun", "CPU busy for 3 minutes"),
+                     body: top.map { L("En çok \($0.name) kullanıyor (\(Format.percent($0.cpu))).", "\($0.name) uses the most (\(Format.percent($0.cpu))).") }
+                         ?? L("Mac yavaşlayabilir ve ısınabilir.", "The Mac may slow down and heat up."))
+            }
+        } else if monitor.busySince == nil {
+            cpuWarned = false
+        }
+
+        // Disk under 10 GB: once, until it is back above 15 GB.
+        if let free = monitor.system?.diskFree {
+            if free < 10 << 30, !diskWarned {
+                diskWarned = true
+                send(id: "disk", title: L("Disk dolmak üzere", "Disk almost full"),
+                     body: L("\(Format.bytes(free)) boş kaldı. Nabız'daki Xcode temizliği ya da Depolama ayarları yardımcı olabilir.",
+                             "\(Format.bytes(free)) left. Nabız's Clean Xcode or Storage settings can help."))
+            } else if free > 15 << 30 {
+                diskWarned = false
+            }
+        }
+
+        // Battery at 10% on battery power: once per discharge.
+        if let battery = monitor.battery {
+            if !battery.plugged, battery.percent <= 10, !batteryWarned {
+                batteryWarned = true
+                send(id: "battery", title: L("Pil %\(battery.percent)", "Battery at \(battery.percent)%"),
+                     body: L("Şarja takmazsan Mac yakında uyuyacak.", "Plug in soon, or the Mac will go to sleep."))
+            } else if battery.plugged {
+                batteryWarned = false
+            }
+        }
 
         for status in AILimitsStore.shared.statuses {
             for limit in status.limits {

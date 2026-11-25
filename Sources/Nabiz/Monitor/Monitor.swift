@@ -18,12 +18,13 @@ enum Fix {
     case quit(ProcessGroup)
     case openClaude
     case openStorage
+    case openSettings(URL?)
 
     /// Quitting and shutting down end something the user may still want, so the button says so in red.
     var isDestructive: Bool {
         switch self {
         case .shutdownSimulators, .quit: true
-        case .openClaude, .openStorage: false
+        case .openClaude, .openStorage, .openSettings: false
         }
     }
 
@@ -32,7 +33,7 @@ enum Fix {
         switch self {
         case .shutdownSimulators: L("Simülatörler kapatılıyor", "Shutting down simulators")
         case .quit(let group): L("\(group.name) kapatıldı", "Quit \(group.name)")
-        case .openClaude, .openStorage: nil
+        case .openClaude, .openStorage, .openSettings: nil
         }
     }
 
@@ -43,6 +44,7 @@ enum Fix {
         case .quit: L("Kapat", "Quit")
         case .openClaude: L("Aç", "Open")
         case .openStorage: L("Yönet", "Manage")
+        case .openSettings: L("Aç", "Open")
         }
     }
 }
@@ -59,6 +61,11 @@ final class Monitor {
     private(set) var simulators: [Simulator] = []
     private(set) var network: NetworkRate?
     private(set) var battery: BatteryState?
+    private(set) var batteryHealth: BatteryHealth?
+    private(set) var security: [SecurityCheck] = []
+    /// When the CPU went above 90% and stayed there; nil while it is below.
+    private(set) var busySince: Date?
+    @ObservationIgnored private var securityAt: Date?
     /// The last 60 samples of CPU, RAM and GPU, oldest first, for the small graphs.
     private(set) var history = History()
     /// Simulator ids (or "all") with a shutdown in flight.
@@ -98,9 +105,21 @@ final class Monitor {
         let snapshot = await systemSampler.sample()
         system = snapshot
         history.append(snapshot)
-        groups = await processSampler.sample()
+        busySince = snapshot.cpu > 0.9 ? (busySince ?? Date()) : nil
+        // With the panel closed, the per-app scan (the heaviest part) runs every sixth tick: enough for suggestions.
+        if panelVisible || groups.isEmpty || ticks % 6 == 0 {
+            groups = await processSampler.sample()
+        }
         network = await networkSampler.sample()
         battery = Battery.read()
+        if panelVisible || batteryHealth == nil || ticks % 60 == 0 {
+            batteryHealth = battery == nil ? nil : BatteryHealthReader.read()
+        }
+        // The security checklist barely changes: every 30 minutes, and when the panel opens after that.
+        if securityAt.map({ Date().timeIntervalSince($0) > 1800 }) ?? true {
+            securityAt = Date()
+            Task { security = await SecurityChecker.run() }
+        }
         let simulatorsRunning = groups.contains { $0.kind == .simulators }
         if forceSimulators || (panelVisible && ticks % 3 == 0) || (!simulatorsRunning && !simulators.isEmpty) {
             await refreshSimulators()
@@ -164,6 +183,18 @@ final class Monitor {
             let left = Format.bytes(free)
             list.append(Advice(id: "disk", title: L("Disk dolmak üzere", "Disk almost full"),
                                detail: L("\(left) boş kaldı.", "\(left) left."), level: .warning, fix: .openStorage))
+        }
+
+        if let health = batteryHealth?.health, health < 0.8 {
+            list.append(Advice(id: "battery-health", title: L("Pil yıpranmış", "Battery is worn"),
+                               detail: L("Kapasite \(Format.percent(health)); servis zamanı gelmiş olabilir.",
+                                         "Capacity is \(Format.percent(health)); it may be due for service."), level: .info))
+        }
+
+        if let off = security.first(where: { !$0.on }) {
+            list.append(Advice(id: "security", title: L("\(off.title) kapalı", "\(off.title) is off"),
+                               detail: L("Mac'in daha az korunuyor.", "Your Mac is less protected."),
+                               level: .info, fix: .openSettings(off.settingsURL)))
         }
 
         if let battery, !battery.plugged, battery.percent <= 15 {
@@ -260,6 +291,8 @@ final class Monitor {
             NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: path), configuration: NSWorkspace.OpenConfiguration())
         case .openStorage:
             if let url = URL(string: "x-apple.systempreferences:com.apple.settings.Storage") { NSWorkspace.shared.open(url) }
+        case .openSettings(let url):
+            if let url { NSWorkspace.shared.open(url) }
         }
     }
 

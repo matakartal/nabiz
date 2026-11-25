@@ -269,7 +269,7 @@ enum Snapshot {
         } else if settings {
             root = AnyView(SettingsView(selection: selection).frame(width: 760, height: 560))
         } else {
-            root = AnyView(PanelView(monitor: monitor, actions: PanelActions()))
+            root = AnyView(PanelView(monitor: monitor, actions: PanelActions(), alwaysRender: true))
         }
         let host = NSHostingView(rootView: root
             .background(settings ? Color.clear : Theme.surfaceRaised)

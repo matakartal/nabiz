@@ -180,8 +180,9 @@ private struct GeneralPage: View {
                     if on { Notifier.shared.requestPermission() }
                 }))
             } footer: {
-                Footnote(L("Bellek kritik seviyeye inince ve açık bir AI limitinin %10'undan azı kalınca haber verir; her durum için bir kez.",
-                           "Tells you when memory turns critical and when an AI limit you turned on has less than 10% left, once each time."))
+                Footnote(L("Bellek kritikleşince, işlemci 3 dakika %90'ın üstünde kalınca, disk 10 GB'ın altına inince, pil %10'a düşünce ve açık bir AI limiti hızlı bitince ya da kullanılmadan sıfırlanacakken haber verir. Her durum için bir kez.",
+                           "Tells you when memory turns critical, the CPU stays above 90% for 3 minutes, the disk drops under 10 GB, the battery reaches 10%, and an AI limit you turned on burns fast or is about to reset unused. Once each time."))
+
             }
             Section {
                 Button(L("Tüm ayarları sıfırla…", "Reset all settings…"), role: .destructive) { resetAll() }
