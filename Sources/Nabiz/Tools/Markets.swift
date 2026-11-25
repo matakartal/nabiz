@@ -54,13 +54,15 @@ final class MarketStore {
 
     /// Prices of the watched markets, at most every `maxAge` seconds.
     func refreshWatched(maxAge: TimeInterval = 10) {
-        guard !fetching, !watchedIDs.isEmpty else { return }
+        let ids = Set(watchedIDs).union(PriceAlerts.shared.markets)
+        guard !fetching, !ids.isEmpty else { return }
         if let pricesAt, Date().timeIntervalSince(pricesAt) < maxAge { return }
-        let needed = Set(watchedIDs.map { $0.contains(":") ? String($0.split(separator: ":")[0]) : "" })
+        let needed = Set(ids.map { $0.contains(":") ? String($0.split(separator: ":")[0]) : "" })
         fetching = true
         Task {
             let ok = await load(dexes: Array(needed))
             failed = !ok
+            if ok { PriceAlerts.shared.check(markets) }
             // A failed fetch is retried on the next tick instead of waiting out maxAge.
             pricesAt = ok ? Date() : nil
             fetching = false

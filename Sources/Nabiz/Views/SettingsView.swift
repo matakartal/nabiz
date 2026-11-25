@@ -462,6 +462,8 @@ private struct MarketsPage: View {
                 Text(L("Panelde", "In the panel"))
             }
 
+            PriceAlertsSection(watched: watchedIDs)
+
             Section {
                 TextField(L("Ara: BTC, TSLA, GOLD…", "Search: BTC, TSLA, GOLD…"), text: $query)
                 Picker(L("Borsa", "Exchange"), selection: $dex) {
@@ -649,6 +651,7 @@ private struct AboutPage: View {
             Text(verbatim: "Nabız").font(Theme.title).foregroundStyle(Theme.text)
             Text(verbatim: L("Sürüm", "Version") + " " + (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"))
                 .font(Theme.small).foregroundStyle(Theme.textMuted)
+            UpdateRow()
             Text(L("Mac'inin nabzını menü çubuğunda tutar. Açık kaynak, MIT lisansı.",
                    "Keeps your Mac's pulse in the menu bar. Open source, MIT license."))
                 .font(Theme.body).foregroundStyle(Theme.text).multilineTextAlignment(.center)
@@ -693,5 +696,98 @@ private struct PageHeader: View {
         }
         .padding(.bottom, Theme.Spacing.s)
         .textCase(nil)
+    }
+}
+
+/// Price alerts: the list, and a row to add one for a watched market (prefilled with its current price).
+private struct PriceAlertsSection: View {
+    let watched: [String]
+    @State private var market = ""
+    @State private var above = true
+    @State private var price: Double?
+    private let alerts = PriceAlerts.shared
+    private let store = MarketStore.shared
+
+    var body: some View {
+        Section {
+            ForEach(alerts.alerts) { alert in
+                LabeledContent {
+                    HStack(spacing: Theme.Spacing.s) {
+                        if !alert.armed {
+                            Text(L("tetiklendi", "fired")).font(Theme.small).foregroundStyle(Theme.textMuted)
+                            Button(L("Yeniden kur", "Re-arm")) { alerts.rearm(alert) }.buttonStyle(.borderless)
+                        }
+                        Button { alerts.remove(alert) } label: { Image(systemName: "minus.circle.fill") }
+                            .buttonStyle(.borderless).foregroundStyle(Theme.danger)
+                    }
+                } label: {
+                    HStack(spacing: Theme.Spacing.s) {
+                        Image(systemName: alert.armed ? "bell.fill" : "bell.slash").foregroundStyle(alert.armed ? Theme.accent : Theme.textMuted)
+                        Text(verbatim: store.markets[alert.market]?.name ?? alert.market).font(Theme.bodyStrong)
+                        Text(verbatim: (alert.above ? "≥ " : "≤ ") + Format.price(alert.price)).monospacedDigit()
+                        if let now = store.markets[alert.market]?.price {
+                            Text(L("şu an \(Format.price(now))", "now \(Format.price(now))")).font(Theme.small).foregroundStyle(Theme.textMuted)
+                        }
+                    }
+                }
+            }
+            if !watched.isEmpty {
+                HStack(spacing: Theme.Spacing.s) {
+                    Picker(L("Piyasa", "Market"), selection: $market) {
+                        ForEach(watched, id: \.self) { Text(verbatim: store.markets[$0]?.name ?? $0).tag($0) }
+                    }
+                    .labelsHidden()
+                    .frame(maxWidth: 130)
+                    Picker(L("Yön", "Direction"), selection: $above) {
+                        Text(L("üstüne çıkınca", "goes above")).tag(true)
+                        Text(L("altına inince", "goes below")).tag(false)
+                    }
+                    .labelsHidden()
+                    .frame(maxWidth: 150)
+                    TextField(L("Fiyat", "Price"), value: $price, format: .number)
+                        .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: 110)
+                    Button(L("Ekle", "Add")) {
+                        guard let price, price > 0, !market.isEmpty else { return }
+                        alerts.add(market: market, above: above, price: price)
+                        self.price = nil
+                    }
+                    .disabled((price ?? 0) <= 0 || market.isEmpty)
+                }
+            }
+        } header: {
+            Text(L("Fiyat alarmları", "Price alerts"))
+        } footer: {
+            Footnote(L("Fiyat çizgiyi geçince bir kez bildirim gelir; sonra alarm bekler, istersen yeniden kurarsın. Alarm varken fiyatlar arka planda 30 saniyede bir okunur.",
+                       "When the price crosses the line you get one notification; the alert then waits until you re-arm it. While an alert is set, prices are read every 30 seconds in the background."))
+        }
+        .onAppear { pick(watched.first ?? "") }
+        .onChange(of: market) { pick(market) }
+    }
+
+    /// Selecting a market fills in its current price as a starting point.
+    private func pick(_ id: String) {
+        if market.isEmpty { market = id }
+        if let now = store.markets[market]?.price { price = (now * 100).rounded() / 100 }
+    }
+}
+
+private struct UpdateRow: View {
+    private let updater = Updater.shared
+
+    var body: some View {
+        if let release = updater.available {
+            Button(updater.installing ? L("Güncelleniyor…", "Updating…") : L("\(release.version) sürümüne güncelle", "Update to \(release.version)")) {
+                updater.install()
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Theme.accent)
+            .disabled(updater.installing)
+        } else {
+            Button(L("Güncellemeleri denetle", "Check for updates")) { updater.check(force: true) }
+        }
+        if let error = updater.lastError {
+            Text(verbatim: error).font(Theme.small).foregroundStyle(Theme.warning.mark)
+        }
     }
 }

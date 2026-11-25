@@ -15,14 +15,18 @@ final class Notifier {
     private var burning: Set<String> = []
     private var reminded: Set<String> = []
 
-    /// Asks macOS for permission; the setting stays off if the user declines.
-    func requestPermission() {
+    /// Asks macOS for permission; the Notifications setting goes back off if the user declines
+    /// (unless `keepSetting`, for price alerts, which don't depend on that setting).
+    func requestPermission(keepSetting: Bool = false) {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, _ in
-            if !granted {
+            if !granted && !keepSetting {
                 Task { @MainActor in UserDefaults.standard.set(false, forKey: Prefs.notifications) }
             }
         }
     }
+
+    /// For features with their own opt-in (price alerts).
+    func post(id: String, title: String, body: String) { send(id: id, title: title, body: body) }
 
     func check(monitor: Monitor) {
         guard Prefs.bool(Prefs.notifications) else { return }

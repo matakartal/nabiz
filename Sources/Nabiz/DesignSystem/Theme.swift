@@ -63,6 +63,8 @@ enum Theme {
     static let settingsIcon: CGFloat = 22
     /// The icon tile in a Settings page's header.
     static let settingsHeaderIcon: CGFloat = 40
+    /// One chart in the History window.
+    static let historyChart: CGFloat = 80
     /// Where text starts inside a grouped form row, so footers line up with it.
     static let formInset: CGFloat = 10
     /// The menu bar panel: one narrow column.

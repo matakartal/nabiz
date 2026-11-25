@@ -9,6 +9,11 @@ let package = Package(
             name: "Nabiz",
             path: "Sources/Nabiz",
             linkerSettings: [.linkedFramework("IOKit"), .linkedFramework("ServiceManagement")]
-        )
+        ),
+        .testTarget(
+            name: "NabizTests",
+            dependencies: ["Nabiz"],
+            path: "Tests/NabizTests"
+        ),
     ]
 )

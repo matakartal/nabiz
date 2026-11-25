@@ -122,8 +122,9 @@ actor ProcessSampler {
         if path.contains("/claude-code/") {
             return ("claude-code", "Claude Code", .claudeCode, claudeApp)
         }
-        if path.contains("/CoreSimulator/") || path.contains("SimulatorRuntime") || path.contains("/Simulator.app/") {
-            return ("simulators", L("iOS simülatörleri", "iOS Simulators"), .simulators, simulatorApp)
+        if path.contains("/CoreSimulator/") || path.contains("SimulatorRuntime") || path.contains("/Simulator.app/")
+            || path.contains("/Android/sdk/emulator/") {
+            return ("simulators", L("Simülatörler", "Simulators"), .simulators, simulatorApp)
         }
         if path.contains("Virtualization.framework") || path.contains("/Docker.app/") || path.contains("com.docker.") {
             return ("vm", dockerApp == nil ? L("Sanal makineler", "Virtual machines") : "Docker", .virtualMachine, dockerApp)

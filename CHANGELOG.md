@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.3.0
+
+- **History:** CPU, RAM, GPU and the main AI limit, kept for 7 days at one-minute resolution (about 40 KB on disk).
+  Click the meters, or right-click the menu bar item, for the last hour, day or week.
+- **Price alerts:** "tell me when BTC goes above 65,000". Set them in Settings → Markets or from a market row's
+  **Set alert**. Each alert fires once and waits to be re-armed. Prices are read every 30 seconds while one is set.
+- **Docker and Android:** a suggestion when Docker uses gigabytes with no container running, with one-tap Quit.
+  Android emulators are listed and shut down next to the iOS simulators.
+- **Updates:** Nabız checks GitHub Releases once a day. When a new version is out, **Update** downloads it,
+  replaces the app and reopens it.
+- **Release builds:** `./release.sh` signs with your Developer ID, notarizes, staples and (with `publish`) creates
+  the GitHub release.
+- **Tests:** calculator, pace model, formats and version comparison (`swift test`, also in CI).
+
 ## 1.2.0
 
 - Heat row (macOS thermal state), battery health (capacity and cycle count) and the charger's wattage while charging.

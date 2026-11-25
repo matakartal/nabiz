@@ -12,6 +12,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Use the newest Xcode on the runner
         run: sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)" && swift --version
+      - name: Run the tests
+        run: swift test
       - name: Build the universal app and DMG
         run: ./build.sh dmg
       - name: Check the calculator

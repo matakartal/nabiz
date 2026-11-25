@@ -45,6 +45,10 @@ On first launch, a short welcome explains where things are and offers to open Na
   - the stocks, indices and commodities on every HIP-3 dex (XYZ, Paragon, EntropyIO…).
 
   Search, pick and order them in Settings. Click one to open it on Hyperliquid. No account or key needed.
+- **History:** CPU, RAM, GPU and AI usage for the last hour, day or week. Click the meters to open it.
+- **Price alerts:** get a notification when a Hyperliquid market crosses a price you set.
+- **Docker and Android:** idle Docker gets a one-tap Quit, and Android emulators sit next to the iOS simulators.
+- **Updates:** a new release shows an **Update** button that installs it and reopens Nabız.
 - **Exchange rates:** your chosen currencies in your main currency, with the daily change. Click to copy.
 - **Tools:** one-tap tiles:
   - calculator
@@ -102,7 +106,8 @@ You need macOS 14 or later and Swift 6 (Xcode 16 or later).
 ./build.sh dmg        # also packages build/Nabiz-<version>.dmg
 ```
 
-Builds are ad-hoc signed by default. To publish a build that opens without warnings on other Macs, sign it with a Developer ID and notarize it:
+Run `swift test` for the unit tests. Builds are ad-hoc signed by default; `./release.sh publish` signs with your
+Developer ID, notarizes and publishes the release in one go. To publish a build that opens without warnings on other Macs, sign it with a Developer ID and notarize it:
 
 ```bash
 xcrun notarytool store-credentials nabiz        # once

@@ -33,7 +33,7 @@ cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 if [[ "$IDENTITY" == "-" ]]; then
     codesign --force --sign - "$APP" >/dev/null
 else
-    codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP"
+    codesign --force --options runtime --timestamp --entitlements Nabiz.entitlements --sign "$IDENTITY" "$APP"
 fi
 echo "Built $APP $VERSION ($(lipo -archs "$APP/Contents/MacOS/Nabiz"))"
 

@@ -41,7 +41,7 @@ struct PanelView: View {
         .frame(width: Theme.menuPanelWidth, height: height)
         // The window behind is the native menu material (frosted), like system menus.
         .environment(\.panelOpen, monitor.panelVisible)
-        .environment(\.flash, actions.flash)
+        .environment(\.flash, FlashAction(actions.flash))
         .id(language)
     }
 }
@@ -50,7 +50,15 @@ extension EnvironmentValues {
     /// False while the panel is hidden, so rows drop a hover highlight left over from the last time it was open.
     @Entry var panelOpen = true
     /// A short confirmation in the menu bar ("Quit Chrome").
-    @Entry var flash: @MainActor @Sendable (String) -> Void = { _ in }
+    @Entry var flash = FlashAction { _ in }
+}
+
+/// Wraps the flash closure so the environment can compare it (closures can't be); it never changes after launch.
+struct FlashAction: Equatable, Sendable {
+    let run: @MainActor @Sendable (String) -> Void
+    init(_ run: @escaping @MainActor @Sendable (String) -> Void) { self.run = run }
+    @MainActor func callAsFunction(_ message: String) { run(message) }
+    static func == (lhs: FlashAction, rhs: FlashAction) -> Bool { true }
 }
 
 struct PanelContent: View {
@@ -405,9 +413,21 @@ private struct MarketsSection: View {
                 if let market = store.markets[id] {
                     PanelRow(icon: .none,
                              title: market.name,
-                             action: market.tradeURL.map { url in { actions.close(); NSWorkspace.shared.open(url) } }) { _ in
-                        TwoColumns(Format.change(market.change), Format.price(market.price),
-                                   firstColor: (market.change ?? 0) >= 0 ? Palette.green.mark : Theme.warning.mark, color: Theme.text)
+                             action: market.tradeURL.map { url in { actions.close(); NSWorkspace.shared.open(url) } }) { hovering in
+                        if hovering {
+                            InlineButton(L("Alarm kur", "Set alert")) {
+                                actions.close()
+                                SettingsWindow.show(.markets)
+                            }
+                        } else {
+                            HStack(spacing: Theme.Spacing.xs) {
+                                if PriceAlerts.shared.markets.contains(id) {
+                                    Image(systemName: "bell.fill").font(Theme.small).foregroundStyle(Theme.textMuted)
+                                }
+                                TwoColumns(Format.change(market.change), Format.price(market.price),
+                                           firstColor: (market.change ?? 0) >= 0 ? Palette.green.mark : Theme.warning.mark, color: Theme.text)
+                            }
+                        }
                     }
                     .help(L("\(store.dexTitle(market.dex)) · Hyperliquid'de aç", "\(store.dexTitle(market.dex)) · open on Hyperliquid"))
                 }
@@ -807,7 +827,25 @@ private struct PanelFooter: View {
 
     var body: some View {
         HStack(spacing: Theme.Spacing.xs) {
-            Text(verbatim: detail).font(Theme.small).foregroundStyle(Theme.textMuted).lineLimit(1)
+            if let release = Updater.shared.available {
+                Button {
+                    Updater.shared.install()
+                } label: {
+                    HStack(spacing: Theme.Spacing.xs) {
+                        if Updater.shared.installing { ProgressView().controlSize(.mini) }
+                        Text(L("\(release.version) sürümüne güncelle", "Update to \(release.version)")).font(Theme.smallStrong)
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, Theme.Spacing.s)
+                    .padding(.vertical, Theme.Spacing.xs / 2)
+                    .background(Theme.accent, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(Updater.shared.installing)
+                .help(L("İndirir, kurar ve Nabız'ı yeniden açar.", "Downloads, installs and reopens Nabız."))
+            } else {
+                Text(verbatim: detail).font(Theme.small).foregroundStyle(Theme.textMuted).lineLimit(1)
+            }
             Spacer()
             FooterButton(symbol: "gearshape", help: L("Ayarlar (⌘,)", "Settings (⌘,)")) {
                 actions.close()
@@ -1031,6 +1069,11 @@ struct MetersView: View {
         .padding(.horizontal, Theme.menuInset)
         .padding(.top, Theme.Spacing.s)
         .padding(.bottom, Theme.Spacing.xs)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            HistoryWindow.show()
+        }
+        .help(L("Tıkla: son 1 saat, 24 saat ve 7 gün", "Click: the last hour, day and week"))
     }
 
     private func ramFill(_ pressure: Pressure) -> Color {

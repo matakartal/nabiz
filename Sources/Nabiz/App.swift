@@ -58,14 +58,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             if Prefs.bool(Prefs.barCurrency) { RateStore.shared.refreshIfNeeded() }
             Notifier.shared.check(monitor: monitor)
+            Updater.shared.check()
             // Market prices: every 10 s with the panel open, every 30 s for the menu bar.
             if monitor.panelVisible && Prefs.bool(Prefs.showMarkets) {
                 MarketStore.shared.refreshWatched(maxAge: 10)
-            } else if Prefs.bool(Prefs.barMarket) {
+            } else if Prefs.bool(Prefs.barMarket) || !PriceAlerts.shared.markets.isEmpty {
                 MarketStore.shared.refreshWatched(maxAge: 30)
             }
         }
         RateStore.shared.refreshIfNeeded()
+        Updater.shared.check()
         HotKey.togglePanel = { [weak self] in self?.togglePanel() }
         updateHotKeys()
         NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
@@ -79,7 +81,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         WelcomeWindow.showIfFirstLaunch { [weak self] in self?.togglePanel() }
     }
 
-    func applicationWillTerminate(_ notification: Notification) { KeepAwake.shared.stop() }
+    func applicationWillTerminate(_ notification: Notification) {
+        KeepAwake.shared.stop()
+        UsageHistory.shared.save()
+    }
 
     @objc private func togglePanel() {
         guard let button = statusItem.button else { return }
@@ -106,6 +111,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         menu.addItem(item(L("Paneli aç", "Open Panel")) { [weak self] in self?.togglePanel() })
         menu.addItem(item(L("Hızlı hesap", "Quick Calculator")) { CalculatorPanel.shared.show() })
+        menu.addItem(item(L("Geçmiş", "History")) { HistoryWindow.show() })
         menu.addItem(.separator())
         menu.addItem(item(L("Ayarlar…", "Settings…"), ",") { SettingsWindow.show(nil) })
         menu.addItem(.separator())
@@ -262,6 +268,8 @@ enum Snapshot {
         let root: AnyView
         if args.contains("--welcome") {
             root = AnyView(WelcomeView {})
+        } else if args.contains("--history") {
+            root = AnyView(HistoryView().frame(width: 680, height: 560))
         } else if args.contains("--limits") {
             root = AnyView(LimitsPreview())
         } else if let text = value(after: "--calculator") {

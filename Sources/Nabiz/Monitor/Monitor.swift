@@ -19,11 +19,12 @@ enum Fix {
     case openClaude
     case openStorage
     case openSettings(URL?)
+    case quitDocker
 
     /// Quitting and shutting down end something the user may still want, so the button says so in red.
     var isDestructive: Bool {
         switch self {
-        case .shutdownSimulators, .quit: true
+        case .shutdownSimulators, .quit, .quitDocker: true
         case .openClaude, .openStorage, .openSettings: false
         }
     }
@@ -33,6 +34,7 @@ enum Fix {
         switch self {
         case .shutdownSimulators: L("Simülatörler kapatılıyor", "Shutting down simulators")
         case .quit(let group): L("\(group.name) kapatıldı", "Quit \(group.name)")
+        case .quitDocker: L("Docker kapatılıyor", "Quitting Docker")
         case .openClaude, .openStorage, .openSettings: nil
         }
     }
@@ -41,7 +43,7 @@ enum Fix {
     var title: String {
         switch self {
         case .shutdownSimulators: L("Kapat", "Shut down")
-        case .quit: L("Kapat", "Quit")
+        case .quit, .quitDocker: L("Kapat", "Quit")
         case .openClaude: L("Aç", "Open")
         case .openStorage: L("Yönet", "Manage")
         case .openSettings: L("Aç", "Open")
@@ -66,6 +68,9 @@ final class Monitor {
     /// When the CPU went above 90% and stayed there; nil while it is below.
     private(set) var busySince: Date?
     @ObservationIgnored private var securityAt: Date?
+    /// Running Docker containers; nil when Docker isn't running or its CLI isn't found.
+    private(set) var dockerContainers: Int?
+    @ObservationIgnored private var dockerAt: Date?
     /// The last 60 samples of CPU, RAM and GPU, oldest first, for the small graphs.
     private(set) var history = History()
     /// Simulator ids (or "all") with a shutdown in flight.
@@ -106,6 +111,8 @@ final class Monitor {
         system = snapshot
         history.append(snapshot)
         busySince = snapshot.cpu > 0.9 ? (busySince ?? Date()) : nil
+        UsageHistory.shared.record(cpu: snapshot.cpu, memory: snapshot.memoryFraction, gpu: snapshot.gpu,
+                                   ai: AILimitsStore.shared.statuses.first(where: { !$0.limits.isEmpty })?.headline?.used)
         // With the panel closed, the per-app scan (the heaviest part) runs every sixth tick: enough for suggestions.
         if panelVisible || groups.isEmpty || ticks % 6 == 0 {
             groups = await processSampler.sample()
@@ -114,6 +121,15 @@ final class Monitor {
         battery = Battery.read()
         if panelVisible || batteryHealth == nil || ticks % 60 == 0 {
             batteryHealth = battery == nil ? nil : BatteryHealthReader.read()
+        }
+        // Docker's VM holds its memory even with nothing running: count containers once a minute while it's up.
+        if let vm = groups.first(where: { $0.kind == .virtualMachine }), vm.memory >= 1 << 30, ProcessSampler.dockerApp != nil {
+            if dockerAt.map({ Date().timeIntervalSince($0) > 60 }) ?? true {
+                dockerAt = Date()
+                Task { dockerContainers = await Self.dockerContainerCount() }
+            }
+        } else {
+            dockerContainers = nil
         }
         // The security checklist barely changes: every 30 minutes, and when the panel opens after that.
         if securityAt.map({ Date().timeIntervalSince($0) > 1800 }) ?? true {
@@ -177,6 +193,13 @@ final class Monitor {
                                detail: L("Bu hızla \(Format.duration(runway)) sonra biter, sıfırlanmadan önce.",
                                          "At this speed it runs out in \(Format.duration(runway)), before it resets."),
                                level: .warning))
+        }
+
+        if let docker = idleDocker, !list.contains(where: { $0.fix.map { if case .quitDocker = $0 { true } else { false } } ?? false }) {
+            list.append(Advice(id: "docker", title: L("Docker boşta", "Docker is idle"),
+                               detail: L("Çalışan konteyner yok ama \(Format.bytes(docker.memory)) kullanıyor.",
+                                         "No containers running, but it uses \(Format.bytes(docker.memory))."),
+                               level: .info, fix: .quitDocker))
         }
 
         if let free = s.diskFree, free < 10 << 30 {
@@ -265,12 +288,31 @@ final class Monitor {
         }
     }
 
+    private static let dockerCLI = ["/usr/local/bin/docker", "/opt/homebrew/bin/docker",
+                                    "/Applications/Docker.app/Contents/Resources/bin/docker"]
+        .first { FileManager.default.isExecutableFile(atPath: $0) }
+
+    private static func dockerContainerCount() async -> Int? {
+        guard let cli = dockerCLI, let output = await Toolbox.run(cli, ["ps", "-q"]) else { return nil }
+        return output.split(separator: "\n").count
+    }
+
+    /// Docker using a lot of memory with no container running.
+    var idleDocker: ProcessGroup? {
+        guard dockerContainers == 0, let vm = groups.first(where: { $0.kind == .virtualMachine }), vm.memory >= 2 << 30 else { return nil }
+        return vm
+    }
+
     /// The step that frees the most memory: running simulators first (they are rarely needed in the background),
     /// otherwise the biggest app that can be quit. Claude, Finder and Nabız are never picked.
     private var memoryFix: (fix: Fix, detail: String)? {
         if !simulators.isEmpty, let sims = groups.first(where: { $0.kind == .simulators }), sims.memory >= 512 << 20 {
             let size = Format.bytes(sims.memory)
             return (.shutdownSimulators, L("Simülatörler \(size) kullanıyor.", "Simulators use \(size)."))
+        }
+        if let docker = idleDocker {
+            let size = Format.bytes(docker.memory)
+            return (.quitDocker, L("Docker boşta \(size) kullanıyor.", "Docker sits idle using \(size)."))
         }
         let apps = groups.filter { $0.kind == .app && $0.memory >= 1 << 30 }.sorted { $0.memory > $1.memory }
         if let app = apps.first(where: canQuit) {
@@ -293,6 +335,12 @@ final class Monitor {
             if let url = URL(string: "x-apple.systempreferences:com.apple.settings.Storage") { NSWorkspace.shared.open(url) }
         case .openSettings(let url):
             if let url { NSWorkspace.shared.open(url) }
+        case .quitDocker:
+            NSRunningApplication.runningApplications(withBundleIdentifier: "com.docker.docker").forEach { $0.terminate() }
+            Task {
+                try? await Task.sleep(for: .seconds(2))
+                await tick()
+            }
         }
     }
 
