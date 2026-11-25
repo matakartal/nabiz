@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.5.1
+
+- AI limit alerts no longer repeat: each alert goes out once per limit window (matched to the hour, since providers
+  report the reset time slightly differently each time), never again within 12 hours, and this survives restarts.
+- The launcher is always opaque.
+- Weekday chips in Schedules no longer wrap; the next run sits on its own line.
+
 ## 1.5.0
 
 - **Launcher** (⌃⌥Space) replaces the quick calculator: apps, system commands (lock, sleep, display off, hide

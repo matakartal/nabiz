@@ -1085,9 +1085,8 @@ private struct TaskRow: View {
             if task.action == .reminder {
                 TextField(L("Hatırlatma metni", "Reminder text"), text: binding(\.note))
             }
+            WeekdayChips(days: binding(\.weekdays)).fixedSize()
             HStack {
-                WeekdayChips(days: binding(\.weekdays))
-                Spacer()
                 if task.enabled, let next = task.next() {
                     Text(L("Sıradaki: ", "Next: ") + next.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(Format.locale)))
                         .font(Theme.small).foregroundStyle(Theme.textMuted)
@@ -1133,6 +1132,8 @@ private struct WeekdayChips: View {
                     if on { if days.count > 1 { days.remove(day) } } else { days.insert(day) }
                 } label: {
                     Text(verbatim: Self.name(day)).font(Theme.small)
+                        .lineLimit(1)
+                        .fixedSize()
                         .foregroundStyle(on ? .white : Theme.textMuted)
                         .padding(.horizontal, Theme.Spacing.s)
                         .padding(.vertical, Theme.Spacing.xs / 2)

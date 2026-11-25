@@ -42,3 +42,19 @@ struct SchedulerTests {
         #expect(ScheduledTask(action: .reminder, hour: 7, minute: 5).timeText == "07:05")
     }
 }
+
+@MainActor
+@Suite("AI alerts")
+struct AIAlertTests {
+    @Test("One alert per window, even when the reset time drifts, and none again within 12 hours")
+    func once() throws {
+        let defaults = try #require(UserDefaults(suiteName: "nabiz-tests-\(UUID())"))
+        let reset = Date(timeIntervalSince1970: 1_800_000_000)
+        let now = reset.addingTimeInterval(-86_400)
+        #expect(AIAlertLog.shouldSend("low", limit: "claude.week", resetsAt: reset, now: now, defaults: defaults))
+        #expect(!AIAlertLog.shouldSend("low", limit: "claude.week", resetsAt: reset.addingTimeInterval(37), now: now.addingTimeInterval(60), defaults: defaults))
+        #expect(!AIAlertLog.shouldSend("low", limit: "claude.week", resetsAt: reset.addingTimeInterval(7200), now: now.addingTimeInterval(3600), defaults: defaults))
+        #expect(AIAlertLog.shouldSend("burn", limit: "claude.week", resetsAt: reset, now: now, defaults: defaults))
+        #expect(AIAlertLog.shouldSend("low", limit: "claude.week", resetsAt: reset.addingTimeInterval(7 * 86_400), now: reset.addingTimeInterval(3600), defaults: defaults))
+    }
+}
