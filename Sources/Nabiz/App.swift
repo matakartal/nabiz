@@ -52,7 +52,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // AI limits and rates are fetched while the panel is open, or in the background when the menu bar shows them.
             if monitor.panelVisible {
                 AILimitsStore.shared.refreshIfNeeded()
-            } else if Prefs.bool(Prefs.barAI) {
+            } else if !AILimitsStore.shared.enabled.isEmpty {
+                // Every 5 minutes in the background: enough readings for the burn rate, light on the providers.
                 AILimitsStore.shared.refreshIfNeeded(maxAge: 300)
             }
             if Prefs.bool(Prefs.barCurrency) { RateStore.shared.refreshIfNeeded() }

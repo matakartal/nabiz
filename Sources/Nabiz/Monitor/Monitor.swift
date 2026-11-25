@@ -152,6 +152,14 @@ final class Monitor {
                                level: .info, fix: .openClaude))
         }
 
+        if let burn = AILimitsStore.shared.burning.first, let runway = burn.limit.pace?.runway {
+            let name = "\(burn.provider.shortName) · \(burn.limit.label)"
+            list.append(Advice(id: "ai-burn", title: L("\(name) hızlı bitiyor", "\(name) is burning fast"),
+                               detail: L("Bu hızla \(Format.duration(runway)) sonra biter, sıfırlanmadan önce.",
+                                         "At this speed it runs out in \(Format.duration(runway)), before it resets."),
+                               level: .warning))
+        }
+
         if let free = s.diskFree, free < 10 << 30 {
             let left = Format.bytes(free)
             list.append(Advice(id: "disk", title: L("Disk dolmak üzere", "Disk almost full"),
@@ -316,6 +324,15 @@ enum Format {
         if minutes < 60 { return L("\(minutes) dk", "\(minutes)m") }
         if minutes < 48 * 60 { return L("\((minutes + 30) / 60) sa", "\((minutes + 30) / 60)h") }
         return L("\((minutes + 720) / 1440) g", "\((minutes + 720) / 1440)d")
+    }
+
+    /// "3 sa 20 dk", "45 dk", "2 g 4 sa" / "3h 20m", "45m", "2d 4h".
+    static func duration(_ seconds: TimeInterval) -> String {
+        let minutes = max(Int(seconds / 60), 1)
+        let days = minutes / 1440, hours = (minutes % 1440) / 60, mins = minutes % 60
+        if days > 0 { return L("\(days) g \(hours) sa", "\(days)d \(hours)h") }
+        if hours > 0 { return L("\(hours) sa \(mins) dk", "\(hours)h \(mins)m") }
+        return L("\(mins) dk", "\(mins)m")
     }
 
     /// "1,2 MB/s", "40 KB/s".

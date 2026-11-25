@@ -9,6 +9,8 @@ final class Notifier {
 
     private var memoryWasCritical = false
     private var warnedLimits: Set<String> = []
+    private var burning: Set<String> = []
+    private var reminded: Set<String> = []
 
     /// Asks macOS for permission; the setting stays off if the user declines.
     func requestPermission() {
@@ -32,6 +34,26 @@ final class Notifier {
 
         for status in AILimitsStore.shared.statuses {
             for limit in status.limits {
+                let window = "\(limit.id)@\(limit.resetsAt?.timeIntervalSince1970 ?? 0)"
+                if let pace = limit.pace {
+                    // Burning fast: once per burn. It re-arms only after the pace eases to 90% or the window resets.
+                    if pace.status == .behind, let runway = pace.runway, !burning.contains(window) {
+                        burning.insert(window)
+                        send(id: "burn-" + window,
+                             title: L("\(status.provider.shortName) hızlı bitiyor", "\(status.provider.shortName) is burning fast"),
+                             body: L("\(limit.label): bu hızla \(Format.duration(runway)) sonra biter, sıfırlanmadan önce.",
+                                     "\(limit.label): at this speed it runs out in \(Format.duration(runway)), before it resets."))
+                    } else if pace.status == .ahead {
+                        burning.remove(window)
+                    }
+                    if pace.unusedNearReset, !reminded.contains(window) {
+                        reminded.insert(window)
+                        send(id: "unused-" + window,
+                             title: L("\(status.provider.shortName): kullan ya da kaybet", "\(status.provider.shortName): use it or lose it"),
+                             body: L("\(limit.label) limitinin \(Format.percent(limit.remaining))'i duruyor ve bir günden az sonra sıfırlanıyor.",
+                                     "\(Format.percent(limit.remaining)) of \(limit.label) is left and it resets in under a day."))
+                    }
+                }
                 // One alert per window: the key carries the reset time, so a new window can warn again.
                 let key = "\(limit.id)@\(limit.resetsAt?.timeIntervalSince1970 ?? 0)"
                 guard limit.remaining < 0.1, !warnedLimits.contains(key) else { continue }

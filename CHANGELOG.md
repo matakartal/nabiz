@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Burn rate for AI limits: each window shows where an even pace would be, turns orange or red when it is heading
+  for the limit, and says when it runs out at the current speed ("out in 3h 20m"). The faster of the window average
+  and the last hour's rate drives the projection, so a sudden burst is caught at once.
+- "Use it or lose it" when over half of a weekly limit is left with under a day to go.
+- Notifications for a limit that starts burning fast (once per burn) and for unused weekly limits.
+- A suggestion when an AI limit is burning fast.
+- Settings pages have a header with their icon, title and a one-line description.
+
 ## 1.1.0
 
 - ⌃⌥N opens the panel from anywhere, and right-clicking the menu bar item shows a short menu (Panel, Calculator, Settings, Quit).

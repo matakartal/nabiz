@@ -20,6 +20,19 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
         }
     }
 
+    /// One line under the page title: what this page is for.
+    var subtitle: String {
+        switch self {
+        case .general: L("Dil, açılış, yenileme ve kısayollar.", "Language, startup, refresh and shortcuts.")
+        case .menuBar: L("Menü çubuğunda ne ve nasıl görüneceği.", "What the menu bar shows, and how.")
+        case .panel: L("Paneldeki bölümler, katlama ve araçlar.", "The panel's sections, folding and tools.")
+        case .markets: L("Hyperliquid'den izlenecek piyasalar.", "The Hyperliquid markets to watch.")
+        case .currency: L("Ana para birimi ve izlenen kurlar.", "Your main currency and the rates you watch.")
+        case .ai: L("Abonelik limitleri ve harcama hızı.", "Subscription limits and how fast they burn.")
+        case .about: ""
+        }
+    }
+
     var symbol: String {
         switch self {
         case .general: "gearshape.fill"
@@ -90,7 +103,7 @@ struct SettingsView: View {
                         .foregroundStyle(.white)
                         .frame(width: Theme.settingsIcon, height: Theme.settingsIcon)
                         .background(Theme.accent, in: RoundedRectangle(cornerRadius: Theme.fieldRadius, style: .continuous))
-                    Text(page.title).font(Theme.body)
+                    Text(page.title).font(Theme.body).lineLimit(1).minimumScaleFactor(0.85)
                 }
                 .tag(page)
             }
@@ -101,7 +114,8 @@ struct SettingsView: View {
             .navigationSplitViewColumnWidth(min: 210, ideal: 220, max: 260)
             .toolbar(removing: .sidebarToggle)
         } detail: {
-            Group {
+            VStack(alignment: .leading, spacing: 0) {
+                if (selection.page ?? .general) != .about { PageHeader(page: selection.page ?? .general) }
                 switch selection.page ?? .general {
                 case .general: GeneralPage()
                 case .menuBar: MenuBarPage()
@@ -116,7 +130,7 @@ struct SettingsView: View {
             .scrollIndicators(.never)
             .background(Theme.surface)
             .background(HiddenScrollers().id(selection.page))
-            .navigationTitle(selection.page?.title ?? "")
+            .navigationTitle("")
         }
         .frame(minWidth: 640, minHeight: 460)
         .id(language)
@@ -651,5 +665,28 @@ private struct Footnote: View {
             .multilineTextAlignment(.leading)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, Theme.formInset)
+    }
+}
+
+/// The page's title block: its icon tile, title and one line on what it is for. Lined up with the form's cards.
+private struct PageHeader: View {
+    let page: SettingsPage
+
+    var body: some View {
+        HStack(spacing: Theme.Spacing.m) {
+            Image(systemName: page.symbol)
+                .font(Theme.title)
+                .foregroundStyle(.white)
+                .frame(width: Theme.settingsHeaderIcon, height: Theme.settingsHeaderIcon)
+                .background(Theme.accent, in: RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
+            VStack(alignment: .leading, spacing: Theme.Spacing.xs / 2) {
+                Text(verbatim: page.title).font(Theme.title).foregroundStyle(Theme.text)
+                Text(verbatim: page.subtitle).font(Theme.small).foregroundStyle(Theme.textMuted)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, Theme.Spacing.xl)
+        .padding(.top, Theme.Spacing.xl)
+        .padding(.bottom, Theme.Spacing.xs)
     }
 }

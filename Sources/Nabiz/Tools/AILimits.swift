@@ -11,6 +11,10 @@ struct AILimit: Identifiable, Sendable {
     let resetsAt: Date?
     /// The plan's main window (Claude's overall weekly limit, Codex's weekly one): what the menu bar shows.
     var primary = false
+    /// How long the window lasts (5 h, 7 d…), for the pace; nil when the provider doesn't say.
+    var period: TimeInterval?
+    /// Where the window is heading at the current speed; filled in by the store.
+    var pace: PaceReading?
 
     var remaining: Double { max(0, 1 - used) }
 
@@ -92,6 +96,28 @@ final class AILimitsStore {
     private(set) var loading = false
     @ObservationIgnored private var fetchedAt: Date?
 
+    @ObservationIgnored private var history = PaceHistory()
+
+    /// Records each reading and works out where every window is heading.
+    private func withPace(_ status: AIStatus) -> AIStatus {
+        var status = status
+        let now = Date()
+        for index in status.limits.indices {
+            let limit = status.limits[index]
+            history.record(limit.id, used: limit.used, at: now)
+            status.limits[index].pace = PaceModel.read(used: limit.used, resetsAt: limit.resetsAt, period: limit.period,
+                                                       recentRate: history.recentRate(limit.id, now: now), now: now)
+        }
+        return status
+    }
+
+    /// Limits on pace to run out before they reset, with their provider.
+    var burning: [(provider: AIProvider, limit: AILimit)] {
+        statuses.flatMap { status in
+            status.limits.filter { $0.pace?.status == .behind }.map { (status.provider, $0) }
+        }
+    }
+
     var enabled: [AIProvider] { AIProvider.allCases.filter { Prefs.bool($0.prefKey) } }
 
     /// Fetches again when the last result is older than `maxAge` seconds (or the enabled providers changed).
@@ -112,7 +138,7 @@ final class AILimitsStore {
                 }
                 for await status in group { results.append(status) }
             }
-            statuses = providers.compactMap { provider in results.first { $0.provider == provider } }
+            statuses = providers.compactMap { provider in results.first { $0.provider == provider } }.map(withPace)
             fetchedAt = Date()
             loading = false
         }
@@ -153,7 +179,7 @@ private enum AIFetch {
         if let limits = json["limits"] as? [[String: Any]], !limits.isEmpty {
             if let five = json["five_hour"] as? [String: Any], let percent = number(five["utilization"]) {
                 status.limits.append(AILimit(id: "claude.five_hour", label: windowLabel("five_hour"), used: percent / 100,
-                                             resetsAt: date(five["resets_at"])))
+                                             resetsAt: date(five["resets_at"]), period: 5 * 3600))
             }
             for (index, limit) in limits.enumerated() {
                 guard let percent = number(limit["percent"]) else { continue }
@@ -162,7 +188,8 @@ private enum AIFetch {
                 let label = model ?? (group == "weekly" ? windowLabel("seven_day") : group.replacingOccurrences(of: "_", with: " ").capitalized)
                 let overall = model == nil && (limit["kind"] as? String ?? "").hasSuffix("_all") && group == "weekly"
                 status.limits.append(AILimit(id: "claude.limit.\(index)", label: label, used: percent / 100,
-                                             resetsAt: date(limit["resets_at"]), primary: overall))
+                                             resetsAt: date(limit["resets_at"]), primary: overall,
+                                             period: group == "weekly" ? 7 * 86_400 : nil))
             }
             status.plan = await claudePlan(token: token)
             return status
@@ -173,7 +200,8 @@ private enum AIFetch {
         for key in keys where key != "extra_usage" || ((json[key] as? [String: Any])?["is_enabled"] as? Bool ?? false) {
             guard let window = json[key] as? [String: Any], let percent = number(window["utilization"]) else { continue }
             status.limits.append(AILimit(id: "claude.\(key)", label: windowLabel(key), used: percent / 100,
-                                         resetsAt: date(window["resets_at"]), primary: key == "seven_day"))
+                                         resetsAt: date(window["resets_at"]), primary: key == "seven_day",
+                                         period: key == "five_hour" ? 5 * 3600 : key.hasPrefix("seven_day") ? 7 * 86_400 : nil))
         }
         if status.limits.isEmpty { status.problem = L("Limit bilgisi yok", "No limit data") }
         status.plan = await claudePlan(token: token)
@@ -299,7 +327,8 @@ private enum AIFetch {
             if reset == nil, let after = number(window["reset_after_seconds"]) ?? number(window["resets_in_seconds"]) {
                 reset = Date().addingTimeInterval(after)
             }
-            status.limits.append(AILimit(id: "codex.\(path)", label: durationLabel(seconds(window)), used: percent / 100, resetsAt: reset))
+            status.limits.append(AILimit(id: "codex.\(path)", label: durationLabel(seconds(window)), used: percent / 100, resetsAt: reset,
+                                         period: seconds(window) > 0 ? seconds(window) : nil))
         }
         if let last = status.limits.indices.last { status.limits[last].primary = true }
         if status.limits.isEmpty { status.problem = L("Limit bilgisi yok", "No limit data") }
@@ -368,7 +397,8 @@ private enum AIFetch {
         var byModel: [String: AILimit] = [:]
         for bucket in quota["buckets"] as? [[String: Any]] ?? [] {
             guard let model = bucket["modelId"] as? String, let remaining = number(bucket["remainingFraction"]) else { continue }
-            let limit = AILimit(id: "gemini.\(model)", label: modelLabel(model), used: 1 - remaining, resetsAt: date(bucket["resetTime"]))
+            let limit = AILimit(id: "gemini.\(model)", label: modelLabel(model), used: 1 - remaining, resetsAt: date(bucket["resetTime"]),
+                                period: 86_400)
             if (byModel[model]?.used ?? -1) < limit.used { byModel[model] = limit }
         }
         status.limits = byModel.values.sorted { $0.label < $1.label }
