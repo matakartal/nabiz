@@ -1,0 +1,11 @@
+name: Feature request
+description: An idea for a new tool, section or setting.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like Nabız to do?
+      description: The problem first, then the idea. Who would use it, and how often?
+    validations:
+      required: true

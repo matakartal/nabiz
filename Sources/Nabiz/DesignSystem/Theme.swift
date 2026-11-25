@@ -1,0 +1,168 @@
+import AppKit
+import SwiftUI
+
+/// Kartal UI on macOS: the same tokens as the iOS/Android templates, resolved through AppKit appearances.
+/// Near-white / near-black surfaces, one accent, orange only for "running low", red only for alarms.
+enum Theme {
+    static let accent = Palette.green.fill
+    /// Alarms only: critical memory pressure, a hot Mac.
+    static let danger = Color(nsColor: .systemRed)
+    /// "Running low": high swap, busy CPU. Bars use `fill`, text uses `mark`.
+    static let warning = Palette.orange
+
+    static let surface = dynamic(light: .white(0.985), dark: .white(0.09))
+    static let surfaceRaised = dynamic(light: .white(1), dark: .white(0.14))
+    static let field = dynamic(light: .white(0.94), dark: .white(0.17))
+    static let text = dynamic(light: .white(0.07), dark: .white(0.95))
+    static let textMuted = dynamic(light: .white(0.42), dark: .white(0.62))
+    static let hairline = dynamic(light: .white(0, alpha: 0.08), dark: .white(1, alpha: 0.10))
+    /// Fills on the frosted menu material: a row under the pointer, a graph's track.
+    static let hover = dynamic(light: .white(0, alpha: 0.07), dark: .white(1, alpha: 0.10))
+    static let track = dynamic(light: .white(0, alpha: 0.05), dark: .white(1, alpha: 0.06))
+
+    // Two sizes and two weights per screen, at macOS menu scale (iOS 16/13 → macOS 13/11).
+    static let title = Font.system(size: 15, weight: .semibold)
+    static let body = Font.system(size: 13, weight: .regular)
+    static let bodyStrong = Font.system(size: 13, weight: .semibold)
+    static let small = Font.system(size: 11, weight: .regular)
+    static let smallStrong = Font.system(size: 11, weight: .semibold)
+    /// The quick calculator's input line, Spotlight-sized.
+    static let input = Font.system(size: 20, weight: .regular)
+    static let inputStrong = Font.system(size: 20, weight: .semibold)
+
+    enum Spacing {
+        static let xs: CGFloat = 4
+        static let s: CGFloat = 8
+        static let m: CGFloat = 12
+        static let l: CGFloat = 16
+        static let xl: CGFloat = 24
+        static let xxl: CGFloat = 32
+    }
+
+    static let radius: CGFloat = 10
+    static let fieldRadius: CGFloat = 6
+    static let dot: CGFloat = 6
+    /// Height of a usage bar.
+    static let meter: CGFloat = 3
+    /// Menu-panel grid, copied from native macOS menus so every row lines up:
+    /// icons start `menuInset` in, text starts `menuTextInset` in, values end `menuInset` before the edge.
+    static let menuInset: CGFloat = 16
+    static let menuTextInset: CGFloat = 40
+    static let menuHighlightInset: CGFloat = 6
+    static let menuIcon: CGFloat = 16
+    static let menuRow: CGFloat = 24
+    static let menuValueColumn: CGFloat = 76
+    static let menuPercentColumn: CGFloat = 64
+    static let menuResetColumn: CGFloat = 44
+    /// A short row under a heading row (AI limit lines).
+    static let menuLine: CGFloat = 20
+    /// A tool tile in the panel's grid: one line of symbol, title and an optional value.
+    static let toolTile: CGFloat = 30
+    static let toolColumns = 2
+    /// Settings sidebar icon tile.
+    static let settingsIcon: CGFloat = 22
+    /// Where text starts inside a grouped form row, so footers line up with it.
+    static let formInset: CGFloat = 10
+    /// The menu bar panel: one narrow column.
+    static let menuPanelWidth: CGFloat = 320
+    /// Never taller than the screen below the menu bar.
+    @MainActor static var menuPanelMaxHeight: CGFloat {
+        (NSScreen.main?.visibleFrame.height ?? 720) - Spacing.xxl
+    }
+
+    struct RGBA: Sendable {
+        var r, g, b, a: CGFloat
+        static func white(_ w: CGFloat, alpha: CGFloat = 1) -> RGBA { RGBA(r: w, g: w, b: w, a: alpha) }
+        static func hex(_ v: UInt32) -> RGBA {
+            RGBA(r: CGFloat((v >> 16) & 0xFF) / 255, g: CGFloat((v >> 8) & 0xFF) / 255, b: CGFloat(v & 0xFF) / 255, a: 1)
+        }
+        var nsColor: NSColor { NSColor(srgbRed: r, green: g, blue: b, alpha: a) }
+    }
+
+    static func dynamic(light: RGBA, dark: RGBA) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark.nsColor : light.nsColor
+        })
+    }
+}
+
+/// Palette colours: `fill` carries white glyphs or fills a bar; `mark` is for text and lines.
+struct Tone: Sendable {
+    let fill: Color
+    let mark: Color
+}
+
+enum Palette {
+    static let green = Tone(fill: Theme.dynamic(light: .hex(0x1DB954), dark: .hex(0x1DB954)),
+                            mark: Theme.dynamic(light: .hex(0x0F8038), dark: .hex(0x3DDC74)))
+    static let orange = Tone(fill: Theme.dynamic(light: .hex(0xEE7A2A), dark: .hex(0xEE7A2A)),
+                             mark: Theme.dynamic(light: .hex(0xB5500A), dark: .hex(0xF79A5C)))
+}
+
+struct TextButtonStyle: ButtonStyle {
+    var font: Font = Theme.body
+    var color: Color?
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(font)
+            .foregroundStyle(configuration.role == .destructive ? Theme.danger : (color ?? Theme.text))
+            .opacity(isEnabled ? (configuration.isPressed ? 0.5 : 1) : 0.4)
+            .contentShape(Rectangle())
+    }
+}
+
+extension ButtonStyle where Self == TextButtonStyle {
+    static var text: TextButtonStyle { TextButtonStyle() }
+}
+
+/// A thin usage bar on the field track.
+struct MeterBar: View {
+    let value: Double
+    let fill: Color
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Theme.field)
+                Capsule().fill(fill).frame(width: max(Theme.meter, geo.size.width * min(max(value, 0), 1)))
+            }
+        }
+        .frame(height: Theme.meter)
+    }
+}
+
+/// Hides every scroller in the window it lands in, even with "Show scroll bars: Always" on.
+/// SwiftUI's `.scrollIndicators(.never)` is overridden by that system setting; the scroll views still scroll.
+struct HiddenScrollers: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { Probe() }
+    func updateNSView(_ nsView: NSView, context: Context) { (nsView as? Probe)?.hideSoon() }
+
+    final class Probe: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            hideSoon()
+        }
+
+        func hideSoon() {
+            // Pages lay out their scroll views a moment after they appear.
+            DispatchQueue.main.async { [weak self] in
+                MainActor.assumeIsolated { self?.hide() }
+            }
+        }
+
+        private func hide() {
+            guard let root = window?.contentView else { return }
+            var stack: [NSView] = [root]
+            while let view = stack.popLast() {
+                if let scroll = view as? NSScrollView {
+                    scroll.hasVerticalScroller = false
+                    scroll.hasHorizontalScroller = false
+                    scroll.scrollerStyle = .overlay
+                }
+                stack.append(contentsOf: view.subviews)
+            }
+        }
+    }
+}
