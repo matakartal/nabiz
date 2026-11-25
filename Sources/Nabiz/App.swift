@@ -104,6 +104,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         KeepAwake.shared.stop()
         UsageHistory.shared.save()
+        NoteStore.shared.saveNow()
     }
 
     @objc private func togglePanel() {
@@ -115,6 +116,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         HotKey.update(.launcher, enabled: Prefs.bool(Prefs.hotkey))
         HotKey.update(.panel, enabled: Prefs.bool(Prefs.panelHotkey))
         HotKey.update(.clipboard, enabled: Prefs.bool(Prefs.clipboardHotkey) && Prefs.bool(Prefs.clipboardEnabled))
+        HotKey.update(.note, enabled: Prefs.bool(Prefs.noteHotkey))
         for shortcut in HotKey.Shortcut.windows { HotKey.update(shortcut, enabled: Prefs.bool(Prefs.windowHotkeys)) }
     }
 
@@ -152,7 +154,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(item(L("Paneli aç", "Open Panel")) { [weak self] in self?.togglePanel() })
         menu.addItem(item(L("Başlatıcı", "Launcher")) { LauncherPanel.shared.show() })
         menu.addItem(item(L("Pano geçmişi", "Clipboard History")) { LauncherPanel.shared.show(.clipboard) })
-        menu.addItem(item(L("Yüzen not", "Floating Note")) { NoteWindow.toggle() })
+        menu.addItem(item(L("Notlar", "Notes")) { NoteWindow.toggle() })
         menu.addItem(item(L("Geçmiş", "History")) { HistoryWindow.show() })
         menu.addItem(item(L("Zamanlanmış görevler…", "Scheduled Tasks…")) { SettingsWindow.show(.schedules) })
         menu.addItem(.separator())
@@ -313,6 +315,8 @@ enum Snapshot {
         let root: AnyView
         if args.contains("--welcome") {
             root = AnyView(WelcomeView {})
+        } else if args.contains("--note") {
+            root = AnyView(NoteView().frame(width: 380, height: 440))
         } else if args.contains("--history") {
             root = AnyView(HistoryView().frame(width: 680, height: 560))
         } else if args.contains("--limits") {
@@ -321,6 +325,7 @@ enum Snapshot {
             AppIndex.shared.refreshIfNeeded()
             try? await Task.sleep(for: .milliseconds(600))
             LauncherPanel.shared.model.reset(mode: args.contains("--clipboard") ? .clipboard : .all, text: text)
+            if args.contains("--palette") { LauncherPanel.shared.model.paletteOpen = true }
             root = AnyView(LauncherView(model: LauncherPanel.shared.model))
         } else if settings {
             root = AnyView(SettingsView(selection: selection).frame(width: 760, height: 560))

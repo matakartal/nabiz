@@ -14,7 +14,7 @@ enum ToolKind: String, CaseIterable, Identifiable {
         switch self {
         case .calculator: L("Başlatıcı", "Launcher")
         case .clipboard: L("Pano", "Clipboard")
-        case .note: L("Not", "Note")
+        case .note: L("Notlar", "Notes")
         case .keepAwake: L("Uyanık kal", "Keep awake")
         case .timer: L("Zamanlayıcı", "Timer")
         case .color: L("Renk al", "Pick color")
@@ -66,7 +66,7 @@ enum ToolKind: String, CaseIterable, Identifiable {
         case .calculator: L("Uygulama aç, komut çalıştır, hesapla, çevir, web'de ara (⌃⌥Boşluk).",
                             "Open apps, run commands, calculate, convert, search the web (⌃⌥Space).")
         case .clipboard: L("Kopyaladıklarının geçmişi; seç, yapıştır, sabitle (⌃⌥V).", "Everything you copied; pick, paste, pin (⌃⌥V).")
-        case .note: L("Her uygulamanın üstünde duran küçük bir not.", "A small note that floats over every app.")
+        case .note: L("Her uygulamanın üstünde duran notlar; listeler ve yapılacaklar (⌃⌥M).", "Notes that float over every app, with lists and checklists (⌃⌥M).")
         case .keepAwake: L("Mac'in ve ekranın uyumasını bir süre engeller.", "Stops the Mac and display from sleeping for a while.")
         case .timer: L("Geri sayım; bitince ses ve bildirim. Kalan süre menü çubuğunda görünür.",
                        "A countdown with a sound and a notification at the end. The time left shows in the menu bar.")
@@ -198,6 +198,9 @@ final class Toolbox {
             guard awake.isOn else { return nil }
             return awake.until.map { Format.countdown(until: $0) } ?? "∞"
         case .timer: return CountdownTimer.shared.remainingText
+        case .note:
+            let count = NoteStore.shared.notes.filter { !$0.isEmpty }.count
+            return count > 0 ? "\(count)" : nil
         case .clipboard:
             let count = ClipboardHistory.shared.items.count
             return Prefs.bool(Prefs.clipboardEnabled) && count > 0 ? "\(count)" : nil

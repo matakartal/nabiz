@@ -65,6 +65,21 @@ final class LauncherPanel {
 
     private func handle(keyCode: UInt16, flags: NSEvent.ModifierFlags, key: String?) -> Bool {
         let command = flags.contains(.command)
+        let shift = flags.contains(.shift)
+        if command && key == "k" {
+            model.togglePalette()
+            return true
+        }
+        if model.paletteOpen {
+            switch Int(keyCode) {
+            case 125: model.movePalette(1)
+            case 126: model.movePalette(-1)
+            case 36, 76: model.runPaletteAction()
+            case 53: model.paletteOpen = false
+            default: return command ? edit(key) : false
+            }
+            return true
+        }
         switch Int(keyCode) {
         case 125: model.move(1)
         case 126: model.move(-1)
@@ -73,25 +88,33 @@ final class LauncherPanel {
             if model.mode == .clipboard && model.text.isEmpty && model.cameFromLauncher {
                 model.reset(mode: .all)
             } else if model.text.isEmpty { close() } else { model.text = "" }
-        case 51 where command && model.mode == .clipboard: model.deleteSelected()
-        case 35 where command && model.mode == .clipboard: model.togglePinSelected()
+        case 51 where command && model.selected?.clip != nil: model.deleteSelected()
+        case 35 where command && model.selected?.clip != nil: model.togglePinSelected()
+        case 3 where command && shift: model.toggleFavoriteSelected()
         default:
-            guard command, let key else { return false }
-            let edits: [String: Selector] = [
-                "c": #selector(NSText.copy(_:)), "v": #selector(NSText.paste(_:)), "x": #selector(NSText.cut(_:)),
-                "a": #selector(NSText.selectAll(_:)), "z": Selector(("undo:")),
-            ]
+            guard command else { return false }
             if key == "w" { close(); return true }
-            guard let action = edits[key] else { return false }
-            NSApp.sendAction(action, to: nil, from: nil)
+            return edit(key)
         }
+        return true
+    }
+
+    /// ⌘C, ⌘V, ⌘X, ⌘A and ⌘Z for whichever field has the cursor.
+    private func edit(_ key: String?) -> Bool {
+        let edits: [String: Selector] = [
+            "c": #selector(NSText.copy(_:)), "v": #selector(NSText.paste(_:)), "x": #selector(NSText.cut(_:)),
+            "a": #selector(NSText.selectAll(_:)), "z": Selector(("undo:")),
+        ]
+        guard let key, let action = edits[key] else { return false }
+        NSApp.sendAction(action, to: nil, from: nil)
         return true
     }
 }
 
 struct LauncherView: View {
     @Bindable var model: LauncherModel
-    @FocusState private var focused: Bool
+    enum Field { case search, palette }
+    @FocusState private var focus: Field?
     private let rates = RateStore.shared
     private let clipboard = ClipboardHistory.shared
 
@@ -118,7 +141,15 @@ struct LauncherView: View {
         }
         .frame(width: Theme.launcherWidth, height: Theme.launcherHeight)
         .appearanceRoot()
-        .onAppear { focused = true }
+        .overlay(alignment: .bottomTrailing) {
+            if model.paletteOpen {
+                ActionPalette(model: model, focus: $focus)
+                    .padding(.trailing, Theme.Spacing.s)
+                    .padding(.bottom, Theme.launcherFooter + Theme.Spacing.s)
+            }
+        }
+        .onAppear { focus = .search }
+        .onChange(of: model.paletteOpen) { _, open in focus = open ? .palette : .search }
     }
 
     private var field: some View {
@@ -132,7 +163,7 @@ struct LauncherView: View {
                 .textFieldStyle(.plain)
                 .font(Theme.input)
                 .foregroundStyle(Theme.text)
-                .focused($focused)
+                .focused($focus, equals: .search)
             if model.mode == .clipboard {
                 Text(verbatim: "\(clipboard.items.count)").font(Theme.small).monospacedDigit().foregroundStyle(Theme.textMuted)
             }
@@ -195,29 +226,104 @@ struct LauncherView: View {
 
     private func footer(_ item: LauncherItem?) -> some View {
         HStack(spacing: Theme.Spacing.l) {
-            if model.mode == .clipboard {
-                if Prefs.bool(Prefs.autoPaste) && !Paster.isTrusted {
-                    Button(L("Yapıştırmak için izin ver", "Allow pasting")) { Paster.requestTrust() }
-                        .buttonStyle(TextButtonStyle(font: Theme.small, color: Theme.accent))
-                } else {
-                    Text(L("Kaydırarak seç · esc geri", "Arrows to pick · esc back")).foregroundStyle(Theme.textMuted)
-                }
+            if model.mode == .clipboard && Prefs.bool(Prefs.autoPaste) && !Paster.isTrusted {
+                Button(L("Yapıştırmak için izin ver", "Allow pasting")) { Paster.requestTrust() }
+                    .buttonStyle(TextButtonStyle(font: Theme.small, color: Theme.accent))
             } else {
-                Text(L("Hesap: 100 usd · Arama: g kelime", "Maths: 100 usd · Search: g words")).foregroundStyle(Theme.textMuted)
+                Text(model.mode == .clipboard ? L("↑↓ seç · esc geri", "↑↓ to pick · esc back")
+                                              : L("Hesap: 100 usd · Web: g kelime · Komutlar: >", "Maths: 100 usd · Web: g words · Commands: >"))
+                    .foregroundStyle(Theme.textMuted)
             }
             Spacer()
             if let item {
-                if model.mode == .clipboard, item.clip != nil {
-                    KeyHint(keys: "⌘P", title: item.clip?.pinned == true ? L("Sabitlemeyi kaldır", "Unpin") : L("Sabitle", "Pin"))
-                    KeyHint(keys: "⌘⌫", title: L("Sil", "Delete"))
-                }
-                if let secondary = item.secondaryTitle, item.secondary != nil { KeyHint(keys: "⌘↩", title: secondary) }
                 KeyHint(keys: "↩", title: item.primaryTitle, strong: true)
+                Rectangle().fill(Theme.hairline).frame(width: 1, height: Theme.Spacing.l)
+                KeyHint(keys: "⌘K", title: L("Eylemler", "Actions"), strong: model.paletteOpen)
             }
         }
         .font(Theme.small)
         .padding(.horizontal, Theme.Spacing.l)
         .frame(height: Theme.launcherFooter)
+    }
+}
+
+/// ⌘K: what can be done with the selected row, searchable, run with ↩.
+private struct ActionPalette: View {
+    @Bindable var model: LauncherModel
+    var focus: FocusState<LauncherView.Field?>.Binding
+
+    var body: some View {
+        let actions = model.paletteActions
+        let selectedID = actions.isEmpty ? nil : actions[min(model.paletteSelection, actions.count - 1)].id
+        let headers = Set(actions.indices.filter { $0 == 0 || actions[$0].group != actions[$0 - 1].group })
+        let height = min(CGFloat(actions.count) * Theme.paletteRow + CGFloat(headers.count) * Theme.menuLine + Theme.Spacing.s,
+                         Theme.paletteMaxList)
+        VStack(spacing: 0) {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(actions.enumerated()), id: \.element.id) { index, action in
+                            if headers.contains(index) {
+                                Text(verbatim: action.group).font(Theme.smallStrong).foregroundStyle(Theme.textMuted)
+                                    .padding(.horizontal, Theme.Spacing.s)
+                                    .frame(height: Theme.menuLine, alignment: .bottom)
+                            }
+                            PaletteRow(action: action, selected: action.id == selectedID)
+                                .id(action.id)
+                                .onContinuousHover { phase in
+                                    guard case .active = phase, model.pointerMoved() else { return }
+                                    model.paletteSelection = index
+                                }
+                                .onTapGesture { model.runPaletteAction(action) }
+                        }
+                        if actions.isEmpty {
+                            Text(L("Eylem yok", "No actions")).font(Theme.small).foregroundStyle(Theme.textMuted)
+                                .frame(maxWidth: .infinity).frame(height: Theme.paletteRow)
+                        }
+                    }
+                    .padding(Theme.Spacing.xs)
+                }
+                .scrollIndicators(.never)
+                .frame(height: max(height, Theme.paletteRow + Theme.Spacing.s))
+                .onChange(of: selectedID) { _, id in if let id { proxy.scrollTo(id) } }
+            }
+            Rectangle().fill(Theme.hairline).frame(height: 1)
+            TextField(L("Eylem ara", "Search actions"), text: $model.paletteQuery)
+                .textFieldStyle(.plain)
+                .font(Theme.body)
+                .focused(focus, equals: .palette)
+                .padding(.horizontal, Theme.Spacing.m)
+                .frame(height: Theme.launcherFooter + Theme.Spacing.xs)
+        }
+        .frame(width: Theme.paletteWidth)
+        .background {
+            if Prefs.string(Prefs.panelStyle) == "opaque" { Theme.surfaceRaised } else { MenuMaterial(blending: .withinWindow) }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).strokeBorder(Theme.hairline))
+        .shadow(color: .black.opacity(0.25), radius: Theme.Spacing.m, y: Theme.Spacing.xs)
+    }
+}
+
+private struct PaletteRow: View {
+    let action: LauncherAction
+    let selected: Bool
+
+    var body: some View {
+        HStack(spacing: Theme.Spacing.s) {
+            Image(systemName: action.symbol).font(Theme.small)
+                .foregroundStyle(action.destructive ? Theme.danger : selected ? Theme.accent : Theme.textMuted)
+                .frame(width: Theme.menuIcon)
+            Text(verbatim: action.title).font(Theme.body).foregroundStyle(action.destructive ? Theme.danger : Theme.text).lineLimit(1)
+            Spacer(minLength: Theme.Spacing.s)
+            if let shortcut = action.shortcut {
+                Text(verbatim: shortcut).font(Theme.small).foregroundStyle(Theme.textMuted)
+            }
+        }
+        .padding(.horizontal, Theme.Spacing.s)
+        .frame(height: Theme.paletteRow)
+        .background(selected ? Theme.hover : .clear, in: RoundedRectangle(cornerRadius: Theme.fieldRadius, style: .continuous))
+        .contentShape(Rectangle())
     }
 }
 

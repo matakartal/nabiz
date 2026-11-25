@@ -24,6 +24,8 @@ if ! xcrun notarytool history --keychain-profile nabiz >/dev/null 2>&1; then
     exit 1
 fi
 
+# Never ship a build whose tests fail.
+swift test
 SIGN_IDENTITY="$IDENTITY" NOTARY_PROFILE=nabiz ./build.sh dmg
 VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Info.plist)
 DMG="build/Nabiz-$VERSION.dmg"

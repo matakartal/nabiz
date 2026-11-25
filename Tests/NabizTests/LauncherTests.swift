@@ -77,3 +77,58 @@ struct LauncherTests {
         #expect(ClipItem(kind: .color, text: "#FFF", date: .now).preview == "#FFF")
     }
 }
+
+@Suite("Notes")
+struct NoteTests {
+    @Test("Return continues checklists, bullets and numbers, and ends an empty item")
+    func lists() {
+        #expect(NoteMarkdown.onReturn("- [x] milk") == .next("\n- [ ] "))
+        #expect(NoteMarkdown.onReturn("  * eggs") == .next("\n  * "))
+        #expect(NoteMarkdown.onReturn("9. ninth") == .next("\n10. "))
+        #expect(NoteMarkdown.onReturn("- [ ] ") == .end)
+        #expect(NoteMarkdown.onReturn("- ") == .end)
+        #expect(NoteMarkdown.onReturn("just text") == .plain)
+        #expect(NoteMarkdown.onReturn("") == .plain)
+    }
+
+    @Test("⌘L adds or removes a checklist box, ⇧⌘L a bullet")
+    func toggling() {
+        #expect(NoteMarkdown.toggled("buy milk", .checklist) == "- [ ] buy milk")
+        #expect(NoteMarkdown.toggled("- [x] buy milk", .checklist) == "buy milk")
+        #expect(NoteMarkdown.toggled("- buy milk", .checklist) == "- [ ] buy milk")
+        #expect(NoteMarkdown.toggled("  - buy milk", .bullet) == "  buy milk")
+        #expect(NoteMarkdown.toggled("buy milk", .bullet) == "- buy milk")
+    }
+
+    @Test("The checkbox is found where a click can tick it")
+    func checkbox() {
+        #expect(NoteMarkdown.checkbox(in: "- [ ] milk") == NSRange(location: 2, length: 3))
+        #expect(NoteMarkdown.checkbox(in: "  * [x] eggs") == NSRange(location: 4, length: 3))
+        #expect(NoteMarkdown.checkbox(in: "- milk") == nil)
+    }
+
+    @Test("Title is the first line without Markdown; checklist counts ticks")
+    func titleAndChecklist() {
+        let note = Note(text: "\n# **Release** list\n- [x] one\n- [ ] two\n* [X] three")
+        #expect(note.title == "Release list")
+        #expect(note.checklist.done == 2)
+        #expect(note.checklist.total == 3)
+        #expect(Note(text: "- [ ] call Ali").title == "call Ali")
+    }
+
+    @MainActor
+    @Test("Text changes apply only where they make sense")
+    func transforms() {
+        UserDefaults.standard.set("en", forKey: Prefs.language)
+        #expect(TextTransform.upper.apply("istanbul") == "ISTANBUL")
+        #expect(TextTransform.oneLine.apply("a\n  b\n\nc") == "a b c")
+        #expect(TextTransform.trimmed.apply("  a   b \n c  ") == "a b\nc")
+        #expect(TextTransform.json.apply(#"{"b":1,"a":[1,2]}"#)?.contains("\n") == true)
+        #expect(TextTransform.json.apply("not json") == nil)
+        #expect(TextTransform.base64Encode.apply("nabız") == "bmFixLF6")
+        #expect(TextTransform.base64Decode.apply("bmFixLF6") == "nabız")
+        #expect(TextTransform.base64Decode.apply("%%%") == nil)
+        #expect(TextTransform.urlDecode.apply("a%20b") == "a b")
+        #expect(TextTransform.lower.apply("abc") == nil)
+    }
+}

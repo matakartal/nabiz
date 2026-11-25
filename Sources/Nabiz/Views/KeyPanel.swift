@@ -103,7 +103,7 @@ final class KeyPanel: NSPanel {
 @MainActor
 enum HotKey {
     enum Shortcut: UInt32, CaseIterable {
-        case launcher = 1, panel = 2, clipboard = 3
+        case launcher = 1, panel = 2, clipboard = 3, note = 4
         case leftHalf = 10, rightHalf, topHalf, bottomHalf, maximize, center
 
         var key: Int {
@@ -111,6 +111,7 @@ enum HotKey {
             case .launcher: kVK_Space
             case .panel: kVK_ANSI_N
             case .clipboard: kVK_ANSI_V
+            case .note: kVK_ANSI_M
             case .leftHalf: kVK_LeftArrow
             case .rightHalf: kVK_RightArrow
             case .topHalf: kVK_UpArrow
@@ -165,6 +166,7 @@ enum HotKey {
                 case .launcher: LauncherPanel.shared.toggle(.all)
                 case .panel: HotKey.togglePanel()
                 case .clipboard: LauncherPanel.shared.toggle(.clipboard)
+                case .note: NoteWindow.toggle()
                 default: shortcut.window?.run()
                 }
             }

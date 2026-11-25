@@ -82,7 +82,11 @@ enum Prefs {
     static let launcherClipboard = "launcherClipboard"
     /// ⌃⌥ arrows, Return and C move the front window.
     static let windowHotkeys = "windowHotkeys"
+    /// The single note of 1.5, moved into the notes list on first launch.
     static let noteText = "floatingNote"
+    static let noteOnTop = "noteOnTop"
+    /// ⌃⌥M shows or hides the notes.
+    static let noteHotkey = "noteHotkey"
 
     // Personalization.
     /// "system", "light" or "dark": Nabız's own windows, whatever macOS uses.
@@ -116,6 +120,7 @@ enum Prefs {
             baseCurrency: "TRY", watchedCurrencies: "USD,EUR,GBP",
             clipboardHotkey: true, clipboardEnabled: true, clipboardSave: true, clipboardLimit: 200, clipboardDays: 30,
             clipboardExcluded: "", autoPaste: true, launcherApps: true, launcherClipboard: true, windowHotkeys: false,
+            noteOnTop: true, noteHotkey: true,
             appearanceMode: "system", fontDesign: "standard", density: "normal", meterStyle: "thin",
             barSymbol: "gauge.with.dots.needle.33percent", customAccent: "#1DB954", sectionOrder: "",
         ])

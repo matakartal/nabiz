@@ -73,12 +73,16 @@ On first launch, a short welcome explains where things are and offers to open Na
   - timers: `25 dk` / `25 min`; keep awake for an hour or indefinitely
   - quicklinks: `g words` searches Google, `gh`, `yt`, `w`, `hl`, `cl`, `gpt`… (edit your own with `{query}`)
   - snippets: saved text with `{date}`, `{time}` and `{clipboard}`, pasted by keyword
-  - recent items when the field is empty
+  - notes, by title or text
+  - recent items and favourites (⇧⌘F) when the field is empty; start with `>` for commands only
+  - ⌘K opens the actions for the selected row: show in Finder, force quit, copy path, pin, save as a note or
+    snippet, and text changes for copied text (UPPERCASE, one line, pretty JSON, Base64, URL encode/decode…)
 - **Clipboard history** (⌃⌥V): text, links, colours, files and images, searchable, with a preview. Pin what you
   keep using. ↩ pastes straight into the app you were in (with Accessibility permission), ⌘↩ only copies. Password
   managers' secret copies and apps you exclude are never recorded; everything stays on your Mac.
 - **Window layouts:** halves, thirds, centre, maximize, next display. Opt-in shortcuts ⌃⌥←→↑↓, ⌃⌥↩, ⌃⌥C.
-- **Floating note:** a small note above every app and Space, saved as you type.
+- **Notes** (⌃⌥M): notes that float above every app and Space, with live Markdown, lists and checklists that
+  continue on Return, ⌘L to tick, ⌘P to search every note, and export to .md.
 - **Personalization:** 17 accent colours plus the system accent and a colour of your own, light/dark/system theme,
   standard, rounded or monospaced type, compact/normal/roomy rows, thin or thick bars, frosted or opaque panel,
   panel width, menu bar icon, and the panel's section order.
@@ -190,7 +194,8 @@ Nabız, Mac'inin nabzını menü çubuğunda tutan küçük, yerel (native) ve a
 - **Başlatıcı (⌃⌥Boşluk):** uygulama aç, komut çalıştır (kilitle, uyut, çöpü boşalt…), hesapla ve çevir (`100 usd`), `25 dk` zamanlayıcı, `g kelime` ile web araması, kısaltmayla parçacık yapıştır.
 - **Pano geçmişi (⌃⌥V):** metin, bağlantı, renk, dosya ve görseller; ara, sabitle, ↩ ile doğrudan yapıştır. Şifre yöneticilerinin gizli kopyaları kaydedilmez; her şey Mac'te kalır.
 - **Pencere yerleşimi:** yarım, üçte bir, ortala, ekranı kapla, sonraki ekran (isteğe bağlı ⌃⌥ ok tuşları).
-- **Yüzen not:** her uygulamanın üstünde duran küçük not.
+- **Notlar (⌃⌥M):** her uygulamanın üstünde duran notlar; canlı Markdown, Return ile devam eden liste ve yapılacaklar, ⌘L ile işaretle, ⌘P ile tüm notlarda ara, .md olarak kaydet.
+- **Eylem paleti (⌘K):** başlatıcıda seçili satır için tüm eylemler: Finder'da göster, zorla kapat, sabitle, nota kaydet, metni dönüştür (BÜYÜK HARF, JSON, Base64…). ⇧⌘F ile favorilere ekle; `>` ile yalnızca komutlar.
 - **Kişiselleştirme:** 17 vurgu rengi + sistem rengi + kendi rengin, açık/koyu tema, yuvarlak ya da eşit aralıklı yazı, satır sıklığı, çubuk kalınlığı, menü çubuğu simgesi ve panel bölümlerinin sırası.
 - **Ayarlar:** kenar çubuklu; Türkçe ve İngilizce.
 

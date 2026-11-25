@@ -42,6 +42,14 @@ final class LauncherModel {
         didSet { if text != oldValue { selection = 0 } }
     }
     var selection = 0
+    /// The ⌘K actions palette for the selected row.
+    var paletteOpen = false {
+        didSet { paletteQuery = ""; paletteSelection = 0 }
+    }
+    var paletteQuery = "" {
+        didSet { if paletteQuery != oldValue { paletteSelection = 0 } }
+    }
+    var paletteSelection = 0
     /// The clipboard list was opened from the launcher, so Escape goes back to it instead of closing.
     var cameFromLauncher = false
     @ObservationIgnored private var lastPointer: CGPoint?
@@ -59,6 +67,7 @@ final class LauncherModel {
 
     func reset(mode: Mode, text: String = "") {
         lastPointer = NSEvent.mouseLocation
+        paletteOpen = false
         self.mode = mode
         self.text = text
         selection = 0
@@ -162,16 +171,29 @@ final class LauncherModel {
         let commands = commandItems()
         let apps = Prefs.bool(Prefs.launcherApps) ? AppIndex.shared.apps.map(appItem) : []
 
+        // "> lock": commands only, like an editor's command palette.
+        if query.hasPrefix(">") {
+            let rest = query.dropFirst().trimmingCharacters(in: .whitespaces)
+            let list = rest.isEmpty ? commands : commands.compactMap { item -> (Int, LauncherItem)? in
+                let best = [Fuzzy.score(rest, item.title), Fuzzy.keyword(rest, Self.keywords[item.id] ?? item.id)].compactMap { $0 }.max()
+                return best.map { ($0, item) }
+            }.sorted { $0.0 > $1.0 }.map(\.1)
+            return [LauncherSection(id: "commands", title: L("Komutlar", "Commands"), items: list)].filter { !$0.items.isEmpty }
+        }
+
         if query.isEmpty {
-            let all = commands + apps
-            let recents = Recents.ids.compactMap { id in all.first { $0.id == id } }
+            let all = commands + apps + LauncherStore.shared.quicklinks.map { searchItem($0, "") }
+            let favorites = Favorites.ids.compactMap { id in all.first { $0.id == id } }
+            sections.append(LauncherSection(id: "favorites", title: L("Favoriler", "Favourites"), items: favorites))
+            let recents = Recents.ids.compactMap { id in all.first { $0.id == id } }.filter { item in !favorites.contains { $0.id == item.id } }
             sections.append(LauncherSection(id: "recents", title: L("Son kullanılanlar", "Recent"), items: recents))
             if Prefs.bool(Prefs.clipboardEnabled) && Prefs.bool(Prefs.launcherClipboard) {
                 let clips = ClipboardHistory.shared.items.prefix(3).map(clipRow)
                 sections.append(LauncherSection(id: "clips", title: L("Son kopyalananlar", "Recently copied"), items: Array(clips)))
             }
             let suggested = ["cmd:clipboard", "cmd:note", "cmd:timer-25", "cmd:keepAwake-60", "sys:lock", "win:leftHalf", "win:maximize"]
-            let suggestions = suggested.compactMap { id in commands.first { $0.id == id } }.filter { item in !recents.contains { $0.id == item.id } }
+            let suggestions = suggested.compactMap { id in commands.first { $0.id == id } }
+                .filter { item in !recents.contains { $0.id == item.id } && !favorites.contains { $0.id == item.id } }
             sections.append(LauncherSection(id: "suggestions", title: L("Öneriler", "Suggestions"), items: suggestions))
             return sections.filter { !$0.items.isEmpty }
         }
@@ -204,7 +226,7 @@ final class LauncherModel {
         func ranked(_ items: [LauncherItem], keywords: (LauncherItem) -> String, limit: Int) -> [LauncherItem] {
             items.compactMap { item -> (Int, LauncherItem)? in
                 let best = [Fuzzy.score(query, item.title), Fuzzy.keyword(query, keywords(item))].compactMap { $0 }.max()
-                return best.map { ($0 + (Recents.ids.contains(item.id) ? 50 : 0), item) }
+                return best.map { ($0 + (Recents.ids.contains(item.id) ? 50 : 0) + (Favorites.ids.contains(item.id) ? 100 : 0), item) }
             }
             .sorted { $0.0 > $1.0 }
             .prefix(limit)
@@ -215,6 +237,9 @@ final class LauncherModel {
                                         items: ranked(apps, keywords: { $0.subtitle ?? "" }, limit: 6)))
         sections.append(LauncherSection(id: "commands", title: L("Komutlar", "Commands"),
                                         items: ranked(commands + timerItems(query), keywords: { Self.keywords[$0.id] ?? $0.id.split(separator: ":").last.map(String.init) ?? "" }, limit: 8)))
+
+        let notes = NoteStore.shared.sorted.filter { !$0.isEmpty && (Fuzzy.score(query, $0.title) != nil || Fuzzy.contains(query, $0.text)) }
+        sections.append(LauncherSection(id: "notes", title: L("Notlar", "Notes"), items: notes.prefix(4).map(noteItem)))
 
         let snippets = LauncherStore.shared.snippets.filter { snippet in
             snippet.keyword.lowercased().hasPrefix(query.lowercased()) || Fuzzy.score(query, snippet.name) != nil
@@ -249,6 +274,24 @@ final class LauncherModel {
                                 if let url = link.url(for: query) { NSWorkspace.shared.open(url) }
                             },
                             remember: query.isEmpty)
+    }
+
+    private func noteItem(_ note: Note) -> LauncherItem {
+        LauncherItem(id: "note:\(note.id)", icon: .symbol("note.text"), title: note.title, subtitle: note.preview,
+                     accessory: note.modified.formatted(.relative(presentation: .numeric, unitsStyle: .abbreviated).locale(Format.locale)),
+                     primaryTitle: L("Aç", "Open"),
+                     primary: { [weak self] in
+                         self?.close()
+                         NoteWindow.show(note.id)
+                     },
+                     secondaryTitle: L("Kopyala", "Copy"),
+                     secondary: { [weak self] in
+                         NSPasteboard.general.clearContents()
+                         NSPasteboard.general.setString(note.text, forType: .string)
+                         self?.close()
+                         Monitor.panelActions.flash(L("Kopyalandı", "Copied"))
+                     },
+                     remember: false)
     }
 
     private func snippetItem(_ snippet: Snippet) -> LauncherItem {
@@ -302,7 +345,7 @@ final class LauncherModel {
     private static let keywords: [String: String] = [
         "cmd:panel": "panel nabız nabiz menu", "cmd:settings": "settings ayarlar preferences",
         "cmd:history": "history geçmiş grafik chart", "cmd:clipboard": "clipboard pano history geçmiş kopyala",
-        "cmd:note": "note not notes yüzen floating", "cmd:schedules": "schedule görev zamanla tasks",
+        "cmd:note": "note not notes notlar yüzen floating", "cmd:note-new": "note not new yeni", "cmd:schedules": "schedule görev zamanla tasks",
         "sys:lock": "lock kilitle", "sys:sleep": "sleep uyut uyku", "sys:displayOff": "display ekran kapat",
         "sys:hideOthers": "hide gizle", "sys:quitAll": "quit çık kapat all tüm", "sys:emptyTrash": "trash çöp boşalt",
         "sys:restart": "restart yeniden başlat reboot", "sys:shutDown": "shutdown kapat power", "sys:logOut": "logout oturum",
@@ -328,7 +371,8 @@ final class LauncherModel {
                 self?.cameFromLauncher = true
                 self?.reset(mode: .clipboard)
             },
-            command("note", "note.text", L("Yüzen not", "Floating note")) { NoteWindow.toggle() },
+            command("note", "note.text", L("Notlar", "Notes"), accessory: "⌃⌥M") { NoteWindow.show() },
+            command("note-new", "square.and.pencil", L("Yeni not", "New note")) { NoteWindow.show(NoteStore.shared.create()) },
             command("panel", "menubar.rectangle", L("Paneli aç", "Open the panel"), accessory: "⌃⌥N") { HotKey.togglePanel() },
             command("history", "chart.xyaxis.line", L("Geçmiş grafikleri", "History charts")) { HistoryWindow.show() },
             command("settings", "gearshape", L("Nabız ayarları", "Nabız settings"), accessory: "⌘,") { SettingsWindow.show(nil) },
@@ -363,7 +407,8 @@ final class LauncherModel {
                                           action.run()
                                       }))
         }
-        let skip: Set<ToolKind> = [.calculator, .keepAwake, .timer, .clipboard, .note]
+        // These already exist as commands above (or open the launcher itself).
+        let skip: Set<ToolKind> = [.calculator, .keepAwake, .timer, .clipboard, .note, .displayOff]
         for tool in ToolKind.allCases where !skip.contains(tool) {
             items.append(LauncherItem(id: "tool:\(tool.rawValue)", icon: .symbol(tool.symbol), title: tool.title, subtitle: tool.help,
                                       accessory: L("Araç", "Tool"), primaryTitle: L("Çalıştır", "Run"),
@@ -375,6 +420,20 @@ final class LauncherModel {
                                       }))
         }
         return items
+    }
+}
+
+/// Apps, commands and quicklinks starred with ⇧⌘F; they head the launcher and rank higher in searches.
+@MainActor
+enum Favorites {
+    private static let key = "launcherFavorites"
+
+    static var ids: [String] { UserDefaults.standard.stringArray(forKey: key) ?? [] }
+
+    static func toggle(_ id: String) {
+        var list = ids
+        if let index = list.firstIndex(of: id) { list.remove(at: index) } else { list.append(id) }
+        UserDefaults.standard.set(list, forKey: key)
     }
 }
 
@@ -408,8 +467,9 @@ enum Fuzzy {
         if words.contains(where: { $0.hasPrefix(q) }) { return 800 - t.count }
         if q.count >= 2, String(words.compactMap(\.first)).hasPrefix(q) { return 700 }
         if t.contains(q) { return 600 - t.count }
-        guard q.count >= 3 else { return nil }
-        var rest = Substring(t)
+        // Letters in order, starting at the start of a word ("sfr" finds Safari, "saf" doesn't find "display off").
+        guard q.count >= 3, let first = q.first, let start = words.first(where: { $0.first == first })?.startIndex else { return nil }
+        var rest = t[start...]
         for character in q {
             guard let index = rest.firstIndex(of: character) else { return nil }
             rest = rest[rest.index(after: index)...]
@@ -490,5 +550,187 @@ final class AppIndex {
         }
         add("/System/Library/CoreServices/Finder.app")
         return found.values.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+}
+
+// MARK: - Actions palette (⌘K)
+
+/// One thing the palette can do with the selected row.
+struct LauncherAction: Identifiable {
+    let id: String
+    var title: String
+    var symbol: String
+    var shortcut: String?
+    /// Heading the action sits under; consecutive actions with the same one share it.
+    var group = ""
+    var destructive = false
+    var run: @MainActor () -> Void
+}
+
+extension LauncherModel {
+    var paletteActions: [LauncherAction] {
+        guard let item = selected else { return [] }
+        let all = actions(for: item)
+        let query = paletteQuery.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else { return all }
+        return all.filter { Fuzzy.score(query, $0.title) != nil || Fuzzy.keyword(query, $0.group) != nil }
+    }
+
+    func togglePalette() {
+        paletteOpen = !paletteOpen && selected != nil
+    }
+
+    func movePalette(_ offset: Int) {
+        let count = paletteActions.count
+        guard count > 0 else { return }
+        paletteSelection = (min(paletteSelection, count - 1) + offset + count) % count
+    }
+
+    func runPaletteAction(_ chosen: LauncherAction? = nil) {
+        let actions = paletteActions
+        guard let item = selected, let action = chosen ?? (actions.isEmpty ? nil : actions[min(paletteSelection, actions.count - 1)]) else { return }
+        paletteOpen = false
+        if item.remember && (action.id == "primary" || action.id == "secondary") { Recents.add(item.id) }
+        action.run()
+    }
+
+    func toggleFavoriteSelected() {
+        guard let item = selected, item.remember else { return }
+        Favorites.toggle(item.id)
+    }
+
+    /// Everything that can be done with a row: its two main actions, then what fits its kind.
+    func actions(for item: LauncherItem) -> [LauncherAction] {
+        let main = L("Eylemler", "Actions")
+        var list = [LauncherAction(id: "primary", title: item.primaryTitle, symbol: "return", shortcut: "↩", group: main, run: item.primary)]
+        if let title = item.secondaryTitle, let secondary = item.secondary {
+            list.append(LauncherAction(id: "secondary", title: title, symbol: "command", shortcut: "⌘↩", group: main, run: secondary))
+        }
+        let copyText: (String, String) -> Void = { [weak self] text, message in
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+            self?.close()
+            Monitor.panelActions.flash(message)
+        }
+
+        if item.id.hasPrefix("app:") {
+            let path = String(item.id.dropFirst(4))
+            let running = NSWorkspace.shared.runningApplications.first { $0.bundleURL?.path == path }
+            if let running {
+                list.append(LauncherAction(id: "hide", title: L("Gizle", "Hide"), symbol: "eye.slash", group: main) { [weak self] in
+                    self?.close()
+                    running.hide()
+                })
+                list.append(LauncherAction(id: "finder", title: L("Finder'da göster", "Show in Finder"), symbol: "folder", group: main) { [weak self] in
+                    self?.close()
+                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+                })
+                list.append(LauncherAction(id: "forceQuit", title: L("Zorla kapat…", "Force quit…"), symbol: "xmark.octagon", group: main,
+                                           destructive: true) { [weak self] in
+                    self?.close()
+                    let alert = NSAlert()
+                    alert.messageText = L("\(item.title) zorla kapatılsın mı?", "Force quit \(item.title)?")
+                    alert.informativeText = L("Kaydedilmemiş değişiklikler kaybolur.", "Unsaved changes will be lost.")
+                    alert.addButton(withTitle: L("Zorla kapat", "Force Quit"))
+                    alert.addButton(withTitle: L("Vazgeç", "Cancel"))
+                    alert.buttons.first?.hasDestructiveAction = true
+                    NSApp.activate()
+                    if alert.runModal() == .alertFirstButtonReturn { running.forceTerminate() }
+                })
+            }
+            list.append(LauncherAction(id: "copyPath", title: L("Yolunu kopyala", "Copy path"), symbol: "doc.on.doc", group: main) {
+                copyText(path, L("Kopyalandı", "Copied"))
+            })
+        }
+
+        if let clip = item.clip {
+            let current = ClipboardHistory.shared.items.first { $0.id == clip.id } ?? clip
+            list.append(LauncherAction(id: "pin", title: current.pinned ? L("Sabitlemeyi kaldır", "Unpin") : L("Sabitle", "Pin"),
+                                       symbol: current.pinned ? "pin.slash" : "pin", shortcut: "⌘P", group: main) {
+                ClipboardHistory.shared.togglePin(current)
+            })
+            if let text = clip.text {
+                if clip.kind == .link, let url = URL(string: text.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                    list.append(LauncherAction(id: "open", title: L("Tarayıcıda aç", "Open in browser"), symbol: "safari", group: main) { [weak self] in
+                        self?.close()
+                        NSWorkspace.shared.open(url)
+                    })
+                }
+                list.append(LauncherAction(id: "toNote", title: L("Not olarak kaydet", "Save as note"), symbol: "note.text.badge.plus", group: main) { [weak self] in
+                    self?.close()
+                    NoteWindow.show(NoteStore.shared.create(text))
+                })
+                list.append(LauncherAction(id: "toSnippet", title: L("Parçacık olarak kaydet", "Save as snippet"), symbol: "text.quote", group: main) { [weak self] in
+                    self?.close()
+                    let name = String(clip.preview.prefix(40))
+                    LauncherStore.shared.save(snippet: Snippet(keyword: "", name: name, text: text))
+                    SettingsWindow.show(.snippets)
+                })
+                let transform = L("Dönüştür ve yapıştır", "Transform and paste")
+                for change in TextTransform.allCases {
+                    guard let result = change.apply(text) else { continue }
+                    list.append(LauncherAction(id: "t-\(change.rawValue)", title: change.title, symbol: change.symbol, group: transform) { [weak self] in
+                        self?.paste(text: result)
+                    })
+                }
+            }
+            if clip.kind == .files, let files = clip.files {
+                list.append(LauncherAction(id: "finder", title: L("Finder'da göster", "Show in Finder"), symbol: "folder", group: main) { [weak self] in
+                    self?.close()
+                    NSWorkspace.shared.activateFileViewerSelecting(files.map { URL(fileURLWithPath: $0) })
+                })
+            }
+            list.append(LauncherAction(id: "delete", title: L("Geçmişten sil", "Delete from history"), symbol: "trash", shortcut: "⌘⌫",
+                                       group: main, destructive: true) { [weak self] in
+                ClipboardHistory.shared.delete(current)
+                if let self { selection = min(selection, max(items.count - 1, 0)) }
+            })
+        }
+
+        if item.id.hasPrefix("note:"), let id = UUID(uuidString: String(item.id.dropFirst(5))),
+           let note = NoteStore.shared.notes.first(where: { $0.id == id }) {
+            list.append(LauncherAction(id: "pasteNote", title: L("Yapıştır", "Paste"), symbol: "doc.on.clipboard", group: main) { [weak self] in
+                self?.paste(text: note.text)
+            })
+            list.append(LauncherAction(id: "deleteNote", title: L("Notu sil…", "Delete note…"), symbol: "trash", group: main, destructive: true) { [weak self] in
+                self?.close()
+                NoteWindow.delete(note)
+            })
+        }
+
+        if item.id.hasPrefix("snippet:") {
+            list.append(LauncherAction(id: "editSnippet", title: L("Parçacıkları düzenle", "Edit snippets"), symbol: "pencil", group: main) { [weak self] in
+                self?.close()
+                SettingsWindow.show(.snippets)
+            })
+        }
+
+        if item.id.hasPrefix("link:") || item.id == "search" {
+            let words = text.trimmingCharacters(in: .whitespaces).split(separator: " ", maxSplits: 1).map(String.init)
+            let links = LauncherStore.shared.quicklinks
+            let pair: (Quicklink, String)? = item.id.hasPrefix("link:")
+                ? links.first { "link:\($0.keyword)" == item.id }.map { ($0, "") }
+                : words.count == 2 ? links.first { $0.keyword.lowercased() == words[0].lowercased() }.map { ($0, words[1]) }
+                    ?? links.first.map { ($0, text.trimmingCharacters(in: .whitespaces)) }
+                : links.first.map { ($0, text.trimmingCharacters(in: .whitespaces)) }
+            if let (link, query) = pair, let url = link.url(for: query) {
+                list.append(LauncherAction(id: "copyLink", title: L("Bağlantıyı kopyala", "Copy link"), symbol: "link", group: main) {
+                    copyText(url.absoluteString, L("Kopyalandı", "Copied"))
+                })
+            }
+            list.append(LauncherAction(id: "editLinks", title: L("Bağlantıları düzenle", "Edit quicklinks"), symbol: "pencil", group: main) { [weak self] in
+                self?.close()
+                SettingsWindow.show(.launcher)
+            })
+        }
+
+        if item.remember {
+            let starred = Favorites.ids.contains(item.id)
+            list.append(LauncherAction(id: "favorite", title: starred ? L("Favorilerden çıkar", "Remove from favourites") : L("Favorilere ekle", "Add to favourites"),
+                                       symbol: starred ? "star.slash" : "star", shortcut: "⇧⌘F", group: L("Başlatıcı", "Launcher")) {
+                Favorites.toggle(item.id)
+            })
+        }
+        return list
     }
 }

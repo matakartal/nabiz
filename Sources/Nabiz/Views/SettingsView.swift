@@ -168,6 +168,7 @@ private struct GeneralPage: View {
     @AppStorage(Prefs.hotkey) private var hotkey = true
     @AppStorage(Prefs.panelHotkey) private var panelHotkey = true
     @AppStorage(Prefs.clipboardHotkey) private var clipboardHotkey = true
+    @AppStorage(Prefs.noteHotkey) private var noteHotkey = true
     @AppStorage(Prefs.notifications) private var notifications = false
     @AppStorage(Prefs.rustAutoClean) private var rustAutoClean = false
     @AppStorage(Prefs.rustAutoCleanDays) private var rustDays = 14
@@ -196,6 +197,7 @@ private struct GeneralPage: View {
                 Toggle(L("Paneli aç: ⌃⌥N", "Open the panel: ⌃⌥N"), isOn: $panelHotkey)
                 Toggle(L("Başlatıcı: ⌃⌥Boşluk", "Launcher: ⌃⌥Space"), isOn: $hotkey)
                 Toggle(L("Pano geçmişi: ⌃⌥V", "Clipboard history: ⌃⌥V"), isOn: $clipboardHotkey)
+                Toggle(L("Notlar: ⌃⌥M", "Notes: ⌃⌥M"), isOn: $noteHotkey)
             } header: {
                 Text(L("Kısayollar", "Shortcuts"))
             } footer: {

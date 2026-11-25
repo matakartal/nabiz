@@ -91,6 +91,26 @@ enum Theme {
     static let launcherIcon: CGFloat = 20
     /// The list beside the clipboard preview.
     static let launcherList: CGFloat = 300
+    /// The ⌘K actions palette over the launcher.
+    static let paletteWidth: CGFloat = 320
+    static let paletteRow: CGFloat = 28
+    static let paletteMaxList: CGFloat = 264
+    /// Notes: a header row, and text a little bigger than menu text for writing.
+    static let noteHeader: CGFloat = 36
+    static var noteText: CGFloat { 14 + bump }
+    static var noteHeading: CGFloat { 20 + bump }
+    static var noteSubheading: CGFloat { 16 + bump }
+
+    /// An AppKit font in the chosen typeface (standard, rounded or monospaced), for text views.
+    static func nsFont(size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
+        let font = NSFont.systemFont(ofSize: size, weight: weight)
+        let design: NSFontDescriptor.SystemDesign = switch UserDefaults.standard.string(forKey: "fontDesign") {
+        case "rounded": .rounded
+        case "mono": .monospaced
+        default: .default
+        }
+        return font.fontDescriptor.withDesign(design).flatMap { NSFont(descriptor: $0, size: size) } ?? font
+    }
     /// Where text starts inside a grouped form row, so footers line up with it.
     static let formInset: CGFloat = 10
     /// The menu bar panel: one narrow column.
@@ -207,10 +227,13 @@ struct HiddenScrollers: NSViewRepresentable {
 
 /// The frosted material native menus use; the panel, calculator and Settings all sit on it.
 struct MenuMaterial: NSViewRepresentable {
+    /// `.withinWindow` for a layer floating over other content in the same window (the actions palette).
+    var blending: NSVisualEffectView.BlendingMode = .behindWindow
+
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
         view.material = .menu
-        view.blendingMode = .behindWindow
+        view.blendingMode = blending
         view.state = .active
         return view
     }

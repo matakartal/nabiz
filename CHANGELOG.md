@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.6.0
+
+- **Notes, rebuilt** (⌃⌥M): as many notes as you like, the first line is the title. Markdown shows as you type:
+  headings, **bold**, _italic_, `code`, quotes and clickable links. Lists and checklists continue on Return and end
+  on an empty item; click a box (or ⌘L) to tick it, ⇧⌘L for bullets, ⌘B / ⌘I for bold and italic. ⌘P lists and
+  searches every note, ⌘N starts one, ⌘[ ⌘] step through them, ⇧⌘C copies the note. Pin it on top or let it
+  behave like a normal window; save any note as a .md file. Word count and checklist progress in the footer.
+  Empty notes tidy themselves away; the 1.5 note moves over on its own.
+- **Actions palette** (⌘K) in the launcher, for the selected row: open, show in Finder, hide, force quit and copy
+  path for apps; pin, open, save as a note or snippet, delete and ten text changes (UPPERCASE, Title Case, one
+  line, tidy spaces, pretty JSON, Base64 and URL encode/decode) for clipboard items; paste, copy or delete notes;
+  copy and edit quicklinks. Searchable, with its own shortcuts.
+- **Favourites** (⇧⌘F): starred apps, commands and quicklinks head the launcher and rank higher.
+- **Command mode:** start with `>` to see only commands.
+- Notes show up in launcher searches; "New note" and "Notes" commands.
+- Launcher rows follow the mouse; fewer stray matches ("saf" finds Safari, not "Display off").
+- Releases run the test suite before building.
+
 ## 1.5.2
 
 - The launcher looks exactly like the menu bar panel again: the same frosted material, or opaque when the panel is
