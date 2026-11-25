@@ -22,6 +22,8 @@ final class KeyPanel: NSPanel {
         level = .popUpMenu
         hidesOnDeactivate = false
         isReleasedWhenClosed = false
+        // Hover works even while another app stays active underneath.
+        acceptsMouseMovedEvents = true
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
     }
 

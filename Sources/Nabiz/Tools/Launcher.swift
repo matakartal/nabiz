@@ -44,10 +44,21 @@ final class LauncherModel {
     var selection = 0
     /// The clipboard list was opened from the launcher, so Escape goes back to it instead of closing.
     var cameFromLauncher = false
+    @ObservationIgnored private var lastPointer: CGPoint?
+
+    /// True when the mouse is somewhere new since the last call (screen coordinates).
+    func pointerMoved() -> Bool {
+        let now = NSEvent.mouseLocation
+        defer { lastPointer = now }
+        guard let lastPointer else { return false }
+        return lastPointer != now
+    }
+
     /// Closes the launcher; set by the panel.
     @ObservationIgnored var close: () -> Void = {}
 
     func reset(mode: Mode, text: String = "") {
+        lastPointer = NSEvent.mouseLocation
         self.mode = mode
         self.text = text
         selection = 0

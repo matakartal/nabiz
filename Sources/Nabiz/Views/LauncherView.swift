@@ -155,6 +155,13 @@ struct LauncherView: View {
                         ForEach(section.items) { item in
                             LauncherRow(item: item, selected: item.id == selectedID, compact: model.mode == .clipboard)
                                 .id(item.id)
+                                .onContinuousHover { phase in
+                                    // Only a real pointer move selects: rows sliding under a still pointer while
+                                    // scrolling with the arrow keys must not steal the selection.
+                                    guard case .active = phase, model.pointerMoved(),
+                                          let index = items.firstIndex(where: { $0.id == item.id }) else { return }
+                                    model.selection = index
+                                }
                                 .onTapGesture {
                                     if let index = items.firstIndex(where: { $0.id == item.id }) { model.selection = index }
                                     model.runPrimary()
