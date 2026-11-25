@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.5.2
+
+- The launcher looks exactly like the menu bar panel again: the same frosted material, or opaque when the panel is
+  set to opaque in Settings → Appearance.
+
 ## 1.5.1
 
 - AI limit alerts no longer repeat: each alert goes out once per limit window (matched to the hour, since providers

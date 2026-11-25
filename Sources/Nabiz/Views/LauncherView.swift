@@ -117,8 +117,6 @@ struct LauncherView: View {
             footer(items.first { $0.id == selectedID })
         }
         .frame(width: Theme.launcherWidth, height: Theme.launcherHeight)
-        // Always opaque, like Spotlight: a frosted launcher over busy windows is hard to read.
-        .background(Theme.surfaceRaised)
         .appearanceRoot()
         .onAppear { focused = true }
     }
