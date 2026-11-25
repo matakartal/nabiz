@@ -4,7 +4,7 @@ import ServiceManagement
 import SwiftUI
 
 enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
-    case general, appearance, menuBar, panel, schedules, markets, currency, ai, about
+    case general, appearance, menuBar, panel, launcher, clipboard, snippets, windows, schedules, markets, currency, ai, about
 
     var id: String { rawValue }
 
@@ -14,6 +14,10 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
         case .appearance: L("Görünüm", "Appearance")
         case .menuBar: L("Menü çubuğu", "Menu Bar")
         case .panel: L("Panel", "Panel")
+        case .launcher: L("Başlatıcı", "Launcher")
+        case .clipboard: L("Pano", "Clipboard")
+        case .snippets: L("Parçacıklar", "Snippets")
+        case .windows: L("Pencereler", "Windows")
         case .schedules: L("Görevler", "Schedules")
         case .markets: L("Piyasalar", "Markets")
         case .currency: L("Döviz", "Currency")
@@ -26,9 +30,13 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
     var subtitle: String {
         switch self {
         case .general: L("Dil, açılış, yenileme ve kısayollar.", "Language, startup, refresh and shortcuts.")
-        case .appearance: L("Renk, arka plan, boyut ve menü çubuğu renkleri.", "Colour, background, size and menu bar colours.")
+        case .appearance: L("Renk, tema, yazı tipi, boyut ve sıklık.", "Colour, theme, typeface, size and density.")
         case .menuBar: L("Menü çubuğunda ne ve nasıl görüneceği.", "What the menu bar shows, and how.")
-        case .panel: L("Paneldeki bölümler, katlama ve araçlar.", "The panel's sections, folding and tools.")
+        case .panel: L("Paneldeki bölümler, sıraları, katlama ve araçlar.", "The panel's sections, their order, folding and tools.")
+        case .launcher: L("Uygulama, komut, hesap ve web araması tek yerde.", "Apps, commands, maths and web search in one place.")
+        case .clipboard: L("Kopyaladıklarının geçmişi ve yapıştırma.", "The history of what you copied, and pasting.")
+        case .snippets: L("Kısa bir kelimeyle yapıştırılan hazır metinler.", "Saved text you paste with a short keyword.")
+        case .windows: L("Öndeki pencereyi kısayolla yerleştir.", "Place the front window with a shortcut.")
         case .schedules: L("Belirli gün ve saatlerde kendiliğinden yapılacak işler.", "Things done on their own at set days and times.")
         case .markets: L("Hyperliquid'den izlenecek piyasalar.", "The Hyperliquid markets to watch.")
         case .currency: L("Ana para birimi ve izlenen kurlar.", "Your main currency and the rates you watch.")
@@ -43,6 +51,10 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
         case .appearance: "paintpalette.fill"
         case .menuBar: "menubar.rectangle"
         case .panel: "list.bullet.rectangle.fill"
+        case .launcher: "magnifyingglass"
+        case .clipboard: "doc.on.clipboard.fill"
+        case .snippets: "text.quote"
+        case .windows: "rectangle.split.2x1.fill"
         case .schedules: "calendar.badge.clock"
         case .markets: "chart.line.uptrend.xyaxis"
         case .currency: "dollarsign.arrow.circlepath"
@@ -126,6 +138,10 @@ struct SettingsView: View {
                 case .appearance: AppearancePage()
                 case .menuBar: MenuBarPage()
                 case .panel: PanelPage()
+                case .launcher: LauncherPage()
+                case .clipboard: ClipboardPage()
+                case .snippets: SnippetsPage()
+                case .windows: WindowsPage()
                 case .schedules: SchedulesPage()
                 case .markets: MarketsPage()
                 case .currency: CurrencyPage()
@@ -151,6 +167,7 @@ private struct GeneralPage: View {
     @AppStorage(Prefs.refreshSeconds) private var refresh = 5
     @AppStorage(Prefs.hotkey) private var hotkey = true
     @AppStorage(Prefs.panelHotkey) private var panelHotkey = true
+    @AppStorage(Prefs.clipboardHotkey) private var clipboardHotkey = true
     @AppStorage(Prefs.notifications) private var notifications = false
     @AppStorage(Prefs.rustAutoClean) private var rustAutoClean = false
     @AppStorage(Prefs.rustAutoCleanDays) private var rustDays = 14
@@ -177,12 +194,13 @@ private struct GeneralPage: View {
             }
             Section {
                 Toggle(L("Paneli aç: ⌃⌥N", "Open the panel: ⌃⌥N"), isOn: $panelHotkey)
-                Toggle(L("Hızlı hesap: ⌃⌥Boşluk", "Quick calculator: ⌃⌥Space"), isOn: $hotkey)
+                Toggle(L("Başlatıcı: ⌃⌥Boşluk", "Launcher: ⌃⌥Space"), isOn: $hotkey)
+                Toggle(L("Pano geçmişi: ⌃⌥V", "Clipboard history: ⌃⌥V"), isOn: $clipboardHotkey)
             } header: {
                 Text(L("Kısayollar", "Shortcuts"))
             } footer: {
-                Footnote(L("Her yerden çalışır. Menü çubuğundaki simgeye sağ tıklayınca da kısa bir menü açılır.",
-                           "They work from anywhere. Right-clicking the menu bar item also opens a short menu."))
+                Footnote(L("Her yerden çalışır. Pencere kısayolları Pencereler sayfasında. Menü çubuğundaki simgeye sağ tıklayınca da kısa bir menü açılır.",
+                           "They work from anywhere. Window shortcuts are on the Windows page. Right-clicking the menu bar item also opens a short menu."))
             }
             Section {
                 Toggle(L("Bildirimler", "Notifications"), isOn: Binding(get: { notifications }, set: { on in
@@ -242,6 +260,7 @@ private struct GeneralPage: View {
 
 private struct MenuBarPage: View {
     @AppStorage(Prefs.barIcon) private var icon = true
+    @AppStorage(Prefs.barSymbol) private var symbol = "gauge.with.dots.needle.33percent"
     @AppStorage(Prefs.barLabels) private var labels = true
     @AppStorage(Prefs.barStyle) private var style = "stacked"
     @AppStorage(Prefs.barMarket) private var marketOn = false
@@ -289,6 +308,12 @@ private struct MenuBarPage: View {
             }
             Section {
                 Toggle(L("Simge", "Icon"), isOn: $icon)
+                Picker(L("Simge biçimi", "Icon style"), selection: $symbol) {
+                    ForEach(BarSymbol.all, id: \.self) { name in
+                        Label { Text(verbatim: BarSymbol.title(name)) } icon: { Image(systemName: name) }.tag(name)
+                    }
+                }
+                .disabled(!icon)
                 Toggle(L("Etiketleri yaz (CPU, RAM…)", "Show labels (CPU, RAM…)"), isOn: $labels)
                     .disabled(style != "line")
             } footer: {
@@ -321,13 +346,14 @@ private struct MenuBarPreview: View {
         TimelineView(.periodic(from: .now, by: 2)) { _ in
             let text = MenuBarText.compose(monitor: SettingsWindow.monitor)
             let parts = MenuBarText.parts(monitor: SettingsWindow.monitor)
+            let symbol = BarSymbol.current
             HStack(spacing: Theme.Spacing.xs) {
                 if stacked {
-                    let icon = (showIcon || parts.isEmpty) ? NSImage(systemSymbolName: "gauge.with.dots.needle.33percent", accessibilityDescription: nil) : nil
+                    let icon = (showIcon || parts.isEmpty) ? NSImage(systemSymbolName: symbol, accessibilityDescription: nil) : nil
                     Image(nsImage: MenuBarText.image(parts: parts, icon: icon, height: NSStatusBar.system.thickness))
                         .renderingMode(.template)
                 } else {
-                    if showIcon || text.isEmpty { Image(systemName: "gauge.with.dots.needle.33percent") }
+                    if showIcon || text.isEmpty { Image(systemName: symbol) }
                     if !text.isEmpty { Text(verbatim: text).monospacedDigit().lineLimit(1) }
                 }
             }
@@ -346,6 +372,7 @@ private struct PanelPage: View {
     @AppStorage(Prefs.accordion) private var accordion = false
     @AppStorage(Prefs.memoryAppCount) private var memoryCount = 5
     @AppStorage(Prefs.cpuAppCount) private var cpuCount = 3
+    @AppStorage(Prefs.sectionOrder) private var order = ""
 
     var body: some View {
         Form {
@@ -361,9 +388,13 @@ private struct PanelPage: View {
                            "Click a heading in the panel to open or close its section. A closed section shows a short summary in its heading."))
             }
             Section {
-                ForEach(PanelSection.allCases) { SectionSettingRow(section: $0, collapsible: collapsible) }
+                let ordered = PanelSection.ordered
+                ForEach(ordered) { section in
+                    SectionSettingRow(section: section, collapsible: collapsible,
+                                      isFirst: section == ordered.first, isLast: section == ordered.last)
+                }
             } header: {
-                Text(L("Bölümler", "Sections"))
+                Text(L("Bölümler ve sıraları", "Sections and their order"))
             } footer: {
                 HStack(spacing: Theme.Spacing.m) {
                     Button(L("Tümünü aç", "Expand all")) {
@@ -375,6 +406,8 @@ private struct PanelPage: View {
                     }
                     .disabled(!collapsible)
                     Spacer()
+                    Button(L("Sırayı sıfırla", "Reset order")) { order = "" }
+                        .disabled(order.isEmpty)
                 }
                 .padding(.horizontal, Theme.formInset)
             }
@@ -423,29 +456,55 @@ private struct ToolSettingRow: View {
     private var set: Set<String> { Set(hidden.split(separator: ",").map(String.init)) }
 }
 
-/// "Simulators   ☑ Open   [on]": whether the section shows, and whether it starts open.
+/// "↑ ↓  Simulators   ☑ Open   [on]": its place in the panel, whether it shows, and whether it starts open.
 private struct SectionSettingRow: View {
     let section: PanelSection
     let collapsible: Bool
+    var isFirst = false
+    var isLast = false
     @AppStorage private var shown: Bool
     @AppStorage private var expanded: Bool
 
-    init(section: PanelSection, collapsible: Bool) {
+    init(section: PanelSection, collapsible: Bool, isFirst: Bool, isLast: Bool) {
         self.section = section
         self.collapsible = collapsible
+        self.isFirst = isFirst
+        self.isLast = isLast
         _shown = AppStorage(wrappedValue: true, section.showKey)
         _expanded = AppStorage(wrappedValue: true, section.expandedKey)
     }
 
     var body: some View {
-        LabeledContent(section.title) {
+        LabeledContent {
             HStack(spacing: Theme.Spacing.l) {
                 Toggle(L("Açık", "Open"), isOn: Binding(get: { expanded }, set: { section.setExpanded($0) }))
                     .toggleStyle(.checkbox)
                     .disabled(!shown || !collapsible)
-                Toggle(section.title, isOn: $shown).labelsHidden()
+                Toggle(section.title, isOn: $shown).labelsHidden().toggleStyle(.switch).controlSize(.small)
+            }
+        } label: {
+            HStack(spacing: Theme.Spacing.s) {
+                MoveButtons(up: isFirst ? nil : { PanelSection.move(section, by: -1) },
+                            down: isLast ? nil : { PanelSection.move(section, by: 1) })
+                Image(systemName: section.symbol).foregroundStyle(Theme.textMuted).frame(width: Theme.menuIcon)
+                Text(verbatim: section.title)
             }
         }
+    }
+}
+
+/// Two small arrows that move a row up or down; a missing action greys its arrow out.
+private struct MoveButtons: View {
+    let up: (() -> Void)?
+    let down: (() -> Void)?
+
+    var body: some View {
+        HStack(spacing: Theme.Spacing.xs / 2) {
+            Button { up?() } label: { Image(systemName: "chevron.up") }.disabled(up == nil)
+            Button { down?() } label: { Image(systemName: "chevron.down") }.disabled(down == nil)
+        }
+        .buttonStyle(TextButtonStyle(font: Theme.small, color: Theme.textMuted))
+        .help(L("Sırasını değiştir", "Change its place"))
     }
 }
 
@@ -817,49 +876,60 @@ private struct UpdateRow: View {
 
 private struct AppearancePage: View {
     @AppStorage(Prefs.accentColor) private var accent = "green"
+    @AppStorage(Prefs.customAccent) private var customHex = "#1DB954"
     @AppStorage(Prefs.panelStyle) private var style = "material"
     @AppStorage(Prefs.panelWidth) private var width = 320
     @AppStorage(Prefs.textSize) private var textSize = "normal"
+    @AppStorage(Prefs.fontDesign) private var fontDesign = "standard"
+    @AppStorage(Prefs.density) private var density = "normal"
+    @AppStorage(Prefs.meterStyle) private var meterStyle = "thin"
+    @AppStorage(Prefs.appearanceMode) private var mode = "system"
     @AppStorage(Prefs.barColors) private var barColors = false
 
     var body: some View {
         Form {
             Section {} header: { PageHeader(page: .appearance) }
             Section {
-                HStack(spacing: Theme.Spacing.m) {
-                    ForEach(AccentChoice.allCases) { choice in
-                        Button { accent = choice.rawValue } label: {
-                            Circle().fill(choice.color)
-                                .frame(width: Theme.settingsIcon, height: Theme.settingsIcon)
-                                .overlay {
-                                    if accent == choice.rawValue {
-                                        Image(systemName: "checkmark").font(Theme.smallStrong).foregroundStyle(.white)
-                                    }
-                                }
-                                .padding(Theme.Spacing.xs / 2)
-                                .overlay(Circle().strokeBorder(accent == choice.rawValue ? choice.color : .clear, lineWidth: 2))
+                LazyVGrid(columns: Array(repeating: GridItem(.fixed(Theme.settingsIcon + Theme.Spacing.s), spacing: Theme.Spacing.s),
+                                         count: 9), alignment: .leading, spacing: Theme.Spacing.s) {
+                    ForEach(AccentChoice.swatches) { Swatch(choice: $0, selected: accent == $0.rawValue) { accent = $0.rawValue } }
+                }
+                .padding(.vertical, Theme.Spacing.xs)
+                LabeledContent(L("Sistemin vurgu rengi", "System accent colour")) {
+                    Swatch(choice: .system, selected: accent == AccentChoice.system.rawValue) { accent = $0.rawValue }
+                }
+                LabeledContent(L("Kendi rengin", "Your own colour")) {
+                    HStack(spacing: Theme.Spacing.m) {
+                        if accent == AccentChoice.custom.rawValue {
+                            Text(verbatim: customHex.uppercased()).font(Theme.small).monospacedDigit().foregroundStyle(Theme.textMuted)
                         }
-                        .buttonStyle(.plain)
-                        .help(choice.title)
-                        .accessibilityLabel(choice.title)
+                        ColorPicker("", selection: customBinding, supportsOpacity: false).labelsHidden()
                     }
                 }
             } header: {
                 Text(L("Vurgu rengi", "Accent colour"))
             } footer: {
-                Footnote(L("Göstergeler, düğmeler, açık araçlar ve grafikler bu rengi alır. Turuncu ve kırmızı uyarılar için ayrıldı.",
-                           "Meters, buttons, active tools and charts take this colour. Orange and red are kept for warnings."))
+                Footnote(L("Göstergeler, düğmeler, açık araçlar, başlatıcı ve grafikler bu rengi alır. Turuncu ve kırmızı uyarılar için ayrıldı; çok açık bir renk seçersen yazılar zor okunabilir.",
+                           "Meters, buttons, active tools, the launcher and charts take this colour. Orange and red are kept for warnings; a very light colour can make text hard to read."))
             }
-            Section(L("Panel", "Panel")) {
+            Section(L("Tema", "Theme")) {
+                Picker(L("Görünüm", "Appearance"), selection: $mode) {
+                    Text(L("Sistem", "System")).tag("system")
+                    Text(L("Açık", "Light")).tag("light")
+                    Text(L("Koyu", "Dark")).tag("dark")
+                }
+                .pickerStyle(.segmented)
                 Picker(L("Arka plan", "Background"), selection: $style) {
                     Text(L("Buzlu cam", "Frosted")).tag("material")
                     Text(L("Opak", "Opaque")).tag("opaque")
                 }
                 .pickerStyle(.segmented)
-                Picker(L("Genişlik", "Width"), selection: $width) {
-                    Text(L("Dar", "Narrow")).tag(300)
-                    Text(L("Normal", "Normal")).tag(320)
-                    Text(L("Geniş", "Wide")).tag(360)
+            }
+            Section(L("Yazı", "Text")) {
+                Picker(L("Yazı tipi", "Typeface"), selection: $fontDesign) {
+                    Text(L("Standart", "Standard")).tag("standard")
+                    Text(L("Yuvarlak", "Rounded")).font(.system(.body, design: .rounded)).tag("rounded")
+                    Text(L("Eşit aralıklı", "Monospaced")).font(.system(.body, design: .monospaced)).tag("mono")
                 }
                 .pickerStyle(.segmented)
                 Picker(L("Yazı boyutu", "Text size"), selection: $textSize) {
@@ -868,16 +938,75 @@ private struct AppearancePage: View {
                 }
                 .pickerStyle(.segmented)
             }
+            Section(L("Panel", "Panel")) {
+                Picker(L("Genişlik", "Width"), selection: $width) {
+                    Text(L("Dar", "Narrow")).tag(300)
+                    Text(L("Normal", "Normal")).tag(320)
+                    Text(L("Geniş", "Wide")).tag(360)
+                }
+                .pickerStyle(.segmented)
+                Picker(L("Satırlar", "Rows"), selection: $density) {
+                    Text(L("Sıkı", "Compact")).tag("compact")
+                    Text(L("Normal", "Normal")).tag("normal")
+                    Text(L("Ferah", "Roomy")).tag("roomy")
+                }
+                .pickerStyle(.segmented)
+                Picker(L("Çubuklar", "Bars"), selection: $meterStyle) {
+                    Text(L("İnce", "Thin")).tag("thin")
+                    Text(L("Kalın", "Thick")).tag("thick")
+                }
+                .pickerStyle(.segmented)
+            }
             Section {
                 Toggle(L("Değerleri renklendir", "Colour the values"), isOn: $barColors)
             } header: {
                 Text(L("Menü çubuğu", "Menu bar"))
             } footer: {
-                Footnote(L("Dikkat isteyen değer turuncu ya da kırmızı olur (yoğun CPU, sıkışık bellek, azalan pil, biten AI limiti); piyasalar yükselişte yeşil, düşüşte kırmızı. Her şey yolundaysa menü çubuğu sade kalır.",
-                           "A value that needs attention turns orange or red (busy CPU, tight memory, low battery, an AI limit running out); markets go green when up and red when down. When all is well the menu bar stays plain."))
+                Footnote(L("Dikkat isteyen değer turuncu ya da kırmızı olur (yoğun CPU, sıkışık bellek, azalan pil, biten AI limiti); piyasalar yükselişte yeşil, düşüşte kırmızı. Her şey yolundaysa menü çubuğu sade kalır. Simge biçimi Menü çubuğu sayfasında.",
+                           "A value that needs attention turns orange or red (busy CPU, tight memory, low battery, an AI limit running out); markets go green when up and red when down. When all is well the menu bar stays plain. The icon style is on the Menu Bar page."))
+            }
+            Section {
+                Button(L("Görünümü sıfırla", "Reset appearance")) {
+                    for key in [Prefs.accentColor, Prefs.customAccent, Prefs.panelStyle, Prefs.panelWidth, Prefs.textSize, Prefs.fontDesign,
+                                Prefs.density, Prefs.meterStyle, Prefs.appearanceMode, Prefs.barColors] {
+                        UserDefaults.standard.removeObject(forKey: key)
+                    }
+                }
             }
         }
         .formStyle(.grouped)
+    }
+
+    /// The colour well: picking a colour also makes it the accent.
+    private var customBinding: Binding<Color> {
+        Binding(get: { Color(hex: customHex) ?? Palette.green.fill }, set: { color in
+            guard let rgb = NSColor(color).usingColorSpace(.sRGB) else { return }
+            customHex = String(format: "#%02X%02X%02X", Int((rgb.redComponent * 255).rounded()),
+                               Int((rgb.greenComponent * 255).rounded()), Int((rgb.blueComponent * 255).rounded()))
+            accent = AccentChoice.custom.rawValue
+        })
+    }
+}
+
+/// One accent colour: a dot, ringed and ticked when chosen.
+private struct Swatch: View {
+    let choice: AccentChoice
+    let selected: Bool
+    let pick: (AccentChoice) -> Void
+
+    var body: some View {
+        Button { pick(choice) } label: {
+            Circle().fill(choice.color)
+                .frame(width: Theme.settingsIcon, height: Theme.settingsIcon)
+                .overlay {
+                    if selected { Image(systemName: "checkmark").font(Theme.smallStrong).foregroundStyle(.white) }
+                }
+                .padding(Theme.Spacing.xs / 2)
+                .overlay(Circle().strokeBorder(selected ? choice.color : .clear, lineWidth: 2))
+        }
+        .buttonStyle(.plain)
+        .help(choice.title)
+        .accessibilityLabel(choice.title)
     }
 }
 
@@ -1026,5 +1155,286 @@ private struct WeekdayChips: View {
         if days == Set(2...6) { return L("Hafta içi", "Weekdays") }
         if days == [1, 7] { return L("Hafta sonu", "Weekends") }
         return order.filter(days.contains).map(name).joined(separator: " ")
+    }
+}
+
+// MARK: - Launcher, clipboard, snippets, windows
+
+private struct LauncherPage: View {
+    @AppStorage(Prefs.hotkey) private var hotkey = true
+    @AppStorage(Prefs.launcherApps) private var apps = true
+    @AppStorage(Prefs.launcherClipboard) private var clips = true
+    private let store = LauncherStore.shared
+
+    var body: some View {
+        Form {
+            Section {} header: { PageHeader(page: .launcher) }
+            Section {
+                Toggle(L("⌃⌥Boşluk ile aç", "Open with ⌃⌥Space"), isOn: $hotkey)
+                Toggle(L("Uygulamaları ara", "Search apps"), isOn: $apps)
+                Toggle(L("Pano öğelerini göster", "Show clipboard items"), isOn: $clips)
+                Button(L("Başlatıcıyı aç", "Open the launcher")) { LauncherPanel.shared.show() }
+            } footer: {
+                Footnote(L("Yaz: uygulama adı, komut (kilitle, uyut, sol yarı…), hesap (12*4, 100 usd, 5 km mi), \"25 dk\" zamanlayıcı ya da \"g kelime\" ile web araması. ↑↓ seç, ↩ çalıştır, ⌘↩ ikinci işlem, esc kapat.",
+                           "Type an app name, a command (lock, sleep, left half…), maths (12*4, 100 usd, 5 km mi), \"25 min\" for a timer or \"g words\" to search the web. ↑↓ to pick, ↩ to run, ⌘↩ for the second action, esc to close."))
+            }
+            Section {
+                ForEach(store.quicklinks) { QuicklinkRow(link: $0) }
+                HStack {
+                    Button {
+                        store.save(quicklink: Quicklink(keyword: "", name: L("Yeni bağlantı", "New link"), url: "https://"))
+                    } label: { Label(L("Bağlantı ekle", "Add a link"), systemImage: "plus") }
+                    Spacer()
+                    Button(L("Varsayılanlar", "Defaults")) {
+                        store.quicklinks.forEach(store.remove(quicklink:))
+                        LauncherStore.defaultQuicklinks.forEach(store.save(quicklink:))
+                    }
+                }
+            } header: {
+                Text(L("Hızlı bağlantılar", "Quicklinks"))
+            } footer: {
+                Footnote(L("Adreste {query} yazan yere, kısaltmadan sonra yazdığın gelir: \"gh nabiz\" → GitHub'da nabiz araması. İlk bağlantı, başka sonuç olmayınca web araması için kullanılır.",
+                           "{query} in the address is replaced by what you type after the keyword: \"gh nabiz\" searches GitHub for nabiz. The first link is used for web search when nothing else matches."))
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+private struct QuicklinkRow: View {
+    let link: Quicklink
+    private let store = LauncherStore.shared
+
+    var body: some View {
+        HStack(spacing: Theme.Spacing.s) {
+            TextField(L("Kısaltma", "Keyword"), text: binding(\.keyword)).frame(width: 64)
+            TextField(L("Ad", "Name"), text: binding(\.name)).frame(width: 110)
+            TextField("https://…{query}", text: binding(\.url))
+            Button { store.remove(quicklink: link) } label: { Image(systemName: "minus.circle") }
+                .buttonStyle(TextButtonStyle(color: Theme.textMuted))
+                .help(L("Sil", "Delete"))
+        }
+        .labelsHidden()
+        .textFieldStyle(.roundedBorder)
+    }
+
+    private func binding(_ path: WritableKeyPath<Quicklink, String>) -> Binding<String> {
+        Binding(get: { link[keyPath: path] }, set: { value in
+            var copy = link
+            copy[keyPath: path] = value
+            store.save(quicklink: copy)
+        })
+    }
+}
+
+private struct ClipboardPage: View {
+    @AppStorage(Prefs.clipboardEnabled) private var enabled = true
+    @AppStorage(Prefs.clipboardHotkey) private var hotkey = true
+    @AppStorage(Prefs.clipboardSave) private var save = true
+    @AppStorage(Prefs.clipboardLimit) private var limit = 200
+    @AppStorage(Prefs.clipboardDays) private var days = 30
+    @AppStorage(Prefs.clipboardExcluded) private var excluded = ""
+    @AppStorage(Prefs.autoPaste) private var autoPaste = true
+    private let history = ClipboardHistory.shared
+
+    var body: some View {
+        Form {
+            Section {} header: { PageHeader(page: .clipboard) }
+            Section {
+                Toggle(L("Pano geçmişini tut", "Keep clipboard history"), isOn: $enabled)
+                Toggle(L("⌃⌥V ile aç", "Open with ⌃⌥V"), isOn: $hotkey).disabled(!enabled)
+                Toggle(L("Yeniden başlatınca da hatırla", "Remember after a restart"), isOn: Binding(get: { save }, set: { on in
+                    save = on
+                    history.save()
+                }))
+                .disabled(!enabled)
+                Picker(L("En fazla", "Keep up to"), selection: $limit) {
+                    ForEach([50, 100, 200, 500, 1000], id: \.self) { Text(L("\($0) öğe", "\($0) items")).tag($0) }
+                }
+                .disabled(!enabled)
+                Picker(L("Silinme süresi", "Forget after"), selection: $days) {
+                    Text(L("1 gün", "1 day")).tag(1)
+                    Text(L("7 gün", "7 days")).tag(7)
+                    Text(L("30 gün", "30 days")).tag(30)
+                    Text(L("90 gün", "90 days")).tag(90)
+                    Text(L("Hiç", "Never")).tag(0)
+                }
+                .disabled(!enabled)
+            } footer: {
+                Footnote(L("Metin, bağlantı, renk kodu, dosya ve 3 MB'a kadar görseller tutulur; sabitlenenler hiç silinmez. Şifre yöneticilerinin gizli işaretlediği kopyalar ve aşağıdaki uygulamalardan kopyalananlar hiç kaydedilmez. Her şey yalnızca bu Mac'te kalır.",
+                           "Text, links, colour codes, files and images up to 3 MB are kept; pinned items are never removed. Copies password managers mark as secret, and anything copied in the apps below, are never saved. Everything stays on this Mac."))
+            }
+            Section {
+                Toggle(L("↩ ile yapıştır", "Paste with ↩"), isOn: $autoPaste)
+                AccessibilityRow()
+            } header: {
+                Text(L("Yapıştırma", "Pasting"))
+            } footer: {
+                Footnote(L("Seçtiğini, imlecin olduğu uygulamaya doğrudan yapıştırır. Bunun için macOS'in Erişilebilirlik izni gerekir; izin yoksa yalnızca kopyalanır.",
+                           "Pastes what you pick straight into the app with the cursor. macOS needs Accessibility permission for this; without it, the item is only copied."))
+            }
+            Section {
+                ForEach(customExcluded, id: \.self) { bundle in
+                    HStack {
+                        Text(verbatim: appName(bundle))
+                        Spacer()
+                        Button { setExcluded(customExcluded.filter { $0 != bundle }) } label: { Image(systemName: "minus.circle") }
+                            .buttonStyle(TextButtonStyle(color: Theme.textMuted))
+                    }
+                }
+                Button { addExcluded() } label: { Label(L("Uygulama ekle…", "Add an app…"), systemImage: "plus") }
+            } header: {
+                Text(L("Kaydedilmeyen uygulamalar", "Apps never recorded"))
+            } footer: {
+                Footnote(L("Her zaman hariç: 1Password, Bitwarden, LastPass, Dashlane, KeePassXC, Anahtar Zinciri ve Parolalar.",
+                           "Always left out: 1Password, Bitwarden, LastPass, Dashlane, KeePassXC, Keychain Access and Passwords."))
+            }
+            Section {
+                Button(L("Geçmişi temizle (\(history.items.filter { !$0.pinned }.count))…", "Clear history (\(history.items.filter { !$0.pinned }.count))…"),
+                       role: .destructive) { clear() }
+                    .disabled(history.items.allSatisfy(\.pinned))
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private var customExcluded: [String] { excluded.split(separator: ",").map(String.init) }
+
+    private func setExcluded(_ list: [String]) { excluded = list.joined(separator: ",") }
+
+    private func appName(_ bundle: String) -> String {
+        NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundle)
+            .map { FileManager.default.displayName(atPath: $0.path).replacingOccurrences(of: ".app", with: "") } ?? bundle
+    }
+
+    private func addExcluded() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.application]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.allowsMultipleSelection = true
+        NSApp.activate()
+        guard panel.runModal() == .OK else { return }
+        let bundles = panel.urls.compactMap { Bundle(url: $0)?.bundleIdentifier }
+        setExcluded(Array(Set(customExcluded + bundles)).sorted())
+    }
+
+    private func clear() {
+        let alert = NSAlert()
+        alert.messageText = L("Pano geçmişi temizlensin mi?", "Clear the clipboard history?")
+        alert.informativeText = L("Sabitlenenler dışındaki her şey silinir. Bu geri alınamaz.", "Everything except pinned items is deleted. This can't be undone.")
+        alert.addButton(withTitle: L("Temizle", "Clear"))
+        alert.addButton(withTitle: L("Vazgeç", "Cancel"))
+        alert.buttons.first?.hasDestructiveAction = true
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        history.clear()
+    }
+}
+
+/// Whether macOS lets Nabız paste and move windows, with a button to ask. Checked every two seconds while shown.
+private struct AccessibilityRow: View {
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 2)) { _ in
+            LabeledContent(L("Erişilebilirlik izni", "Accessibility permission")) {
+                if Paster.isTrusted {
+                    Label(L("Verildi", "Granted"), systemImage: "checkmark.circle.fill").foregroundStyle(Palette.green.mark)
+                } else {
+                    HStack(spacing: Theme.Spacing.m) {
+                        Text(L("Gerekli", "Needed")).foregroundStyle(Theme.warning.mark)
+                        Button(L("İzin ver…", "Allow…")) {
+                            Paster.requestTrust()
+                            Paster.openAccessibilitySettings()
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct SnippetsPage: View {
+    private let store = LauncherStore.shared
+
+    var body: some View {
+        Form {
+            Section {} header: { PageHeader(page: .snippets) }
+            Section {
+                if store.snippets.isEmpty {
+                    Text(L("Henüz parçacık yok.", "No snippets yet.")).foregroundStyle(Theme.textMuted)
+                }
+                ForEach(store.snippets) { SnippetRow(snippet: $0) }
+                Button {
+                    store.save(snippet: Snippet(keyword: "", name: L("Yeni parçacık", "New snippet"), text: ""))
+                } label: { Label(L("Parçacık ekle", "Add a snippet"), systemImage: "plus") }
+            } footer: {
+                Footnote(L("Başlatıcıda kısaltmayı ya da adını yaz, ↩ ile yapıştır. Metinde {date} bugünün tarihi, {time} saat, {clipboard} panodaki metin olur. Örnek: imza, adres, IBAN açıklaması, sık yazdığın yanıtlar.",
+                           "Type the keyword or name in the launcher and press ↩ to paste. In the text, {date} becomes today's date, {time} the time and {clipboard} what's on the clipboard. Good for a signature, an address, replies you write often."))
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+private struct SnippetRow: View {
+    let snippet: Snippet
+    private let store = LauncherStore.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.s) {
+            HStack(spacing: Theme.Spacing.s) {
+                TextField(L("Kısaltma", "Keyword"), text: binding(\.keyword)).frame(width: 90)
+                TextField(L("Ad", "Name"), text: binding(\.name))
+                Button { store.remove(snippet: snippet) } label: { Image(systemName: "minus.circle") }
+                    .buttonStyle(TextButtonStyle(color: Theme.textMuted))
+                    .help(L("Sil", "Delete"))
+            }
+            .labelsHidden()
+            .textFieldStyle(.roundedBorder)
+            TextEditor(text: binding(\.text))
+                .font(Theme.body)
+                .frame(minHeight: Theme.launcherRow * 2)
+                .scrollContentBackground(.hidden)
+                .padding(Theme.Spacing.xs)
+                .background(Theme.field, in: RoundedRectangle(cornerRadius: Theme.fieldRadius, style: .continuous))
+        }
+        .padding(.vertical, Theme.Spacing.xs)
+    }
+
+    private func binding(_ path: WritableKeyPath<Snippet, String>) -> Binding<String> {
+        Binding(get: { snippet[keyPath: path] }, set: { value in
+            var copy = snippet
+            copy[keyPath: path] = value
+            store.save(snippet: copy)
+        })
+    }
+}
+
+private struct WindowsPage: View {
+    @AppStorage(Prefs.windowHotkeys) private var hotkeys = false
+
+    var body: some View {
+        Form {
+            Section {} header: { PageHeader(page: .windows) }
+            Section {
+                Toggle(L("Pencere kısayolları", "Window shortcuts"), isOn: Binding(get: { hotkeys }, set: { on in
+                    hotkeys = on
+                    if on && !Paster.isTrusted { Paster.requestTrust() }
+                }))
+                AccessibilityRow()
+            } footer: {
+                Footnote(L("Öndeki pencereyi taşır ve boyutlandırır. Bunun için Erişilebilirlik izni gerekir. Kısayolları kapalı olsa da başlatıcıda \"sol yarı\", \"ortala\" yazarak kullanabilirsin.",
+                           "Moves and resizes the front window. This needs Accessibility permission. With shortcuts off you can still type \"left half\" or \"center\" in the launcher."))
+            }
+            Section(L("Yerleşimler", "Layouts")) {
+                ForEach(WindowAction.allCases) { action in
+                    LabeledContent {
+                        Text(verbatim: action.shortcut ?? L("Başlatıcıdan", "From the launcher"))
+                            .monospacedDigit().foregroundStyle(Theme.textMuted)
+                    } label: {
+                        Label(action.title, systemImage: action.symbol)
+                    }
+                }
+            }
+        }
+        .formStyle(.grouped)
     }
 }

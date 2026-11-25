@@ -12,7 +12,7 @@
   <img src="docs/tools.png" width="320" alt="The panel with the tools grid open">
 </p>
 
-<p align="center"><img src="docs/calculator.png" width="520" alt="Quick calculator converting 100 USD to TRY"></p>
+<p align="center"><img src="docs/launcher.png" width="620" alt="The launcher finding apps and commands for &quot;sa&quot;"></p>
 
 <p align="center"><img src="docs/settings.png" width="760" alt="Settings: the Markets page with every Hyperliquid market"></p>
 
@@ -66,17 +66,29 @@ On first launch, a short welcome explains where things are and offers to open Na
   - hide desktop icons
   - clear clipboard
   - Activity Monitor
-- **Quick calculator** (⌃⌥Space from anywhere):
-  - maths: `12*4`, `(3+4)^2`
-  - percentages: `200 + %18`
-  - currencies: `100 usd`, `250 € tl`, `1.500 eur to usd`
-  - units: `5 km mi`, `100 f c`, `2 gb mb`, `90 min h`
-
-  Enter copies the result.
+- **Launcher** (⌃⌥Space from anywhere): one field for everything, keyboard first (↑↓, ↩, ⌘↩ for the second action):
+  - apps: type a few letters ("saf", "vsc"), ↩ opens, ⌘↩ quits a running one
+  - commands: lock screen, sleep, display off, hide other apps, empty Trash, restart, shut down…
+  - maths, currencies and units: `12*4`, `200 + %18`, `100 usd`, `250 € tl`, `5 km mi`, `2 gb mb`
+  - timers: `25 dk` / `25 min`; keep awake for an hour or indefinitely
+  - quicklinks: `g words` searches Google, `gh`, `yt`, `w`, `hl`, `cl`, `gpt`… (edit your own with `{query}`)
+  - snippets: saved text with `{date}`, `{time}` and `{clipboard}`, pasted by keyword
+  - recent items when the field is empty
+- **Clipboard history** (⌃⌥V): text, links, colours, files and images, searchable, with a preview. Pin what you
+  keep using. ↩ pastes straight into the app you were in (with Accessibility permission), ⌘↩ only copies. Password
+  managers' secret copies and apps you exclude are never recorded; everything stays on your Mac.
+- **Window layouts:** halves, thirds, centre, maximize, next display. Opt-in shortcuts ⌃⌥←→↑↓, ⌃⌥↩, ⌃⌥C.
+- **Floating note:** a small note above every app and Space, saved as you type.
+- **Personalization:** 17 accent colours plus the system accent and a colour of your own, light/dark/system theme,
+  standard, rounded or monospaced type, compact/normal/roomy rows, thin or thick bars, frosted or opaque panel,
+  panel width, menu bar icon, and the panel's section order.
 - **Settings:** a sidebar of pages:
   - General: language (Türkçe / English / system), open at login, refresh rate, shortcut
   - Menu Bar
-  - Panel: sections, folding, accordion mode, tools
+  - Appearance: colours, theme, typeface, density
+  - Panel: sections and their order, folding, accordion mode, tools
+  - Launcher, Clipboard, Snippets, Windows
+  - Schedules
   - Markets
   - Currency
   - AI Limits
@@ -95,6 +107,7 @@ Nabız reads only your own user's processes and never asks for administrator rig
 
 - Screenshot asks for screen recording.
 - Dark mode asks for control of System Events.
+- Pasting from the launcher and window layouts ask for Accessibility. Without it, items are only copied.
 
 ## Build
 
@@ -120,7 +133,8 @@ To regenerate the app icon, run `swift scripts/make-icon.swift`.
 
 There are two development helpers:
 
-- `Nabiz --snapshot out.png [--dark] [--settings]` renders the panel or Settings with live data, for layout checks.
+- `Nabiz --snapshot out.png [--dark] [--settings]` renders the panel or Settings with live data, for layout checks;
+  `--launcher "100 usd"` (add `--clipboard` for the clipboard list) renders the launcher.
 - `Nabiz --calc "5 km mi"` prints what the calculator would show.
 
 ## Project layout
@@ -173,6 +187,11 @@ Nabız, Mac'inin nabzını menü çubuğunda tutan küçük, yerel (native) ve a
   - disk çıkarma
   - Xcode temizliği
   - ve daha fazlası
+- **Başlatıcı (⌃⌥Boşluk):** uygulama aç, komut çalıştır (kilitle, uyut, çöpü boşalt…), hesapla ve çevir (`100 usd`), `25 dk` zamanlayıcı, `g kelime` ile web araması, kısaltmayla parçacık yapıştır.
+- **Pano geçmişi (⌃⌥V):** metin, bağlantı, renk, dosya ve görseller; ara, sabitle, ↩ ile doğrudan yapıştır. Şifre yöneticilerinin gizli kopyaları kaydedilmez; her şey Mac'te kalır.
+- **Pencere yerleşimi:** yarım, üçte bir, ortala, ekranı kapla, sonraki ekran (isteğe bağlı ⌃⌥ ok tuşları).
+- **Yüzen not:** her uygulamanın üstünde duran küçük not.
+- **Kişiselleştirme:** 17 vurgu rengi + sistem rengi + kendi rengin, açık/koyu tema, yuvarlak ya da eşit aralıklı yazı, satır sıklığı, çubuk kalınlığı, menü çubuğu simgesi ve panel bölümlerinin sırası.
 - **Ayarlar:** kenar çubuklu; Türkçe ve İngilizce.
 
 **Gizlilik:** Mac'inle ilgili her şey Mac'in içinde ölçülür. Analitik yoktur. Dışarıya giden istekler yalnızca şunlardır:

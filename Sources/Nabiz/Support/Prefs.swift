@@ -5,6 +5,7 @@ import Foundation
 enum Prefs {
     static let language = "language"
     static let refreshSeconds = "refreshSeconds"
+    /// ⌃⌥Space opens the launcher (it was the quick calculator; the key stays so the setting carries over).
     static let hotkey = "calculatorHotkey"
     static let panelHotkey = "panelHotkey"
     /// Alerts for critical memory and an almost-used AI limit.
@@ -64,6 +65,41 @@ enum Prefs {
     static let baseCurrency = "baseCurrency"
     static let watchedCurrencies = "watchedCurrencies"
 
+    // Launcher, clipboard, windows.
+    /// ⌃⌥V opens the clipboard history.
+    static let clipboardHotkey = "clipboardHotkey"
+    static let clipboardEnabled = "clipboardEnabled"
+    /// Keep the history on disk across restarts.
+    static let clipboardSave = "clipboardSave"
+    static let clipboardLimit = "clipboardLimit"
+    /// Forget unpinned items older than this many days (0 = never).
+    static let clipboardDays = "clipboardDays"
+    /// Bundle ids, comma separated, whose copies are never kept.
+    static let clipboardExcluded = "clipboardExcluded"
+    /// Return pastes into the app in front (needs Accessibility) instead of only copying.
+    static let autoPaste = "autoPaste"
+    static let launcherApps = "launcherApps"
+    static let launcherClipboard = "launcherClipboard"
+    /// ⌃⌥ arrows, Return and C move the front window.
+    static let windowHotkeys = "windowHotkeys"
+    static let noteText = "floatingNote"
+
+    // Personalization.
+    /// "system", "light" or "dark": Nabız's own windows, whatever macOS uses.
+    static let appearanceMode = "appearanceMode"
+    /// "standard", "rounded" or "mono".
+    static let fontDesign = "fontDesign"
+    /// "compact", "normal" or "roomy" rows in the panel.
+    static let density = "density"
+    /// "thin" or "thick" usage bars.
+    static let meterStyle = "meterStyle"
+    /// The SF Symbol shown in the menu bar when the icon is on.
+    static let barSymbol = "barSymbol"
+    /// "#RRGGBB" for the custom accent.
+    static let customAccent = "customAccent"
+    /// Panel section ids, comma separated, in the order they show.
+    static let sectionOrder = "sectionOrder"
+
     static func registerDefaults() {
         UserDefaults.standard.register(defaults: [
             language: "system", refreshSeconds: 5, hotkey: true, panelHotkey: true, notifications: false, onboarded: false,
@@ -78,6 +114,10 @@ enum Prefs {
             "ai.claude": false, "ai.codex": false, "ai.gemini": false,
             memoryAppCount: 5, cpuAppCount: 3,
             baseCurrency: "TRY", watchedCurrencies: "USD,EUR,GBP",
+            clipboardHotkey: true, clipboardEnabled: true, clipboardSave: true, clipboardLimit: 200, clipboardDays: 30,
+            clipboardExcluded: "", autoPaste: true, launcherApps: true, launcherClipboard: true, windowHotkeys: false,
+            appearanceMode: "system", fontDesign: "standard", density: "normal", meterStyle: "thin",
+            barSymbol: "gauge.with.dots.needle.33percent", customAccent: "#1DB954", sectionOrder: "",
         ])
     }
 
@@ -149,6 +189,19 @@ enum PanelSection: String, CaseIterable, Identifiable {
     }
 
     var expandedKey: String { "expanded.\(rawValue)" }
+
+    /// In the order chosen in Settings → Panel; sections added in later versions go to the end.
+    static var ordered: [PanelSection] {
+        let saved = Prefs.string(Prefs.sectionOrder).split(separator: ",").compactMap { PanelSection(rawValue: String($0)) }
+        return saved + allCases.filter { !saved.contains($0) }
+    }
+
+    static func move(_ section: PanelSection, by offset: Int) {
+        var list = ordered
+        guard let index = list.firstIndex(of: section), list.indices.contains(index + offset) else { return }
+        list.swapAt(index, index + offset)
+        UserDefaults.standard.set(list.map(\.rawValue).joined(separator: ","), forKey: Prefs.sectionOrder)
+    }
 
     var isExpanded: Bool { UserDefaults.standard.object(forKey: expandedKey) as? Bool ?? true }
 

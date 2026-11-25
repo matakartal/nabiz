@@ -2,35 +2,6 @@ import AppKit
 import Carbon.HIToolbox
 import SwiftUI
 
-/// A Spotlight-style floating field for quick maths and currency conversion. ⌃⌥Space toggles it from anywhere.
-@MainActor
-final class CalculatorPanel {
-    static let shared = CalculatorPanel()
-    private var panel: KeyPanel?
-
-    func toggle() {
-        if panel?.isVisible == true { close() } else { show() }
-    }
-
-    func show() {
-        RateStore.shared.refreshIfNeeded()
-        let panel = self.panel ?? KeyPanel()
-        self.panel = panel
-        // A fresh view each time: empty field, focused.
-        let host = NSHostingView(rootView: CalculatorView { [weak self] in self?.close() })
-        host.frame = NSRect(origin: .zero, size: host.fittingSize)
-        panel.contentView = host
-        panel.useMenuMaterial()
-        panel.setContentSize(host.fittingSize)
-        if let screen = NSScreen.main?.visibleFrame {
-            panel.setFrameOrigin(NSPoint(x: screen.midX - host.fittingSize.width / 2, y: screen.minY + screen.height * 0.68))
-        }
-        panel.present()
-    }
-
-    func close() { panel?.orderOut(nil) }
-}
-
 /// A borderless panel that takes typing without activating Nabız, the way system menus and Spotlight do.
 /// It never depends on app activation (macOS 14+ may refuse it), so it stays open until the user dismisses it:
 /// Escape, a click outside, or another app coming forward.
@@ -126,80 +97,40 @@ final class KeyPanel: NSPanel {
     }
 }
 
-struct CalculatorView: View {
-    let onDone: () -> Void
-    @State private var text: String
-
-    init(text: String = "", onDone: @escaping () -> Void) {
-        _text = State(initialValue: text)
-        self.onDone = onDone
-    }
-    @FocusState private var focused: Bool
-    private let rates = RateStore.shared
-
-    var body: some View {
-        // Touching `rates.table` makes the view redraw when rates arrive.
-        let result = rates.table.map { _ in Calculator.evaluate(text) } ?? Calculator.evaluate(text)
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: Theme.Spacing.m) {
-                Image(systemName: "equal.circle.fill").font(Theme.input).foregroundStyle(Theme.accent)
-                TextField(L("Hesapla ya da çevir", "Calculate or convert"), text: $text)
-                    .textFieldStyle(.plain)
-                    .font(Theme.input)
-                    .foregroundStyle(Theme.text)
-                    .focused($focused)
-                    .onSubmit { copy(result) }
-            }
-            .padding(Theme.Spacing.l)
-
-            Rectangle().fill(Theme.hairline).frame(height: 1)
-
-            HStack(alignment: .firstTextBaseline) {
-                if let result {
-                    Text(verbatim: result.text).font(Theme.inputStrong).foregroundStyle(Theme.text)
-                        .textSelection(.enabled).lineLimit(1).minimumScaleFactor(0.6)
-                    Spacer(minLength: Theme.Spacing.m)
-                    if !result.copy.isEmpty {
-                        Text(L("↩ kopyala", "↩ copy")).font(Theme.small).foregroundStyle(Theme.textMuted)
-                    }
-                } else {
-                    Text(verbatim: hint).font(Theme.small).foregroundStyle(Theme.textMuted)
-                    Spacer()
-                }
-            }
-            .padding(.horizontal, Theme.Spacing.l)
-            .padding(.vertical, Theme.Spacing.m)
-        }
-        .frame(width: 520)
-        .appearanceRoot()
-        .onAppear { focused = true }
-    }
-
-    private var hint: String {
-        L("Örnek: 12*4 · 200 + %18 · 100 usd · 250 € tl · 5 km mi · 100 f c · 2 gb mb",
-          "e.g. 12*4 · 200 + 18% · 100 usd · 250 € try · 5 km mi · 100 f c · 2 gb mb")
-    }
-
-    private func copy(_ result: Calculator.Result?) {
-        guard let result, !result.copy.isEmpty else { return }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(result.copy, forType: .string)
-        onDone()
-    }
-}
-
-/// Global shortcuts: ⌃⌥Space for the calculator, ⌃⌥N for the panel. Carbon hot keys need no Accessibility permission.
+/// Global shortcuts. Carbon hot keys need no Accessibility permission (moving windows does).
 @MainActor
 enum HotKey {
     enum Shortcut: UInt32, CaseIterable {
-        case calculator = 1, panel = 2
+        case launcher = 1, panel = 2, clipboard = 3
+        case leftHalf = 10, rightHalf, topHalf, bottomHalf, maximize, center
 
         var key: Int {
             switch self {
-            case .calculator: kVK_Space
+            case .launcher: kVK_Space
             case .panel: kVK_ANSI_N
+            case .clipboard: kVK_ANSI_V
+            case .leftHalf: kVK_LeftArrow
+            case .rightHalf: kVK_RightArrow
+            case .topHalf: kVK_UpArrow
+            case .bottomHalf: kVK_DownArrow
+            case .maximize: kVK_Return
+            case .center: kVK_ANSI_C
             }
         }
+
+        var window: WindowAction? {
+            switch self {
+            case .leftHalf: .leftHalf
+            case .rightHalf: .rightHalf
+            case .topHalf: .topHalf
+            case .bottomHalf: .bottomHalf
+            case .maximize: .maximize
+            case .center: .center
+            default: nil
+            }
+        }
+
+        static var windows: [Shortcut] { allCases.filter { $0.window != nil } }
     }
 
     /// What the panel shortcut does; set by the app delegate.
@@ -227,10 +158,12 @@ enum HotKey {
                               MemoryLayout<EventHotKeyID>.size, nil, &id)
             let pressed = id.id
             Task { @MainActor in
-                switch Shortcut(rawValue: pressed) {
-                case .calculator: CalculatorPanel.shared.toggle()
+                guard let shortcut = Shortcut(rawValue: pressed) else { return }
+                switch shortcut {
+                case .launcher: LauncherPanel.shared.toggle(.all)
                 case .panel: HotKey.togglePanel()
-                case nil: break
+                case .clipboard: LauncherPanel.shared.toggle(.clipboard)
+                default: shortcut.window?.run()
                 }
             }
             return noErr

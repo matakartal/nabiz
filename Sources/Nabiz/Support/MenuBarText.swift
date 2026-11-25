@@ -172,3 +172,34 @@ enum MenuBarText {
         return image
     }
 }
+
+/// The symbols on offer for the menu bar icon.
+enum BarSymbol {
+    static let all = [
+        "gauge.with.dots.needle.33percent", "waveform.path.ecg", "heart.fill", "cpu", "memorychip", "bolt.fill",
+        "leaf.fill", "sparkle", "circle.hexagongrid.fill", "chart.bar.fill", "flame.fill", "hare.fill",
+    ]
+
+    static var current: String {
+        let saved = Prefs.string(Prefs.barSymbol)
+        return all.contains(saved) ? saved : all[0]
+    }
+
+    static func title(_ name: String) -> String {
+        switch name {
+        case "gauge.with.dots.needle.33percent": L("Gösterge", "Gauge")
+        case "waveform.path.ecg": L("Nabız", "Pulse")
+        case "heart.fill": L("Kalp", "Heart")
+        case "cpu": L("İşlemci", "Chip")
+        case "memorychip": L("Bellek", "Memory")
+        case "bolt.fill": L("Şimşek", "Bolt")
+        case "leaf.fill": L("Yaprak", "Leaf")
+        case "sparkle": L("Parıltı", "Sparkle")
+        case "circle.hexagongrid.fill": L("Petek", "Hexagons")
+        case "chart.bar.fill": L("Grafik", "Chart")
+        case "flame.fill": L("Alev", "Flame")
+        case "hare.fill": L("Tavşan", "Hare")
+        default: name
+        }
+    }
+}

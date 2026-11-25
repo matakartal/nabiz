@@ -4,7 +4,7 @@ import Security
 
 /// The one-tap tools in the panel's grid. Each does its job directly; nothing sends the user to another app to finish.
 enum ToolKind: String, CaseIterable, Identifiable {
-    case calculator, keepAwake, timer, color, screenshot, displayOff, darkMode, speedTest, ip
+    case calculator, clipboard, note, keepAwake, timer, color, screenshot, displayOff, darkMode, speedTest, ip
     case password, uuid, eject, xcode, rust, hiddenFiles, desktop, clearClipboard, activity
 
     var id: String { rawValue }
@@ -12,7 +12,9 @@ enum ToolKind: String, CaseIterable, Identifiable {
     /// Short enough for a 66 pt tile.
     var title: String {
         switch self {
-        case .calculator: L("Hesap", "Calculator")
+        case .calculator: L("Başlatıcı", "Launcher")
+        case .clipboard: L("Pano", "Clipboard")
+        case .note: L("Not", "Note")
         case .keepAwake: L("Uyanık kal", "Keep awake")
         case .timer: L("Zamanlayıcı", "Timer")
         case .color: L("Renk al", "Pick color")
@@ -35,7 +37,9 @@ enum ToolKind: String, CaseIterable, Identifiable {
 
     var symbol: String {
         switch self {
-        case .calculator: "plus.forwardslash.minus"
+        case .calculator: "magnifyingglass"
+        case .clipboard: "doc.on.clipboard"
+        case .note: "note.text"
         case .keepAwake: "cup.and.saucer"
         case .timer: "timer"
         case .color: "eyedropper"
@@ -59,7 +63,10 @@ enum ToolKind: String, CaseIterable, Identifiable {
     /// The tooltip: what one tap does, in one sentence.
     var help: String {
         switch self {
-        case .calculator: L("Hesap makinesi, döviz ve birim çevirici (⌃⌥Boşluk).", "Calculator, currency and unit converter (⌃⌥Space).")
+        case .calculator: L("Uygulama aç, komut çalıştır, hesapla, çevir, web'de ara (⌃⌥Boşluk).",
+                            "Open apps, run commands, calculate, convert, search the web (⌃⌥Space).")
+        case .clipboard: L("Kopyaladıklarının geçmişi; seç, yapıştır, sabitle (⌃⌥V).", "Everything you copied; pick, paste, pin (⌃⌥V).")
+        case .note: L("Her uygulamanın üstünde duran küçük bir not.", "A small note that floats over every app.")
         case .keepAwake: L("Mac'in ve ekranın uyumasını bir süre engeller.", "Stops the Mac and display from sleeping for a while.")
         case .timer: L("Geri sayım; bitince ses ve bildirim. Kalan süre menü çubuğunda görünür.",
                        "A countdown with a sound and a notification at the end. The time left shows in the menu bar.")
@@ -191,6 +198,9 @@ final class Toolbox {
             guard awake.isOn else { return nil }
             return awake.until.map { Format.countdown(until: $0) } ?? "∞"
         case .timer: return CountdownTimer.shared.remainingText
+        case .clipboard:
+            let count = ClipboardHistory.shared.items.count
+            return Prefs.bool(Prefs.clipboardEnabled) && count > 0 ? "\(count)" : nil
         case .speedTest: return speedRunning ? L("ölçülüyor", "testing") : speedResult
         case .ip: return LocalIP.address() ?? L("yok", "offline")
         case .eject: return ejectable.isEmpty ? L("disk yok", "none") : L("\(ejectable.count) disk", "\(ejectable.count) disk")
@@ -208,6 +218,7 @@ final class Toolbox {
         case .darkMode: darkMode
         case .hiddenFiles: hiddenFilesShown
         case .desktop: desktopHidden
+        case .note: NoteWindow.isVisible
         default: false
         }
     }
@@ -233,7 +244,13 @@ final class Toolbox {
         switch kind {
         case .calculator:
             actions.close()
-            CalculatorPanel.shared.show()
+            LauncherPanel.shared.show()
+        case .clipboard:
+            actions.close()
+            LauncherPanel.shared.show(.clipboard)
+        case .note:
+            actions.close()
+            NoteWindow.toggle()
         case .keepAwake, .timer:
             break // the grid opens their duration chips
         case .color:

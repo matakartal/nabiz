@@ -72,11 +72,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         RateStore.shared.refreshIfNeeded()
         Updater.shared.check()
+        AppearanceMode.apply()
+        ClipboardHistory.shared.update()
+        AppIndex.shared.refreshIfNeeded()
+        NSApp.mainMenu = Self.editMenu()
         HotKey.togglePanel = { [weak self] in self?.togglePanel() }
         updateHotKeys()
         NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.updateHotKeys()
+                AppearanceMode.apply()
+                ClipboardHistory.shared.update()
                 AILimitsStore.shared.refreshIfNeeded()
                 self?.updateButton()
             }
@@ -106,8 +112,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func updateHotKeys() {
-        HotKey.update(.calculator, enabled: Prefs.bool(Prefs.hotkey))
+        HotKey.update(.launcher, enabled: Prefs.bool(Prefs.hotkey))
         HotKey.update(.panel, enabled: Prefs.bool(Prefs.panelHotkey))
+        HotKey.update(.clipboard, enabled: Prefs.bool(Prefs.clipboardHotkey) && Prefs.bool(Prefs.clipboardEnabled))
+        for shortcut in HotKey.Shortcut.windows { HotKey.update(shortcut, enabled: Prefs.bool(Prefs.windowHotkeys)) }
+    }
+
+    /// Without an Edit menu, ⌘C, ⌘V and ⌘A do nothing in text fields (Settings, the note). The menu bar never shows it.
+    private static func editMenu() -> NSMenu {
+        let main = NSMenu()
+        let editItem = NSMenuItem()
+        main.addItem(editItem)
+        let edit = NSMenu(title: "Edit")
+        edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        edit.addItem(.separator())
+        edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        edit.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        editItem.submenu = edit
+        return main
     }
 
     /// Left click opens the panel; right click (or ⌃-click) shows a short native menu.
@@ -124,7 +150,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return item
         }
         menu.addItem(item(L("Paneli aç", "Open Panel")) { [weak self] in self?.togglePanel() })
-        menu.addItem(item(L("Hızlı hesap", "Quick Calculator")) { CalculatorPanel.shared.show() })
+        menu.addItem(item(L("Başlatıcı", "Launcher")) { LauncherPanel.shared.show() })
+        menu.addItem(item(L("Pano geçmişi", "Clipboard History")) { LauncherPanel.shared.show(.clipboard) })
+        menu.addItem(item(L("Yüzen not", "Floating Note")) { NoteWindow.toggle() })
         menu.addItem(item(L("Geçmiş", "History")) { HistoryWindow.show() })
         menu.addItem(item(L("Zamanlanmış görevler…", "Scheduled Tasks…")) { SettingsWindow.show(.schedules) })
         menu.addItem(.separator())
@@ -146,7 +174,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         let critical = monitor.system?.pressure == .critical
-        let icon = symbol(critical ? "exclamationmark.triangle.fill" : "gauge.with.dots.needle.33percent")
+        let icon = symbol(critical ? "exclamationmark.triangle.fill" : BarSymbol.current)
         if MenuBarText.stacked {
             let parts = MenuBarText.parts(monitor: monitor)
             let showIcon = Prefs.bool(Prefs.barIcon) || parts.isEmpty || critical
@@ -289,8 +317,11 @@ enum Snapshot {
             root = AnyView(HistoryView().frame(width: 680, height: 560))
         } else if args.contains("--limits") {
             root = AnyView(LimitsPreview())
-        } else if let text = value(after: "--calculator") {
-            root = AnyView(CalculatorView(text: text) {})
+        } else if let text = value(after: "--launcher") {
+            AppIndex.shared.refreshIfNeeded()
+            try? await Task.sleep(for: .milliseconds(600))
+            LauncherPanel.shared.model.reset(mode: args.contains("--clipboard") ? .clipboard : .all, text: text)
+            root = AnyView(LauncherView(model: LauncherPanel.shared.model))
         } else if settings {
             root = AnyView(SettingsView(selection: selection).frame(width: 760, height: 560))
         } else {

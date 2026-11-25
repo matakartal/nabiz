@@ -22,16 +22,23 @@ enum Theme {
     static let track = dynamic(light: .white(0, alpha: 0.05), dark: .white(1, alpha: 0.06))
 
     // Two sizes and two weights per screen, at macOS menu scale (iOS 16/13 → macOS 13/11).
-    // "Large text" in Settings → Appearance adds one point to each.
+    // "Large text" in Settings → Appearance adds one point to each; the typeface can be rounded or monospaced.
     private static var bump: CGFloat { UserDefaults.standard.string(forKey: "textSize") == "large" ? 1 : 0 }
-    static var title: Font { .system(size: 15 + bump, weight: .semibold) }
-    static var body: Font { .system(size: 13 + bump, weight: .regular) }
-    static var bodyStrong: Font { .system(size: 13 + bump, weight: .semibold) }
-    static var small: Font { .system(size: 11 + bump, weight: .regular) }
-    static var smallStrong: Font { .system(size: 11 + bump, weight: .semibold) }
-    /// The quick calculator's input line, Spotlight-sized.
-    static let input = Font.system(size: 20, weight: .regular)
-    static let inputStrong = Font.system(size: 20, weight: .semibold)
+    private static var design: Font.Design {
+        switch UserDefaults.standard.string(forKey: "fontDesign") {
+        case "rounded": .rounded
+        case "mono": .monospaced
+        default: .default
+        }
+    }
+    static var title: Font { .system(size: 15 + bump, weight: .semibold, design: design) }
+    static var body: Font { .system(size: 13 + bump, weight: .regular, design: design) }
+    static var bodyStrong: Font { .system(size: 13 + bump, weight: .semibold, design: design) }
+    static var small: Font { .system(size: 11 + bump, weight: .regular, design: design) }
+    static var smallStrong: Font { .system(size: 11 + bump, weight: .semibold, design: design) }
+    /// The launcher's input line, Spotlight-sized.
+    static var input: Font { .system(size: 20, weight: .regular, design: design) }
+    static var inputStrong: Font { .system(size: 20, weight: .semibold, design: design) }
 
     enum Spacing {
         static let xs: CGFloat = 4
@@ -45,22 +52,29 @@ enum Theme {
     static let radius: CGFloat = 10
     static let fieldRadius: CGFloat = 6
     static let dot: CGFloat = 6
-    /// Height of a usage bar.
-    static let meter: CGFloat = 3
+    /// Height of a usage bar: thin or thick, from Settings → Appearance.
+    static var meter: CGFloat { UserDefaults.standard.string(forKey: "meterStyle") == "thick" ? 5 : 3 }
     /// Menu-panel grid, copied from native macOS menus so every row lines up:
     /// icons start `menuInset` in, text starts `menuTextInset` in, values end `menuInset` before the edge.
     static let menuInset: CGFloat = 16
     static let menuTextInset: CGFloat = 40
     static let menuHighlightInset: CGFloat = 6
     static let menuIcon: CGFloat = 16
-    static let menuRow: CGFloat = 24
+    /// Compact, normal or roomy, from Settings → Appearance.
+    static var menuRow: CGFloat {
+        switch UserDefaults.standard.string(forKey: "density") {
+        case "compact": 22
+        case "roomy": 28
+        default: 24
+        }
+    }
     static let menuValueColumn: CGFloat = 76
     static let menuPercentColumn: CGFloat = 64
     static let menuResetColumn: CGFloat = 44
     /// A short row under a heading row (AI limit lines).
     static let menuLine: CGFloat = 20
     /// A tool tile in the panel's grid: one line of symbol, title and an optional value.
-    static let toolTile: CGFloat = 30
+    static var toolTile: CGFloat { menuRow + 6 }
     static let toolColumns = 2
     /// Settings sidebar icon tile.
     static let settingsIcon: CGFloat = 22
@@ -68,6 +82,15 @@ enum Theme {
     static let settingsHeaderIcon: CGFloat = 40
     /// One chart in the History window.
     static let historyChart: CGFloat = 80
+    /// The launcher: a Spotlight-wide field over a list, with a key hint footer.
+    static let launcherWidth: CGFloat = 680
+    static let launcherHeight: CGFloat = 440
+    static let launcherField: CGFloat = 52
+    static let launcherFooter: CGFloat = 32
+    static let launcherRow: CGFloat = 34
+    static let launcherIcon: CGFloat = 20
+    /// The list beside the clipboard preview.
+    static let launcherList: CGFloat = 300
     /// Where text starts inside a grouped form row, so footers line up with it.
     static let formInset: CGFloat = 10
     /// The menu bar panel: one narrow column.
@@ -195,11 +218,16 @@ struct MenuMaterial: NSViewRepresentable {
     func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
 }
 
-/// The accent colours on offer. Orange and red are left out on purpose: they mean "running low" and "danger".
+/// The accent colours on offer, plus the system accent and one of your own.
+/// Orange and red are left out on purpose: they mean "running low" and "danger".
 enum AccentChoice: String, CaseIterable, Identifiable {
-    case green, teal, sky, blue, indigo, violet, pink, graphite
+    case green, mint, lime, teal, cyan, sky, blue, cobalt, indigo, violet, purple, magenta, pink, gold, cocoa, slate, graphite
+    case system, custom
 
     var id: String { rawValue }
+
+    /// The swatches in the grid; system and custom have their own rows.
+    static var swatches: [AccentChoice] { allCases.filter { $0 != .system && $0 != .custom } }
 
     static var current: AccentChoice {
         AccentChoice(rawValue: UserDefaults.standard.string(forKey: "accentColor") ?? "") ?? .green
@@ -208,26 +236,49 @@ enum AccentChoice: String, CaseIterable, Identifiable {
     var color: Color {
         switch self {
         case .green: Palette.green.fill
+        case .mint: Theme.dynamic(light: .hex(0x00B386), dark: .hex(0x34D3A6))
+        case .lime: Theme.dynamic(light: .hex(0x6BA80F), dark: .hex(0x9AD62E))
         case .teal: Theme.dynamic(light: .hex(0x14A89A), dark: .hex(0x2DC4B4))
+        case .cyan: Theme.dynamic(light: .hex(0x0AA3BF), dark: .hex(0x32C5DD))
         case .sky: Theme.dynamic(light: .hex(0x0A9BD8), dark: .hex(0x38B6EE))
         case .blue: Theme.dynamic(light: .hex(0x2F6FEB), dark: .hex(0x4C8BFF))
+        case .cobalt: Theme.dynamic(light: .hex(0x1F4FC2), dark: .hex(0x5A7EF0))
         case .indigo: Theme.dynamic(light: .hex(0x5350D6), dark: .hex(0x7471F0))
         case .violet: Theme.dynamic(light: .hex(0x8A4FE0), dark: .hex(0xA374F2))
+        case .purple: Theme.dynamic(light: .hex(0xA43FC4), dark: .hex(0xC265E0))
+        case .magenta: Theme.dynamic(light: .hex(0xC2389E), dark: .hex(0xE25DBE))
         case .pink: Theme.dynamic(light: .hex(0xDB3E8A), dark: .hex(0xF060A6))
+        case .gold: Theme.dynamic(light: .hex(0xB8901A), dark: .hex(0xE0B83E))
+        case .cocoa: Theme.dynamic(light: .hex(0x8B6346), dark: .hex(0xB78B6A))
+        case .slate: Theme.dynamic(light: .hex(0x4F6B84), dark: .hex(0x7F9AB3))
         case .graphite: Theme.dynamic(light: .hex(0x6E6E73), dark: .hex(0x98989D))
+        case .system: Color(nsColor: .controlAccentColor)
+        case .custom:
+            Color(hex: UserDefaults.standard.string(forKey: "customAccent") ?? "") ?? Palette.green.fill
         }
     }
 
     var title: String {
         switch self {
         case .green: L("Yeşil", "Green")
+        case .mint: L("Nane", "Mint")
+        case .lime: L("Limon", "Lime")
         case .teal: L("Turkuaz", "Teal")
+        case .cyan: L("Camgöbeği", "Cyan")
         case .sky: L("Gök mavisi", "Sky")
         case .blue: L("Mavi", "Blue")
+        case .cobalt: L("Kobalt", "Cobalt")
         case .indigo: L("Çivit", "Indigo")
-        case .violet: L("Mor", "Violet")
+        case .violet: L("Menekşe", "Violet")
+        case .purple: L("Mor", "Purple")
+        case .magenta: L("Eflatun", "Magenta")
         case .pink: L("Pembe", "Pink")
+        case .gold: L("Altın", "Gold")
+        case .cocoa: L("Kakao", "Cocoa")
+        case .slate: L("Arduvaz", "Slate")
         case .graphite: L("Grafit", "Graphite")
+        case .system: L("Sistem", "System")
+        case .custom: L("Özel", "Custom")
         }
     }
 }
@@ -237,7 +288,11 @@ enum AccentChoice: String, CaseIterable, Identifiable {
 struct AppearanceRoot: ViewModifier {
     @AppStorage("language") private var language = "system"
     @AppStorage("accentColor") private var accent = "green"
+    @AppStorage("customAccent") private var customAccent = "#1DB954"
     @AppStorage("textSize") private var textSize = "normal"
+    @AppStorage("fontDesign") private var fontDesign = "standard"
+    @AppStorage("density") private var density = "normal"
+    @AppStorage("meterStyle") private var meterStyle = "thin"
     @AppStorage("panelWidth") private var width = 320
     @AppStorage("panelStyle") private var style = "material"
     var opaqueFill = Theme.surfaceRaised
@@ -246,7 +301,19 @@ struct AppearanceRoot: ViewModifier {
         content
             .background(style == "opaque" ? opaqueFill : Color.clear)
             .tint(Theme.accent)
-            .id("\(language)-\(accent)-\(textSize)-\(width)-\(style)")
+            .id("\(language)-\(accent)-\(customAccent)-\(textSize)-\(fontDesign)-\(density)-\(meterStyle)-\(width)-\(style)")
+    }
+}
+
+/// Light, dark or follow macOS, for Nabız's own windows.
+@MainActor
+enum AppearanceMode {
+    static func apply() {
+        switch UserDefaults.standard.string(forKey: "appearanceMode") {
+        case "light": NSApp.appearance = NSAppearance(named: .aqua)
+        case "dark": NSApp.appearance = NSAppearance(named: .darkAqua)
+        default: NSApp.appearance = nil
+        }
     }
 }
 

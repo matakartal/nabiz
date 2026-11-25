@@ -2,11 +2,26 @@
 
 ## 1.5.0
 
+- **Launcher** (⌃⌥Space) replaces the quick calculator: apps, system commands (lock, sleep, display off, hide
+  others, quit all, empty Trash, restart, shut down, log out — the destructive ones ask first), window layouts,
+  every tool, timers ("25 dk"), keep awake, maths/currency/units, quicklinks ("g words", "gh", "yt"… editable with
+  `{query}`), snippets and recent items. Arrow keys, ↩ and ⌘↩; Turkish letters match their plain forms.
+- **Clipboard history** (⌃⌥V): text, links, colours, files and images up to 3 MB, with search, a preview, pinning
+  and delete. ↩ pastes into the app you were in (Accessibility permission), ⌘↩ copies. Concealed/transient copies
+  from password managers and excluded apps are never recorded. Up to 50–1000 items, forgotten after 1–90 days or
+  never; kept on disk only if you choose.
+- **Snippets:** saved text pasted by keyword, with `{date}`, `{time}` and `{clipboard}`.
+- **Window layouts:** halves, thirds, centre, maximize, almost maximize, next display; opt-in ⌃⌥ arrow shortcuts.
+- **Floating note** above every app and Space.
+- **Personalization:** 17 accent colours plus the system accent and a custom colour, light/dark/system theme,
+  standard/rounded/monospaced type, compact/normal/roomy rows, thin/thick bars, a menu bar icon of your choice,
+  and the panel's section order. "Reset appearance" puts it all back.
+- ⌘C, ⌘V, ⌘A and ⌘Z work in Settings and the note.
 - **Scheduled tasks:** dark/light mode, stop keeping awake, shut down simulators, quit Docker, clean Rust or Xcode
   caches, clear the clipboard, display off, or a reminder, on chosen days at a set time. A missed task (the Mac
   was asleep) catches up within 6 hours. Ready-made presets; "Run now"; next run shown. Settings → Schedules, or
   right-click the menu bar item.
-- **Appearance:** accent colour (8 choices; orange and red stay reserved for warnings), frosted or opaque panel,
+- **Appearance:** accent colour (orange and red stay reserved for warnings), frosted or opaque panel,
   narrow/normal/wide panel, normal or large text, and coloured menu bar values (orange/red when something needs
   attention, green/red for market moves).
 - **Timer** tool: 5–60 minute countdown shown in the menu bar, with a sound and a notification at the end.

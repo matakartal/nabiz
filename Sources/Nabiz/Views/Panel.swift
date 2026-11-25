@@ -78,6 +78,7 @@ struct PanelContent: View {
     @AppStorage(Prefs.cpuAppCount) private var cpuCount = 3
     @AppStorage(Prefs.baseCurrency) private var base = "TRY"
     @AppStorage(Prefs.watchedCurrencies) private var watched = "USD,EUR,GBP"
+    @AppStorage(Prefs.sectionOrder) private var order = ""
 
     var body: some View {
         // Pressure and uptime are already shown above, so they are not repeated as suggestions.
@@ -87,50 +88,8 @@ struct PanelContent: View {
         let codes = watched.split(separator: ",").map(String.init).filter { $0 != base }
         VStack(alignment: .leading, spacing: 0) {
             MetersView(monitor: monitor)
-            if showSystem, let system = monitor.system {
-                CollapsibleSection(.system, summary: Summary.system(system), summaryColor: Summary.pressureColor(system.pressure)) {
-                    StatusSection(monitor: monitor)
-                }
-            }
-            if showAdvice && !advice.isEmpty {
-                CollapsibleSection(.advice, summary: "\(advice.count)",
-                                   summaryColor: advice.contains { $0.level != .info } ? Theme.warning.mark : Theme.textMuted) {
-                    AdviceSection(monitor: monitor, advice: advice)
-                }
-            }
-            if showSimulators && !monitor.simulators.isEmpty {
-                CollapsibleSection(.simulators, summary: L("\(monitor.simulators.count) açık", "\(monitor.simulators.count) running")) {
-                    SimulatorSection(monitor: monitor)
-                }
-            }
-            if showAI {
-                CollapsibleSection(.ai, summary: Summary.ai()) { AISection(actions: actions) }
-            }
-            if showMemory && !memory.isEmpty {
-                CollapsibleSection(.memory, summary: memory.first.map { "\($0.name) \(Format.bytes($0.memory))" } ?? "") {
-                    ForEach(memory) { AppRow(group: $0, value: Format.bytes($0.memory), monitor: monitor) }
-                }
-            }
-            if showCPU && !cpu.isEmpty {
-                CollapsibleSection(.cpu, summary: cpu.first.map { "\($0.name) \(Format.percent($0.cpu))" } ?? "") {
-                    ForEach(cpu) { AppRow(group: $0, value: Format.percent($0.cpu), monitor: monitor) }
-                }
-            }
-            if showMarkets {
-                CollapsibleSection(.markets, summary: Summary.market()) {
-                    MarketsSection(ids: watchedMarkets.split(separator: ",").map(String.init), actions: actions)
-                }
-            }
-            if showCurrency && !codes.isEmpty {
-                CollapsibleSection(.currency, summary: Summary.rate(codes[0], base: base)) {
-                    CurrencySection(codes: codes, base: base, actions: actions)
-                }
-            }
-            if showTools {
-                CollapsibleSection(.tools, summary: KeepAwake.shared.isOn ? L("Uyanık", "Awake") : "",
-                                   summaryColor: Palette.green.mark) {
-                    ToolsSection(monitor: monitor, actions: actions)
-                }
+            ForEach(PanelSection.ordered) { section in
+                self.section(section, advice: advice, memory: memory, cpu: cpu, codes: codes)
             }
             PanelDivider()
             PanelFooter(monitor: monitor, actions: actions)
@@ -141,6 +100,68 @@ struct PanelContent: View {
             // Keyboard shortcuts while the panel is key.
             Button("") { actions.close(); SettingsWindow.show(nil) }.keyboardShortcut(",", modifiers: .command).hidden()
             Button("") { NSApp.terminate(nil) }.keyboardShortcut("q", modifiers: .command).hidden()
+        }
+        .id(order)
+    }
+
+    /// One section, in the place Settings → Panel gives it.
+    @ViewBuilder
+    private func section(_ section: PanelSection, advice: [Advice], memory: [ProcessGroup], cpu: [ProcessGroup], codes: [String]) -> some View {
+        switch section {
+        case .system:
+            if showSystem, let system = monitor.system {
+                CollapsibleSection(.system, summary: Summary.system(system), summaryColor: Summary.pressureColor(system.pressure)) {
+                    StatusSection(monitor: monitor)
+                }
+            }
+        case .advice:
+            if showAdvice && !advice.isEmpty {
+                CollapsibleSection(.advice, summary: "\(advice.count)",
+                                   summaryColor: advice.contains { $0.level != .info } ? Theme.warning.mark : Theme.textMuted) {
+                    AdviceSection(monitor: monitor, advice: advice)
+                }
+            }
+        case .simulators:
+            if showSimulators && !monitor.simulators.isEmpty {
+                CollapsibleSection(.simulators, summary: L("\(monitor.simulators.count) açık", "\(monitor.simulators.count) running")) {
+                    SimulatorSection(monitor: monitor)
+                }
+            }
+        case .ai:
+            if showAI {
+                CollapsibleSection(.ai, summary: Summary.ai()) { AISection(actions: actions) }
+            }
+        case .memory:
+            if showMemory && !memory.isEmpty {
+                CollapsibleSection(.memory, summary: memory.first.map { "\($0.name) \(Format.bytes($0.memory))" } ?? "") {
+                    ForEach(memory) { AppRow(group: $0, value: Format.bytes($0.memory), monitor: monitor) }
+                }
+            }
+        case .cpu:
+            if showCPU && !cpu.isEmpty {
+                CollapsibleSection(.cpu, summary: cpu.first.map { "\($0.name) \(Format.percent($0.cpu))" } ?? "") {
+                    ForEach(cpu) { AppRow(group: $0, value: Format.percent($0.cpu), monitor: monitor) }
+                }
+            }
+        case .markets:
+            if showMarkets {
+                CollapsibleSection(.markets, summary: Summary.market()) {
+                    MarketsSection(ids: watchedMarkets.split(separator: ",").map(String.init), actions: actions)
+                }
+            }
+        case .currency:
+            if showCurrency && !codes.isEmpty {
+                CollapsibleSection(.currency, summary: Summary.rate(codes[0], base: base)) {
+                    CurrencySection(codes: codes, base: base, actions: actions)
+                }
+            }
+        case .tools:
+            if showTools {
+                CollapsibleSection(.tools, summary: KeepAwake.shared.isOn ? L("Uyanık", "Awake") : "",
+                                   summaryColor: Palette.green.mark) {
+                    ToolsSection(monitor: monitor, actions: actions)
+                }
+            }
         }
     }
 }
