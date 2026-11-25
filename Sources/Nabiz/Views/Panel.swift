@@ -600,22 +600,10 @@ struct CollapsibleSection<Content: View>: View {
     private var open: Bool { !collapsible || expanded }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            SectionHeader(section.title, symbol: section.symbol, summary: open ? "" : summary, summaryColor: summaryColor,
-                          open: open, collapsible: collapsible) { section.toggle() }
-            if open {
-                content
-                    .padding(.bottom, Theme.Spacing.xs)
-            }
-        }
-        .background {
-            if open {
-                RoundedRectangle(cornerRadius: Theme.radius, style: .continuous)
-                    .fill(Theme.track)
-                    .padding(.horizontal, Theme.menuHighlightInset / 2)
-            }
-        }
-        .padding(.vertical, Theme.Spacing.xs / 2)
+        PanelDivider()
+        SectionHeader(section.title, summary: open ? "" : summary, summaryColor: summaryColor,
+                      open: open, collapsible: collapsible) { section.toggle() }
+        if open { content }
     }
 }
 
@@ -644,19 +632,11 @@ struct SectionHeader: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            if let symbol {
-                Image(systemName: symbol)
-                    .font(Theme.body)
-                    .foregroundStyle(open ? Theme.accent : Theme.textMuted)
-                    .frame(width: Theme.menuIcon, height: Theme.menuIcon)
-                    .frame(width: Theme.menuTextInset - Theme.menuInset, alignment: .leading)
-            }
-            Text(verbatim: text).font(open ? Theme.bodyStrong : Theme.body).foregroundStyle(Theme.text).lineLimit(1)
+        HStack(spacing: Theme.Spacing.s) {
+            Text(verbatim: text).font(Theme.smallStrong).foregroundStyle(Theme.textMuted).lineLimit(1)
             Spacer(minLength: Theme.Spacing.s)
             if !summary.isEmpty {
                 Text(verbatim: summary).font(Theme.small).monospacedDigit().foregroundStyle(summaryColor).lineLimit(1)
-                    .padding(.trailing, Theme.Spacing.s)
             }
             if collapsible {
                 Image(systemName: "chevron.right")
@@ -667,10 +647,12 @@ struct SectionHeader: View {
             }
         }
         .padding(.horizontal, Theme.menuInset - Theme.menuHighlightInset)
-        .frame(height: Theme.menuRow + Theme.Spacing.xs)
-        .background(hovering && collapsible && !open ? Theme.hover : .clear,
+        .frame(height: Theme.menuLine)
+        .background(hovering && collapsible ? Theme.hover : .clear,
                     in: RoundedRectangle(cornerRadius: Theme.fieldRadius, style: .continuous))
         .padding(.horizontal, Theme.menuHighlightInset)
+        .padding(.top, Theme.Spacing.xs)
+        .padding(.bottom, open ? Theme.Spacing.xs : 0)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture { if collapsible { action() } }
