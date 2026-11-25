@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **Rust build caches:** finds Cargo `target/` folders (only ones cargo signed with CACHEDIR.TAG) in ~/Developer,
+  ~/Projects, ~/code and ~/src. A **Clean Rust** tool lists each project and its size before deleting, and a
+  suggestion appears above 10 GB. Optional automatic clean-up deletes caches not built for 3–30 days; a project
+  built in the last 10 minutes is always skipped.
+- Releases are signed by FinQt Veri Hizmetleri (team 3Q2LK426HF).
+
 ## 1.3.0
 
 - **History:** CPU, RAM, GPU and the main AI limit, kept for 7 days at one-minute resolution (about 40 KB on disk).

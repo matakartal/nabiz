@@ -20,11 +20,12 @@ enum Fix {
     case openStorage
     case openSettings(URL?)
     case quitDocker
+    case cleanRust
 
     /// Quitting and shutting down end something the user may still want, so the button says so in red.
     var isDestructive: Bool {
         switch self {
-        case .shutdownSimulators, .quit, .quitDocker: true
+        case .shutdownSimulators, .quit, .quitDocker, .cleanRust: true
         case .openClaude, .openStorage, .openSettings: false
         }
     }
@@ -35,6 +36,7 @@ enum Fix {
         case .shutdownSimulators: L("Simülatörler kapatılıyor", "Shutting down simulators")
         case .quit(let group): L("\(group.name) kapatıldı", "Quit \(group.name)")
         case .quitDocker: L("Docker kapatılıyor", "Quitting Docker")
+        case .cleanRust: nil
         case .openClaude, .openStorage, .openSettings: nil
         }
     }
@@ -47,6 +49,7 @@ enum Fix {
         case .openClaude: L("Aç", "Open")
         case .openStorage: L("Yönet", "Manage")
         case .openSettings: L("Aç", "Open")
+        case .cleanRust: L("Temizle", "Clean")
         }
     }
 }
@@ -88,6 +91,8 @@ final class Monitor {
     @ObservationIgnored private var ticks = 0
     /// Called after every sample, so the native menu can refresh its items.
     @ObservationIgnored var onUpdate: (() -> Void)?
+    /// The panel's actions, for fixes that need to close it or confirm in the menu bar.
+    @ObservationIgnored static var panelActions = PanelActions()
 
     init(autostart: Bool = true) {
         if autostart { start() }
@@ -131,6 +136,8 @@ final class Monitor {
         } else {
             dockerContainers = nil
         }
+        // Rust caches: scanned at most every 30 minutes; with auto clean on, this is what keeps the disk tidy.
+        if Prefs.bool(Prefs.rustAutoClean) && ticks % 60 == 0 { Toolbox.shared.scanRust() }
         // The security checklist barely changes: every 30 minutes, and when the panel opens after that.
         if securityAt.map({ Date().timeIntervalSince($0) > 1800 }) ?? true {
             securityAt = Date()
@@ -200,6 +207,13 @@ final class Monitor {
                                detail: L("Çalışan konteyner yok ama \(Format.bytes(docker.memory)) kullanıyor.",
                                          "No containers running, but it uses \(Format.bytes(docker.memory))."),
                                level: .info, fix: .quitDocker))
+        }
+
+        let rust = Toolbox.shared.rustSize
+        if rust >= 10 << 30 {
+            list.append(Advice(id: "rust", title: L("Rust önbelleği \(Format.bytes(rust))", "Rust caches: \(Format.bytes(rust))"),
+                               detail: L("Derleme önbellekleri; silinebilir, gerekince yeniden oluşur.", "Build caches; safe to delete, rebuilt when needed."),
+                               level: .info, fix: .cleanRust))
         }
 
         if let free = s.diskFree, free < 10 << 30 {
@@ -335,6 +349,8 @@ final class Monitor {
             if let url = URL(string: "x-apple.systempreferences:com.apple.settings.Storage") { NSWorkspace.shared.open(url) }
         case .openSettings(let url):
             if let url { NSWorkspace.shared.open(url) }
+        case .cleanRust:
+            Toolbox.shared.cleanRust(actions: Monitor.panelActions)
         case .quitDocker:
             NSRunningApplication.runningApplications(withBundleIdentifier: "com.docker.docker").forEach { $0.terminate() }
             Task {

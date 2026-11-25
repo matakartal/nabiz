@@ -46,6 +46,9 @@ enum Prefs {
     static let showMarkets = "showMarkets"
     /// Tool ids the user removed from the grid.
     static let hiddenTools = "hiddenTools"
+    /// Delete Rust build caches not built for `rustAutoCleanDays` days.
+    static let rustAutoClean = "rustAutoClean"
+    static let rustAutoCleanDays = "rustAutoCleanDays"
     /// Hyperliquid market ids, in the order they show: "BTC", "xyz:TSLA".
     static let watchedMarkets = "watchedMarkets"
     static let barMarket = "barMarket"
@@ -59,7 +62,7 @@ enum Prefs {
             language: "system", refreshSeconds: 5, hotkey: true, panelHotkey: true, notifications: false, onboarded: false,
             barIcon: false, barLabels: true, barCPU: true, barRAM: true, barGPU: false, barNetwork: false,
             barStyle: "stacked", aiRemaining: true, barMarket: false, barMarketID: "",
-            showMarkets: true, hiddenTools: "", watchedMarkets: "BTC,ETH,SOL,xyz:XYZ100,xyz:TSLA,xyz:GOLD", "expanded.markets": true, barSwap: false, barDisk: false, barBattery: false, barAI: false, barCurrency: false,
+            showMarkets: true, hiddenTools: "", rustAutoClean: false, rustAutoCleanDays: 14, watchedMarkets: "BTC,ETH,SOL,xyz:XYZ100,xyz:TSLA,xyz:GOLD", "expanded.markets": true, barSwap: false, barDisk: false, barBattery: false, barAI: false, barCurrency: false,
             showSystem: true, showCPUApps: true, collapsible: true, accordion: false,
             "expanded.system": true, "expanded.advice": true, "expanded.simulators": true, "expanded.ai": true,
             "expanded.memory": true, "expanded.cpu": true, "expanded.currency": true, "expanded.tools": true,

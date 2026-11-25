@@ -40,11 +40,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.button?.target = self
         statusItem.button?.action = #selector(statusItemClicked)
         statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
-        panel = StatusPanel(monitor: monitor, actions: PanelActions(
+        let actions = PanelActions(
             copy: { [weak self] in self?.copy($0) },
             flash: { [weak self] in self?.flash($0) },
             close: { [weak self] in self?.panel.close() }
-        ))
+        )
+        Monitor.panelActions = actions
+        panel = StatusPanel(monitor: monitor, actions: actions)
         SettingsWindow.monitor = monitor
         monitor.onUpdate = { [weak self] in
             guard let self else { return }

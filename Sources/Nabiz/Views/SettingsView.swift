@@ -144,6 +144,8 @@ private struct GeneralPage: View {
     @AppStorage(Prefs.hotkey) private var hotkey = true
     @AppStorage(Prefs.panelHotkey) private var panelHotkey = true
     @AppStorage(Prefs.notifications) private var notifications = false
+    @AppStorage(Prefs.rustAutoClean) private var rustAutoClean = false
+    @AppStorage(Prefs.rustAutoCleanDays) private var rustDays = 14
     @State private var login = SMAppService.mainApp.status == .enabled
 
     var body: some View {
@@ -183,6 +185,19 @@ private struct GeneralPage: View {
                 Footnote(L("Bellek kritikleşince, işlemci 3 dakika %90'ın üstünde kalınca, disk 10 GB'ın altına inince, pil %10'a düşünce ve açık bir AI limiti hızlı bitince ya da kullanılmadan sıfırlanacakken haber verir. Her durum için bir kez.",
                            "Tells you when memory turns critical, the CPU stays above 90% for 3 minutes, the disk drops under 10 GB, the battery reaches 10%, and an AI limit you turned on burns fast or is about to reset unused. Once each time."))
 
+            }
+            Section {
+                Toggle(L("Kullanılmayan Rust önbelleklerini otomatik sil", "Delete unused Rust build caches automatically"),
+                       isOn: $rustAutoClean)
+                Picker(L("Ne kadar süre derlenmediyse", "When not built for"), selection: $rustDays) {
+                    ForEach([3, 7, 14, 30], id: \.self) { Text(L("\($0) gün", "\($0) days")).tag($0) }
+                }
+                .disabled(!rustAutoClean)
+            } header: {
+                Text(L("Otomatik temizlik", "Automatic clean-up"))
+            } footer: {
+                Footnote(L("Sadece cargo'nun işaretlediği target/ klasörleri silinir; kod, ayar ve Cargo.lock'a dokunulmaz. Son 10 dakikada derlenen proje atlanır. Taranan yerler: ~/Developer, ~/Projects, ~/code, ~/src.",
+                           "Only target/ folders cargo marked as caches are deleted; code, settings and Cargo.lock are untouched. A project built in the last 10 minutes is skipped. Looks in ~/Developer, ~/Projects, ~/code, ~/src."))
             }
             Section {
                 Button(L("Tüm ayarları sıfırla…", "Reset all settings…"), role: .destructive) { resetAll() }

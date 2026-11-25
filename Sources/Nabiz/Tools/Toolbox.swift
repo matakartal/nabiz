@@ -5,7 +5,7 @@ import Security
 /// The one-tap tools in the panel's grid. Each does its job directly; nothing sends the user to another app to finish.
 enum ToolKind: String, CaseIterable, Identifiable {
     case calculator, keepAwake, color, screenshot, displayOff, darkMode, speedTest, ip
-    case password, uuid, eject, xcode, hiddenFiles, desktop, clearClipboard, activity
+    case password, uuid, eject, xcode, rust, hiddenFiles, desktop, clearClipboard, activity
 
     var id: String { rawValue }
 
@@ -24,6 +24,7 @@ enum ToolKind: String, CaseIterable, Identifiable {
         case .uuid: "UUID"
         case .eject: L("Diski çıkar", "Eject")
         case .xcode: L("Xcode temizle", "Clean Xcode")
+        case .rust: L("Rust temizle", "Clean Rust")
         case .hiddenFiles: L("Gizli dosya", "Hidden files")
         case .desktop: L("Masaüstü", "Desktop")
         case .clearClipboard: L("Panoyu sil", "Clear clip")
@@ -45,6 +46,7 @@ enum ToolKind: String, CaseIterable, Identifiable {
         case .uuid: "number"
         case .eject: "eject"
         case .xcode: "hammer"
+        case .rust: "gearshape.2"
         case .hiddenFiles: "eye"
         case .desktop: "menubar.dock.rectangle"
         case .clearClipboard: "clipboard"
@@ -68,6 +70,8 @@ enum ToolKind: String, CaseIterable, Identifiable {
         case .eject: L("Takılı harici diskleri güvenle çıkarır.", "Safely ejects connected external disks.")
         case .xcode: L("Xcode'un DerivedData önbelleğini siler; Xcode gerekince yeniden oluşturur.",
                        "Deletes Xcode's DerivedData cache; Xcode rebuilds it when needed.")
+        case .rust: L("Rust projelerinin target/ derleme önbelleklerini siler; cargo gerekince yeniden oluşturur.",
+                      "Deletes Rust projects' target/ build caches; cargo rebuilds them when needed.")
         case .hiddenFiles: L("Finder'da gizli dosyaları gösterir ya da gizler.", "Shows or hides hidden files in Finder.")
         case .desktop: L("Masaüstü simgelerini gizler (sunum ve ekran paylaşımı için).", "Hides desktop icons (for presenting and screen sharing).")
         case .clearClipboard: L("Panodaki her şeyi siler.", "Empties the clipboard.")
@@ -85,6 +89,12 @@ final class Toolbox {
     private(set) var speedResult: String?
     private(set) var speedRunning = false
     private(set) var derivedDataSize: UInt64?
+    /// Rust build caches found in the usual project folders, biggest first.
+    private(set) var rustCaches: [RustCache] = []
+    private(set) var rustScanning = false
+    @ObservationIgnored private var rustScannedAt: Date?
+
+    var rustSize: UInt64 { rustCaches.reduce(0) { $0 + $1.size } }
     private(set) var cleaning = false
     private(set) var ejectable: [URL] = []
     private(set) var hiddenFilesShown = false
@@ -108,6 +118,66 @@ final class Toolbox {
         Task {
             derivedDataSize = await Task.detached(priority: .utility) { Self.folderSize(path) }.value
         }
+        scanRust()
+    }
+
+    /// Finds Rust caches at most every 30 minutes (it walks the project folders and sizes each cache),
+    /// then applies the automatic clean-up when it is on.
+    func scanRust(force: Bool = false) {
+        guard !rustScanning else { return }
+        if !force, let rustScannedAt, Date().timeIntervalSince(rustScannedAt) < 1800 { return }
+        rustScannedAt = Date()
+        rustScanning = true
+        Task {
+            rustCaches = await Task.detached(priority: .utility) { DevCaches.findRust() }.value
+            rustScanning = false
+            autoCleanRust()
+        }
+    }
+
+    /// With the setting on: deletes caches not built for `rustAutoCleanDays` days. Never one built in the last 10 minutes.
+    private func autoCleanRust() {
+        guard Prefs.bool(Prefs.rustAutoClean) else { return }
+        let days = max(Prefs.int(Prefs.rustAutoCleanDays), 1)
+        let stale = rustCaches.filter { !$0.isActive && Date().timeIntervalSince($0.lastBuilt) > Double(days) * 86_400 }
+        guard !stale.isEmpty else { return }
+        deleteRust(stale) { freed, count in
+            Notifier.shared.post(id: "rust-auto-\(Date().timeIntervalSince1970)",
+                                 title: L("Rust önbelleği temizlendi", "Rust caches cleaned"),
+                                 body: L("\(count) proje, \(Format.bytes(freed)) boşaldı (\(days) gündür derlenmemişti).",
+                                         "\(count) projects, \(Format.bytes(freed)) freed (not built for \(days) days)."))
+        }
+    }
+
+    private func deleteRust(_ caches: [RustCache], done: @escaping @MainActor (UInt64, Int) -> Void) {
+        cleaningRust = true
+        Task {
+            let deleted = await Task.detached(priority: .userInitiated) { caches.filter { !$0.isActive && DevCaches.delete($0) } }.value
+            cleaningRust = false
+            rustCaches.removeAll { cache in deleted.contains { $0.path == cache.path } }
+            done(deleted.reduce(0) { $0 + $1.size }, deleted.count)
+        }
+    }
+
+    private(set) var cleaningRust = false
+
+    /// Asks first, listing each project and its size, then deletes every cache not being built right now.
+    func cleanRust(actions: PanelActions) {
+        let caches = rustCaches.filter { !$0.isActive }
+        guard !caches.isEmpty else { return }
+        actions.close()
+        let total = caches.reduce(0) { $0 + $1.size }
+        let alert = NSAlert()
+        alert.messageText = L("Rust önbellekleri silinsin mi?", "Delete the Rust build caches?")
+        let list = caches.prefix(8).map { "• \($0.project): \(Format.bytes($0.size))" }.joined(separator: "\n")
+        alert.informativeText = L("\(list)\n\nToplam \(Format.bytes(total)) boşalır. Bu projeler bir sonraki cargo build'de baştan derlenir; kod ve ayarlara dokunulmaz.",
+                                  "\(list)\n\n\(Format.bytes(total)) is freed. These projects build from scratch next time; code and settings are untouched.")
+        alert.addButton(withTitle: L("Sil", "Delete"))
+        alert.addButton(withTitle: L("Vazgeç", "Cancel"))
+        alert.buttons.first?.hasDestructiveAction = true
+        NSApp.activate()
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        deleteRust(caches) { freed, _ in actions.flash(L("\(Format.bytes(freed)) boşaldı", "\(Format.bytes(freed)) freed")) }
     }
 
     func detail(_ kind: ToolKind) -> String? {
@@ -120,6 +190,8 @@ final class Toolbox {
         case .ip: return LocalIP.address() ?? L("yok", "offline")
         case .eject: return ejectable.isEmpty ? L("disk yok", "none") : L("\(ejectable.count) disk", "\(ejectable.count) disk")
         case .xcode: return cleaning ? L("siliniyor", "cleaning") : derivedDataSize.map(Format.bytes)
+        case .rust: return cleaningRust ? L("siliniyor", "cleaning") : rustScanning && rustCaches.isEmpty ? L("aranıyor", "scanning")
+            : rustCaches.isEmpty ? L("yok", "none") : Format.bytes(rustSize)
         default: return nil
         }
     }
@@ -138,6 +210,7 @@ final class Toolbox {
         switch kind {
         case .eject: !ejectable.isEmpty
         case .xcode: !cleaning && (derivedDataSize ?? 0) > 0
+        case .rust: !cleaningRust && rustCaches.contains { !$0.isActive }
         case .speedTest: !speedRunning
         case .ip: LocalIP.address() != nil
         default: true
@@ -145,7 +218,7 @@ final class Toolbox {
     }
 
     func isBusy(_ kind: ToolKind) -> Bool {
-        (kind == .speedTest && speedRunning) || (kind == .xcode && cleaning)
+        (kind == .speedTest && speedRunning) || (kind == .xcode && cleaning) || (kind == .rust && cleaningRust)
     }
 
     // MARK: - Actions
@@ -190,6 +263,8 @@ final class Toolbox {
             eject(actions: actions)
         case .xcode:
             cleanDerivedData(actions: actions)
+        case .rust:
+            cleanRust(actions: actions)
         case .hiddenFiles:
             setFinderFlag("AppleShowAllFiles", !hiddenFilesShown)
         case .desktop:
