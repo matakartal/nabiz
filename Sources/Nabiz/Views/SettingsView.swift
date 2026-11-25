@@ -69,7 +69,8 @@ enum SettingsWindow {
             window.titleVisibility = .hidden
             window.toolbarStyle = .unified
             window.isReleasedWhenClosed = false
-            window.backgroundColor = NSColor(Theme.surface)
+            window.backgroundColor = .clear
+            window.isOpaque = false
             window.setContentSize(NSSize(width: 680, height: 500))
             window.center()
             self.window = window
@@ -110,12 +111,10 @@ struct SettingsView: View {
             .listStyle(.sidebar)
             .scrollIndicators(.never)
             .scrollContentBackground(.hidden)
-            .background(Theme.surfaceRaised)
             .navigationSplitViewColumnWidth(min: 210, ideal: 220, max: 260)
             .toolbar(removing: .sidebarToggle)
         } detail: {
             VStack(alignment: .leading, spacing: 0) {
-                if (selection.page ?? .general) != .about { PageHeader(page: selection.page ?? .general) }
                 switch selection.page ?? .general {
                 case .general: GeneralPage()
                 case .menuBar: MenuBarPage()
@@ -128,11 +127,11 @@ struct SettingsView: View {
             }
             .scrollContentBackground(.hidden)
             .scrollIndicators(.never)
-            .background(Theme.surface)
             .background(HiddenScrollers().id(selection.page))
             .navigationTitle("")
         }
         .frame(minWidth: 640, minHeight: 460)
+        .background(MenuMaterial().ignoresSafeArea())
         .id(language)
     }
 }
@@ -149,6 +148,7 @@ private struct GeneralPage: View {
 
     var body: some View {
         Form {
+            Section {} header: { PageHeader(page: .general) }
             Section {
                 Picker(L("Dil", "Language"), selection: $language) {
                     Text(L("Sistem", "System")).tag("system")
@@ -230,6 +230,7 @@ private struct MenuBarPage: View {
 
     var body: some View {
         Form {
+            Section {} header: { PageHeader(page: .menuBar) }
             Section {
                 MenuBarPreview(showIcon: icon, stacked: style != "line")
                 Picker(L("Yerleşim", "Layout"), selection: $style) {
@@ -324,6 +325,7 @@ private struct PanelPage: View {
 
     var body: some View {
         Form {
+            Section {} header: { PageHeader(page: .panel) }
             Section {
                 Toggle(L("Bölümler katlanabilsin", "Collapsible sections"), isOn: $collapsible)
                 Toggle(L("Akordeon: aynı anda tek bölüm açık", "Accordion: one section open at a time"), isOn: $accordion)
@@ -436,6 +438,7 @@ private struct MarketsPage: View {
     var body: some View {
         let results = filtered
         Form {
+            Section {} header: { PageHeader(page: .markets) }
             Section {
                 if watchedIDs.isEmpty {
                     Text(L("Henüz piyasa seçilmedi.", "No markets picked yet.")).foregroundStyle(Theme.textMuted)
@@ -543,6 +546,7 @@ private struct CurrencyPage: View {
     var body: some View {
         let codes = rates.codes
         Form {
+            Section {} header: { PageHeader(page: .currency) }
             Section {
                 Picker(L("Ana para birimi", "Main currency"), selection: $base) {
                     ForEach(codes, id: \.self) { Text(verbatim: label(for: $0)).tag($0) }
@@ -586,6 +590,7 @@ private struct AIPage: View {
 
     var body: some View {
         Form {
+            Section {} header: { PageHeader(page: .ai) }
             Section {
                 ForEach(AIProvider.allCases) { provider in
                     Toggle(isOn: binding(provider)) {
@@ -606,8 +611,8 @@ private struct AIPage: View {
                 }
                 .pickerStyle(.segmented)
             } footer: {
-                Footnote(L("Örnek: haftalık limitin %94'ü kullanıldıysa \"%6 kaldı\" ya da \"%94\" yazar. Çubuk her zaman kullanılan kısmı doldurur.",
-                           "Example: with 94% of the weekly limit used it reads \"6% left\" or \"94%\". The bar always fills with what is used."))
+                Footnote(L("Örnek: haftalık limitin %94'ü kullanıldıysa \"%6 kaldı\" ya da \"%94\" yazar. Çubuk da aynısını gösterir; kalanı seçersen harcadıkça kısalır.",
+                           "Example: with 94% of the weekly limit used it reads \"6% left\" or \"94%\". The bar shows the same; with what's left it shrinks as you use it."))
             }
             Section {
                 LabeledContent("Grok") {
@@ -685,8 +690,7 @@ private struct PageHeader: View {
             }
             Spacer()
         }
-        .padding(.horizontal, Theme.Spacing.xl)
-        .padding(.top, Theme.Spacing.xl)
-        .padding(.bottom, Theme.Spacing.xs)
+        .padding(.bottom, Theme.Spacing.s)
+        .textCase(nil)
     }
 }

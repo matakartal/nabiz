@@ -172,3 +172,16 @@ struct HiddenScrollers: NSViewRepresentable {
         }
     }
 }
+
+/// The frosted material native menus use; the panel, calculator and Settings all sit on it.
+struct MenuMaterial: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .menu
+        view.blendingMode = .behindWindow
+        view.state = .active
+        return view
+    }
+
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
+}
