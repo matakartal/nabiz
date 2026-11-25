@@ -46,6 +46,13 @@ enum Prefs {
     static let showMarkets = "showMarkets"
     /// Tool ids the user removed from the grid.
     static let hiddenTools = "hiddenTools"
+    static let accentColor = "accentColor"
+    static let textSize = "textSize"
+    static let panelWidth = "panelWidth"
+    /// "material" (frosted, like system menus) or "opaque".
+    static let panelStyle = "panelStyle"
+    /// Colour menu bar values that need attention (and market moves).
+    static let barColors = "barColors"
     /// Delete Rust build caches not built for `rustAutoCleanDays` days.
     static let rustAutoClean = "rustAutoClean"
     static let rustAutoCleanDays = "rustAutoCleanDays"
@@ -62,7 +69,8 @@ enum Prefs {
             language: "system", refreshSeconds: 5, hotkey: true, panelHotkey: true, notifications: false, onboarded: false,
             barIcon: false, barLabels: true, barCPU: true, barRAM: true, barGPU: false, barNetwork: false,
             barStyle: "stacked", aiRemaining: true, barMarket: false, barMarketID: "",
-            showMarkets: true, hiddenTools: "", rustAutoClean: false, rustAutoCleanDays: 14, watchedMarkets: "BTC,ETH,SOL,xyz:XYZ100,xyz:TSLA,xyz:GOLD", "expanded.markets": true, barSwap: false, barDisk: false, barBattery: false, barAI: false, barCurrency: false,
+            showMarkets: true, hiddenTools: "", accentColor: "green", textSize: "normal", panelWidth: 320,
+            panelStyle: "material", barColors: false, rustAutoClean: false, rustAutoCleanDays: 14, watchedMarkets: "BTC,ETH,SOL,xyz:XYZ100,xyz:TSLA,xyz:GOLD", "expanded.markets": true, barSwap: false, barDisk: false, barBattery: false, barAI: false, barCurrency: false,
             showSystem: true, showCPUApps: true, collapsible: true, accordion: false,
             "expanded.system": true, "expanded.advice": true, "expanded.simulators": true, "expanded.ai": true,
             "expanded.memory": true, "expanded.cpu": true, "expanded.currency": true, "expanded.tools": true,
@@ -158,6 +166,8 @@ enum PanelSection: String, CaseIterable, Identifiable {
 /// What the status item can show, in the order it shows them.
 enum MenuBarItem: String, CaseIterable, Identifiable {
     case cpu, ram, gpu, swap, network, disk, battery, ai, market, currency
+    /// Not a setting: shown automatically while a timer runs.
+    case timer
 
     var id: String { rawValue }
 
@@ -173,6 +183,7 @@ enum MenuBarItem: String, CaseIterable, Identifiable {
         case .ai: Prefs.barAI
         case .market: Prefs.barMarket
         case .currency: Prefs.barCurrency
+        case .timer: "barTimer"
         }
     }
 
@@ -188,6 +199,7 @@ enum MenuBarItem: String, CaseIterable, Identifiable {
         case .ai: L("AI limiti", "AI limit")
         case .market: L("Piyasa fiyatı", "Market price")
         case .currency: L("Döviz kuru", "Exchange rate")
+        case .timer: L("Zamanlayıcı", "Timer")
         }
     }
 }

@@ -4,15 +4,17 @@ import ServiceManagement
 import SwiftUI
 
 enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
-    case general, menuBar, panel, markets, currency, ai, about
+    case general, appearance, menuBar, panel, schedules, markets, currency, ai, about
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .general: L("Genel", "General")
+        case .appearance: L("Görünüm", "Appearance")
         case .menuBar: L("Menü çubuğu", "Menu Bar")
         case .panel: L("Panel", "Panel")
+        case .schedules: L("Görevler", "Schedules")
         case .markets: L("Piyasalar", "Markets")
         case .currency: L("Döviz", "Currency")
         case .ai: L("AI limitleri", "AI Limits")
@@ -24,8 +26,10 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
     var subtitle: String {
         switch self {
         case .general: L("Dil, açılış, yenileme ve kısayollar.", "Language, startup, refresh and shortcuts.")
+        case .appearance: L("Renk, arka plan, boyut ve menü çubuğu renkleri.", "Colour, background, size and menu bar colours.")
         case .menuBar: L("Menü çubuğunda ne ve nasıl görüneceği.", "What the menu bar shows, and how.")
         case .panel: L("Paneldeki bölümler, katlama ve araçlar.", "The panel's sections, folding and tools.")
+        case .schedules: L("Belirli gün ve saatlerde kendiliğinden yapılacak işler.", "Things done on their own at set days and times.")
         case .markets: L("Hyperliquid'den izlenecek piyasalar.", "The Hyperliquid markets to watch.")
         case .currency: L("Ana para birimi ve izlenen kurlar.", "Your main currency and the rates you watch.")
         case .ai: L("Abonelik limitleri ve harcama hızı.", "Subscription limits and how fast they burn.")
@@ -36,8 +40,10 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
     var symbol: String {
         switch self {
         case .general: "gearshape.fill"
+        case .appearance: "paintpalette.fill"
         case .menuBar: "menubar.rectangle"
         case .panel: "list.bullet.rectangle.fill"
+        case .schedules: "calendar.badge.clock"
         case .markets: "chart.line.uptrend.xyaxis"
         case .currency: "dollarsign.arrow.circlepath"
         case .ai: "sparkles"
@@ -117,8 +123,10 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 0) {
                 switch selection.page ?? .general {
                 case .general: GeneralPage()
+                case .appearance: AppearancePage()
                 case .menuBar: MenuBarPage()
                 case .panel: PanelPage()
+                case .schedules: SchedulesPage()
                 case .markets: MarketsPage()
                 case .currency: CurrencyPage()
                 case .ai: AIPage()
@@ -132,7 +140,7 @@ struct SettingsView: View {
         }
         .frame(minWidth: 640, minHeight: 460)
         .background(MenuMaterial().ignoresSafeArea())
-        .id(language)
+        .appearanceRoot(opaqueFill: Theme.surface)
     }
 }
 
@@ -804,5 +812,219 @@ private struct UpdateRow: View {
         if let error = updater.lastError {
             Text(verbatim: error).font(Theme.small).foregroundStyle(Theme.warning.mark)
         }
+    }
+}
+
+private struct AppearancePage: View {
+    @AppStorage(Prefs.accentColor) private var accent = "green"
+    @AppStorage(Prefs.panelStyle) private var style = "material"
+    @AppStorage(Prefs.panelWidth) private var width = 320
+    @AppStorage(Prefs.textSize) private var textSize = "normal"
+    @AppStorage(Prefs.barColors) private var barColors = false
+
+    var body: some View {
+        Form {
+            Section {} header: { PageHeader(page: .appearance) }
+            Section {
+                HStack(spacing: Theme.Spacing.m) {
+                    ForEach(AccentChoice.allCases) { choice in
+                        Button { accent = choice.rawValue } label: {
+                            Circle().fill(choice.color)
+                                .frame(width: Theme.settingsIcon, height: Theme.settingsIcon)
+                                .overlay {
+                                    if accent == choice.rawValue {
+                                        Image(systemName: "checkmark").font(Theme.smallStrong).foregroundStyle(.white)
+                                    }
+                                }
+                                .padding(Theme.Spacing.xs / 2)
+                                .overlay(Circle().strokeBorder(accent == choice.rawValue ? choice.color : .clear, lineWidth: 2))
+                        }
+                        .buttonStyle(.plain)
+                        .help(choice.title)
+                        .accessibilityLabel(choice.title)
+                    }
+                }
+            } header: {
+                Text(L("Vurgu rengi", "Accent colour"))
+            } footer: {
+                Footnote(L("Göstergeler, düğmeler, açık araçlar ve grafikler bu rengi alır. Turuncu ve kırmızı uyarılar için ayrıldı.",
+                           "Meters, buttons, active tools and charts take this colour. Orange and red are kept for warnings."))
+            }
+            Section(L("Panel", "Panel")) {
+                Picker(L("Arka plan", "Background"), selection: $style) {
+                    Text(L("Buzlu cam", "Frosted")).tag("material")
+                    Text(L("Opak", "Opaque")).tag("opaque")
+                }
+                .pickerStyle(.segmented)
+                Picker(L("Genişlik", "Width"), selection: $width) {
+                    Text(L("Dar", "Narrow")).tag(300)
+                    Text(L("Normal", "Normal")).tag(320)
+                    Text(L("Geniş", "Wide")).tag(360)
+                }
+                .pickerStyle(.segmented)
+                Picker(L("Yazı boyutu", "Text size"), selection: $textSize) {
+                    Text(L("Normal", "Normal")).tag("normal")
+                    Text(L("Büyük", "Large")).tag("large")
+                }
+                .pickerStyle(.segmented)
+            }
+            Section {
+                Toggle(L("Değerleri renklendir", "Colour the values"), isOn: $barColors)
+            } header: {
+                Text(L("Menü çubuğu", "Menu bar"))
+            } footer: {
+                Footnote(L("Dikkat isteyen değer turuncu ya da kırmızı olur (yoğun CPU, sıkışık bellek, azalan pil, biten AI limiti); piyasalar yükselişte yeşil, düşüşte kırmızı. Her şey yolundaysa menü çubuğu sade kalır.",
+                           "A value that needs attention turns orange or red (busy CPU, tight memory, low battery, an AI limit running out); markets go green when up and red when down. When all is well the menu bar stays plain."))
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+private struct SchedulesPage: View {
+    private let scheduler = Scheduler.shared
+
+    var body: some View {
+        Form {
+            Section {} header: { PageHeader(page: .schedules) }
+            Section {
+                if scheduler.tasks.isEmpty {
+                    Text(L("Henüz görev yok. Aşağıdan hazır bir tane ekle ya da kendin oluştur.",
+                           "No tasks yet. Add a ready-made one below, or make your own."))
+                        .foregroundStyle(Theme.textMuted)
+                }
+                ForEach(scheduler.tasks) { TaskRow(task: $0) }
+            } header: {
+                Text(L("Görevler", "Tasks"))
+            } footer: {
+                Footnote(L("Görev seçtiğin saatte kendiliğinden çalışır ve kısa bir bildirim gönderir. Mac o saatte uykudaysa 6 saat içinde uyanınca telafi edilir; daha geç olursa bir sonraki güne kalır.",
+                           "A task runs on its own at the time you set and posts a short notification. If the Mac was asleep, it catches up within 6 hours of waking; later than that it waits for its next day."))
+            }
+            Section(L("Ekle", "Add")) {
+                Menu {
+                    ForEach(ScheduledAction.allCases) { action in
+                        Button { scheduler.add(ScheduledTask(action: action, hour: 9, minute: 0)) } label: {
+                            Label(action.title, systemImage: action.symbol)
+                        }
+                    }
+                } label: {
+                    Label(L("Yeni görev", "New task"), systemImage: "plus")
+                }
+                ForEach(Scheduler.presets.filter { preset in !scheduler.tasks.contains { $0.action == preset.action } }, id: \.action) { preset in
+                    Button { scheduler.add(preset) } label: {
+                        HStack {
+                            Image(systemName: preset.action.symbol).frame(width: Theme.menuIcon)
+                            Text(verbatim: preset.action.title)
+                            Spacer()
+                            Text(verbatim: "\(WeekdayChips.summary(preset.weekdays)) \(preset.timeText)").foregroundStyle(Theme.textMuted)
+                            Image(systemName: "plus.circle").foregroundStyle(Theme.accent)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+/// One task: on/off, what it does, when, which days, and a menu to run it now or delete it.
+private struct TaskRow: View {
+    let task: ScheduledTask
+    private let scheduler = Scheduler.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.s) {
+            HStack(spacing: Theme.Spacing.s) {
+                Toggle("", isOn: binding(\.enabled)).labelsHidden().toggleStyle(.switch).controlSize(.small)
+                Image(systemName: task.action.symbol).foregroundStyle(task.enabled ? Theme.accent : Theme.textMuted)
+                    .frame(width: Theme.menuIcon)
+                Text(verbatim: task.action.title).font(Theme.bodyStrong)
+                Spacer()
+                DatePicker("", selection: timeBinding, displayedComponents: .hourAndMinute).labelsHidden().fixedSize()
+                Menu {
+                    Button(L("Şimdi çalıştır", "Run now")) { scheduler.runNow(task) }
+                    Divider()
+                    Button(L("Sil", "Delete"), role: .destructive) { scheduler.remove(task) }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+            }
+            if task.action == .reminder {
+                TextField(L("Hatırlatma metni", "Reminder text"), text: binding(\.note))
+            }
+            HStack {
+                WeekdayChips(days: binding(\.weekdays))
+                Spacer()
+                if task.enabled, let next = task.next() {
+                    Text(L("Sıradaki: ", "Next: ") + next.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(Format.locale)))
+                        .font(Theme.small).foregroundStyle(Theme.textMuted)
+                }
+            }
+        }
+        .padding(.vertical, Theme.Spacing.xs)
+        .opacity(task.enabled ? 1 : 0.6)
+    }
+
+    private func binding<Value>(_ path: WritableKeyPath<ScheduledTask, Value>) -> Binding<Value> {
+        Binding(get: { task[keyPath: path] }, set: { value in
+            var copy = task
+            copy[keyPath: path] = value
+            scheduler.update(copy)
+        })
+    }
+
+    private var timeBinding: Binding<Date> {
+        Binding(get: {
+            Calendar.current.date(bySettingHour: task.hour, minute: task.minute, second: 0, of: Date()) ?? Date()
+        }, set: { date in
+            var copy = task
+            copy.hour = Calendar.current.component(.hour, from: date)
+            copy.minute = Calendar.current.component(.minute, from: date)
+            // Changing the time starts it afresh from now.
+            copy.lastRun = Date()
+            scheduler.update(copy)
+        })
+    }
+}
+
+/// Seven toggles, Monday first: "Pzt Sal Çar Per Cum Cmt Paz".
+private struct WeekdayChips: View {
+    @Binding var days: Set<Int>
+    private static let order = [2, 3, 4, 5, 6, 7, 1]
+
+    var body: some View {
+        HStack(spacing: Theme.Spacing.xs) {
+            ForEach(Self.order, id: \.self) { day in
+                let on = days.contains(day)
+                Button {
+                    if on { if days.count > 1 { days.remove(day) } } else { days.insert(day) }
+                } label: {
+                    Text(verbatim: Self.name(day)).font(Theme.small)
+                        .foregroundStyle(on ? .white : Theme.textMuted)
+                        .padding(.horizontal, Theme.Spacing.s)
+                        .padding(.vertical, Theme.Spacing.xs / 2)
+                        .background(on ? Theme.accent : Theme.hover, in: Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    static func name(_ day: Int) -> String {
+        let symbols = Format.locale.identifier.hasPrefix("tr")
+            ? ["Paz", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt"] : ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+        return symbols[(day - 1) % 7]
+    }
+
+    /// "Her gün", "Hafta içi", or the day names.
+    static func summary(_ days: Set<Int>) -> String {
+        if days.count == 7 { return L("Her gün", "Every day") }
+        if days == Set(2...6) { return L("Hafta içi", "Weekdays") }
+        if days == [1, 7] { return L("Hafta sonu", "Weekends") }
+        return order.filter(days.contains).map(name).joined(separator: " ")
     }
 }

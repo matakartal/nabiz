@@ -4,7 +4,7 @@ import Security
 
 /// The one-tap tools in the panel's grid. Each does its job directly; nothing sends the user to another app to finish.
 enum ToolKind: String, CaseIterable, Identifiable {
-    case calculator, keepAwake, color, screenshot, displayOff, darkMode, speedTest, ip
+    case calculator, keepAwake, timer, color, screenshot, displayOff, darkMode, speedTest, ip
     case password, uuid, eject, xcode, rust, hiddenFiles, desktop, clearClipboard, activity
 
     var id: String { rawValue }
@@ -14,17 +14,18 @@ enum ToolKind: String, CaseIterable, Identifiable {
         switch self {
         case .calculator: L("Hesap", "Calculator")
         case .keepAwake: L("Uyanık kal", "Keep awake")
+        case .timer: L("Zamanlayıcı", "Timer")
         case .color: L("Renk al", "Pick color")
         case .screenshot: L("Ekran al", "Screenshot")
         case .displayOff: L("Ekranı kapat", "Display off")
         case .darkMode: L("Karanlık", "Dark mode")
-        case .speedTest: L("Hız testi", "Speed test")
+        case .speedTest: L("Hız", "Speed")
         case .ip: "IP"
         case .password: L("Şifre üret", "Password")
         case .uuid: "UUID"
         case .eject: L("Diski çıkar", "Eject")
-        case .xcode: L("Xcode temizle", "Clean Xcode")
-        case .rust: L("Rust temizle", "Clean Rust")
+        case .xcode: "Xcode"
+        case .rust: "Rust"
         case .hiddenFiles: L("Gizli dosya", "Hidden files")
         case .desktop: L("Masaüstü", "Desktop")
         case .clearClipboard: L("Panoyu sil", "Clear clip")
@@ -36,6 +37,7 @@ enum ToolKind: String, CaseIterable, Identifiable {
         switch self {
         case .calculator: "plus.forwardslash.minus"
         case .keepAwake: "cup.and.saucer"
+        case .timer: "timer"
         case .color: "eyedropper"
         case .screenshot: "camera.viewfinder"
         case .displayOff: "moon.zzz"
@@ -59,6 +61,8 @@ enum ToolKind: String, CaseIterable, Identifiable {
         switch self {
         case .calculator: L("Hesap makinesi, döviz ve birim çevirici (⌃⌥Boşluk).", "Calculator, currency and unit converter (⌃⌥Space).")
         case .keepAwake: L("Mac'in ve ekranın uyumasını bir süre engeller.", "Stops the Mac and display from sleeping for a while.")
+        case .timer: L("Geri sayım; bitince ses ve bildirim. Kalan süre menü çubuğunda görünür.",
+                       "A countdown with a sound and a notification at the end. The time left shows in the menu bar.")
         case .color: L("Ekrandan bir renk seç; hex kodu panoya kopyalanır.", "Pick a colour on screen; its hex code is copied.")
         case .screenshot: L("Bir alan seç; görüntüsü panoya kopyalanır.", "Select an area; its picture is copied.")
         case .displayOff: L("Ekranı hemen uyutur; Mac çalışmaya devam eder.", "Puts the display to sleep now; the Mac keeps running.")
@@ -68,9 +72,9 @@ enum ToolKind: String, CaseIterable, Identifiable {
         case .password: L("Güçlü bir şifre üretip panoya kopyalar.", "Makes a strong password and copies it.")
         case .uuid: L("Yeni bir UUID üretip panoya kopyalar.", "Makes a new UUID and copies it.")
         case .eject: L("Takılı harici diskleri güvenle çıkarır.", "Safely ejects connected external disks.")
-        case .xcode: L("Xcode'un DerivedData önbelleğini siler; Xcode gerekince yeniden oluşturur.",
+        case .xcode: L("Xcode'un DerivedData önbelleğini temizler; Xcode gerekince yeniden oluşturur.",
                        "Deletes Xcode's DerivedData cache; Xcode rebuilds it when needed.")
-        case .rust: L("Rust projelerinin target/ derleme önbelleklerini siler; cargo gerekince yeniden oluşturur.",
+        case .rust: L("Rust projelerinin target/ derleme önbelleklerini temizler; cargo gerekince yeniden oluşturur.",
                       "Deletes Rust projects' target/ build caches; cargo rebuilds them when needed.")
         case .hiddenFiles: L("Finder'da gizli dosyaları gösterir ya da gizler.", "Shows or hides hidden files in Finder.")
         case .desktop: L("Masaüstü simgelerini gizler (sunum ve ekran paylaşımı için).", "Hides desktop icons (for presenting and screen sharing).")
@@ -186,6 +190,7 @@ final class Toolbox {
             let awake = KeepAwake.shared
             guard awake.isOn else { return nil }
             return awake.until.map { Format.countdown(until: $0) } ?? "∞"
+        case .timer: return CountdownTimer.shared.remainingText
         case .speedTest: return speedRunning ? L("ölçülüyor", "testing") : speedResult
         case .ip: return LocalIP.address() ?? L("yok", "offline")
         case .eject: return ejectable.isEmpty ? L("disk yok", "none") : L("\(ejectable.count) disk", "\(ejectable.count) disk")
@@ -199,6 +204,7 @@ final class Toolbox {
     func isActive(_ kind: ToolKind) -> Bool {
         switch kind {
         case .keepAwake: KeepAwake.shared.isOn
+        case .timer: CountdownTimer.shared.isRunning
         case .darkMode: darkMode
         case .hiddenFiles: hiddenFilesShown
         case .desktop: desktopHidden
@@ -228,8 +234,8 @@ final class Toolbox {
         case .calculator:
             actions.close()
             CalculatorPanel.shared.show()
-        case .keepAwake:
-            break // the grid opens its duration chips
+        case .keepAwake, .timer:
+            break // the grid opens their duration chips
         case .color:
             actions.close()
             NSColorSampler().show { color in
@@ -288,6 +294,39 @@ final class Toolbox {
         Task {
             try? await Task.sleep(for: .milliseconds(400))
             darkMode = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        }
+    }
+
+    /// For schedules: sets the appearance instead of flipping it.
+    func setDarkMode(_ on: Bool) {
+        let script = NSAppleScript(source: "tell application \"System Events\" to tell appearance preferences to set dark mode to \(on)")
+        var error: NSDictionary?
+        script?.executeAndReturnError(&error)
+        darkMode = on
+    }
+
+    /// For schedules: no dialog. Deletes Rust caches not built for a day (never one being built).
+    func cleanRustUnattended() {
+        Task {
+            rustScannedAt = nil
+            rustCaches = await Task.detached(priority: .utility) { DevCaches.findRust() }.value
+            let stale = rustCaches.filter { !$0.isActive && Date().timeIntervalSince($0.lastBuilt) > 86_400 }
+            guard !stale.isEmpty else { return }
+            deleteRust(stale) { _, _ in }
+        }
+    }
+
+    /// For schedules: no dialog. Xcode rebuilds DerivedData on the next build.
+    func cleanDerivedDataUnattended() {
+        let path = Self.derivedData.path
+        Task {
+            await Task.detached(priority: .utility) {
+                let fm = FileManager.default
+                for item in (try? fm.contentsOfDirectory(atPath: path)) ?? [] {
+                    try? fm.removeItem(atPath: (path as NSString).appendingPathComponent(item))
+                }
+            }.value
+            derivedDataSize = await Task.detached(priority: .utility) { Self.folderSize(path) }.value
         }
     }
 

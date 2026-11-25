@@ -1,12 +1,24 @@
 # Changelog
 
+## 1.5.0
+
+- **Scheduled tasks:** dark/light mode, stop keeping awake, shut down simulators, quit Docker, clean Rust or Xcode
+  caches, clear the clipboard, display off, or a reminder, on chosen days at a set time. A missed task (the Mac
+  was asleep) catches up within 6 hours. Ready-made presets; "Run now"; next run shown. Settings → Schedules, or
+  right-click the menu bar item.
+- **Appearance:** accent colour (8 choices; orange and red stay reserved for warnings), frosted or opaque panel,
+  narrow/normal/wide panel, normal or large text, and coloured menu bar values (orange/red when something needs
+  attention, green/red for market moves).
+- **Timer** tool: 5–60 minute countdown shown in the menu bar, with a sound and a notification at the end.
+- Tool tiles keep their titles readable; shorter titles for Speed, Xcode and Rust.
+
 ## 1.4.0
 
 - **Rust build caches:** finds Cargo `target/` folders (only ones cargo signed with CACHEDIR.TAG) in ~/Developer,
   ~/Projects, ~/code and ~/src. A **Clean Rust** tool lists each project and its size before deleting, and a
   suggestion appears above 10 GB. Optional automatic clean-up deletes caches not built for 3–30 days; a project
   built in the last 10 minutes is always skipped.
-- Signed with Developer ID (FinQt Veri Hizmetleri, team 3Q2LK426HF) and notarized by Apple: the DMG opens without warnings.
+- Signed with Developer ID (Finqt Veri Hizmetleri, team 3Q2LK426HF) and notarized by Apple: the DMG opens without warnings.
 
 ## 1.3.0
 

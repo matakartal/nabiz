@@ -9,7 +9,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-# Releases are signed by FinQt Veri Hizmetleri (team 3Q2LK426HF, the team Sincerus ships with). Override with SIGN_TEAM.
+# Releases are signed by Finqt Veri Hizmetleri (team 3Q2LK426HF, the team Sincerus ships with). Override with SIGN_TEAM.
 TEAM="${SIGN_TEAM:-3Q2LK426HF}"   # FINQT VERI HIZMETLERI SANAYI VE TICARET LTD. STI.
 IDENTITY=$(security find-identity -v -p codesigning | grep "Developer ID Application" | grep -m1 -i "$TEAM" | sed -E 's/.*"(.*)"/\1/' || true)
 if [[ -z "$IDENTITY" ]]; then

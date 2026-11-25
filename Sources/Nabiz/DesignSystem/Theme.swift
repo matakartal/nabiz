@@ -4,7 +4,8 @@ import SwiftUI
 /// Kartal UI on macOS: the same tokens as the iOS/Android templates, resolved through AppKit appearances.
 /// Near-white / near-black surfaces, one accent, orange only for "running low", red only for alarms.
 enum Theme {
-    static let accent = Palette.green.fill
+    /// The one accent, chosen in Settings → Appearance. Read live: never copy it into a stored constant.
+    static var accent: Color { AccentChoice.current.color }
     /// Alarms only: critical memory pressure, a hot Mac.
     static let danger = Color(nsColor: .systemRed)
     /// "Running low": high swap, busy CPU. Bars use `fill`, text uses `mark`.
@@ -21,11 +22,13 @@ enum Theme {
     static let track = dynamic(light: .white(0, alpha: 0.05), dark: .white(1, alpha: 0.06))
 
     // Two sizes and two weights per screen, at macOS menu scale (iOS 16/13 → macOS 13/11).
-    static let title = Font.system(size: 15, weight: .semibold)
-    static let body = Font.system(size: 13, weight: .regular)
-    static let bodyStrong = Font.system(size: 13, weight: .semibold)
-    static let small = Font.system(size: 11, weight: .regular)
-    static let smallStrong = Font.system(size: 11, weight: .semibold)
+    // "Large text" in Settings → Appearance adds one point to each.
+    private static var bump: CGFloat { UserDefaults.standard.string(forKey: "textSize") == "large" ? 1 : 0 }
+    static var title: Font { .system(size: 15 + bump, weight: .semibold) }
+    static var body: Font { .system(size: 13 + bump, weight: .regular) }
+    static var bodyStrong: Font { .system(size: 13 + bump, weight: .semibold) }
+    static var small: Font { .system(size: 11 + bump, weight: .regular) }
+    static var smallStrong: Font { .system(size: 11 + bump, weight: .semibold) }
     /// The quick calculator's input line, Spotlight-sized.
     static let input = Font.system(size: 20, weight: .regular)
     static let inputStrong = Font.system(size: 20, weight: .semibold)
@@ -68,7 +71,11 @@ enum Theme {
     /// Where text starts inside a grouped form row, so footers line up with it.
     static let formInset: CGFloat = 10
     /// The menu bar panel: one narrow column.
-    static let menuPanelWidth: CGFloat = 320
+    /// Narrow, normal or wide, from Settings → Appearance.
+    static var menuPanelWidth: CGFloat {
+        let width = UserDefaults.standard.integer(forKey: "panelWidth")
+        return [300, 320, 360].contains(width) ? CGFloat(width) : 320
+    }
     /// Never taller than the screen below the menu bar.
     @MainActor static var menuPanelMaxHeight: CGFloat {
         (NSScreen.main?.visibleFrame.height ?? 720) - Spacing.xxl
@@ -186,4 +193,63 @@ struct MenuMaterial: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
+}
+
+/// The accent colours on offer. Orange and red are left out on purpose: they mean "running low" and "danger".
+enum AccentChoice: String, CaseIterable, Identifiable {
+    case green, teal, sky, blue, indigo, violet, pink, graphite
+
+    var id: String { rawValue }
+
+    static var current: AccentChoice {
+        AccentChoice(rawValue: UserDefaults.standard.string(forKey: "accentColor") ?? "") ?? .green
+    }
+
+    var color: Color {
+        switch self {
+        case .green: Palette.green.fill
+        case .teal: Theme.dynamic(light: .hex(0x14A89A), dark: .hex(0x2DC4B4))
+        case .sky: Theme.dynamic(light: .hex(0x0A9BD8), dark: .hex(0x38B6EE))
+        case .blue: Theme.dynamic(light: .hex(0x2F6FEB), dark: .hex(0x4C8BFF))
+        case .indigo: Theme.dynamic(light: .hex(0x5350D6), dark: .hex(0x7471F0))
+        case .violet: Theme.dynamic(light: .hex(0x8A4FE0), dark: .hex(0xA374F2))
+        case .pink: Theme.dynamic(light: .hex(0xDB3E8A), dark: .hex(0xF060A6))
+        case .graphite: Theme.dynamic(light: .hex(0x6E6E73), dark: .hex(0x98989D))
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .green: L("Yeşil", "Green")
+        case .teal: L("Turkuaz", "Teal")
+        case .sky: L("Gök mavisi", "Sky")
+        case .blue: L("Mavi", "Blue")
+        case .indigo: L("Çivit", "Indigo")
+        case .violet: L("Mor", "Violet")
+        case .pink: L("Pembe", "Pink")
+        case .graphite: L("Grafit", "Graphite")
+        }
+    }
+}
+
+/// Re-renders a window's content when anything in Settings → Appearance (or the language) changes, and gives it
+/// the chosen background: the frosted menu material, or opaque.
+struct AppearanceRoot: ViewModifier {
+    @AppStorage("language") private var language = "system"
+    @AppStorage("accentColor") private var accent = "green"
+    @AppStorage("textSize") private var textSize = "normal"
+    @AppStorage("panelWidth") private var width = 320
+    @AppStorage("panelStyle") private var style = "material"
+    var opaqueFill = Theme.surfaceRaised
+
+    func body(content: Content) -> some View {
+        content
+            .background(style == "opaque" ? opaqueFill : Color.clear)
+            .tint(Theme.accent)
+            .id("\(language)-\(accent)-\(textSize)-\(width)-\(style)")
+    }
+}
+
+extension View {
+    func appearanceRoot(opaqueFill: Color = Theme.surfaceRaised) -> some View { modifier(AppearanceRoot(opaqueFill: opaqueFill)) }
 }

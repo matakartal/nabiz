@@ -171,6 +171,7 @@ struct CalculatorView: View {
             .padding(.vertical, Theme.Spacing.m)
         }
         .frame(width: 520)
+        .appearanceRoot()
         .onAppear { focused = true }
     }
 

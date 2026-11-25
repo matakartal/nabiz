@@ -42,7 +42,7 @@ struct PanelView: View {
         // The window behind is the native menu material (frosted), like system menus.
         .environment(\.panelOpen, monitor.panelVisible)
         .environment(\.flash, FlashAction(actions.flash))
-        .id(language)
+        .appearanceRoot()
     }
 }
 
@@ -441,7 +441,9 @@ private struct ToolsSection: View {
     let monitor: Monitor
     let actions: PanelActions
     @AppStorage(Prefs.hiddenTools) private var hidden = ""
-    @State private var awakeOpen = false
+    /// The tool whose duration chips are showing under the grid (keep awake or the timer).
+    @State private var chips: ToolKind?
+    private let timer = CountdownTimer.shared
     private let toolbox = Toolbox.shared
     private let awake = KeepAwake.shared
 
@@ -453,20 +455,35 @@ private struct ToolsSection: View {
             ForEach(tools) { kind in
                 ToolTile(kind: kind, detail: toolbox.detail(kind), active: toolbox.isActive(kind),
                          enabled: toolbox.isEnabled(kind), busy: toolbox.isBusy(kind)) {
-                    if kind == .keepAwake { awakeOpen.toggle() } else { toolbox.run(kind, actions: actions, monitor: monitor) }
+                    if kind == .keepAwake || kind == .timer {
+                        chips = chips == kind ? nil : kind
+                    } else {
+                        toolbox.run(kind, actions: actions, monitor: monitor)
+                    }
                 }
             }
         }
         .padding(.horizontal, Theme.menuInset)
         .padding(.vertical, Theme.Spacing.xs)
-        if awakeOpen {
+        if chips == .timer {
+            HStack(spacing: Theme.Spacing.xs) {
+                Text(L("Zamanlayıcı:", "Timer:")).font(Theme.small).foregroundStyle(Theme.textMuted)
+                ForEach([5, 15, 25, 45, 60], id: \.self) { minutes in
+                    Chip(L("\(minutes) dk", "\(minutes)m")) { timer.start(minutes: minutes); chips = nil }
+                }
+                if timer.isRunning { Chip(L("Durdur", "Stop")) { timer.stop(); chips = nil } }
+            }
+            .padding(.horizontal, Theme.menuInset)
+            .padding(.vertical, Theme.Spacing.xs)
+        }
+        if chips == .keepAwake {
             HStack(spacing: Theme.Spacing.xs) {
                 Text(L("Uyanık kal:", "Keep awake:")).font(Theme.small).foregroundStyle(Theme.textMuted)
-                Chip(L("15 dk", "15m")) { awake.start(minutes: 15); awakeOpen = false }
-                Chip(L("1 sa", "1h")) { awake.start(minutes: 60); awakeOpen = false }
-                Chip(L("2 sa", "2h")) { awake.start(minutes: 120); awakeOpen = false }
-                Chip("∞") { awake.start(minutes: nil); awakeOpen = false }
-                if awake.isOn { Chip(L("Kapat", "Off")) { awake.stop(); awakeOpen = false } }
+                Chip(L("15 dk", "15m")) { awake.start(minutes: 15); chips = nil }
+                Chip(L("1 sa", "1h")) { awake.start(minutes: 60); chips = nil }
+                Chip(L("2 sa", "2h")) { awake.start(minutes: 120); chips = nil }
+                Chip("∞") { awake.start(minutes: nil); chips = nil }
+                if awake.isOn { Chip(L("Kapat", "Off")) { awake.stop(); chips = nil } }
             }
             .padding(.horizontal, Theme.menuInset)
             .padding(.vertical, Theme.Spacing.xs)
@@ -496,8 +513,9 @@ private struct ToolTile: View {
                     }
                 }
                 .frame(width: Theme.menuIcon)
-                Text(verbatim: kind.title).font(Theme.body).lineLimit(1).minimumScaleFactor(0.8)
-                Spacer(minLength: 0)
+                Text(verbatim: kind.title).font(Theme.body).lineLimit(1).minimumScaleFactor(0.85)
+                    .layoutPriority(1)
+                Spacer(minLength: Theme.Spacing.xs)
                 if let detail {
                     Text(verbatim: detail).font(Theme.small).monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
                         .foregroundStyle(active ? Color.white.opacity(0.85) : Theme.textMuted)

@@ -34,6 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panel: StatusPanel!
     private var flashUntil: Date?
     private var flashMessage = ""
+    private var timerWasRunning = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -60,6 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             if Prefs.bool(Prefs.barCurrency) { RateStore.shared.refreshIfNeeded() }
             Notifier.shared.check(monitor: monitor)
+            Scheduler.shared.check()
             Updater.shared.check()
             // Market prices: every 10 s with the panel open, every 30 s for the menu bar.
             if monitor.panelVisible && Prefs.bool(Prefs.showMarkets) {
@@ -80,6 +82,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         updateButton()
+        // While a timer runs, the menu bar counts down every second; otherwise this does nothing.
+        Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let running = CountdownTimer.shared.endsAt != nil
+                // One last refresh when it stops, so the countdown doesn't linger.
+                if running || self.timerWasRunning { self.updateButton() }
+                self.timerWasRunning = running
+            }
+        }
         WelcomeWindow.showIfFirstLaunch { [weak self] in self?.togglePanel() }
     }
 
@@ -114,6 +126,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(item(L("Paneli aç", "Open Panel")) { [weak self] in self?.togglePanel() })
         menu.addItem(item(L("Hızlı hesap", "Quick Calculator")) { CalculatorPanel.shared.show() })
         menu.addItem(item(L("Geçmiş", "History")) { HistoryWindow.show() })
+        menu.addItem(item(L("Zamanlanmış görevler…", "Scheduled Tasks…")) { SettingsWindow.show(.schedules) })
         menu.addItem(.separator())
         menu.addItem(item(L("Ayarlar…", "Settings…"), ",") { SettingsWindow.show(nil) })
         menu.addItem(.separator())
@@ -146,7 +159,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let showIcon = Prefs.bool(Prefs.barIcon) || text.isEmpty || critical
         button.image = showIcon ? icon : nil
         button.imagePosition = .imageLeading
-        button.attributedTitle = NSAttributedString(string: text.isEmpty ? "" : (showIcon ? " " : "") + text, attributes: [.font: font])
+        button.attributedTitle = Prefs.bool(Prefs.barColors)
+            ? MenuBarText.colouredLine(monitor: monitor, font: font, leadingSpace: showIcon)
+            : NSAttributedString(string: text.isEmpty ? "" : (showIcon ? " " : "") + text, attributes: [.font: font])
     }
 
     private func copy(_ text: String) {

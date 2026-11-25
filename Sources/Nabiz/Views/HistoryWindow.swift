@@ -93,7 +93,7 @@ struct HistoryView: View {
         .padding(.top, Theme.Spacing.l)
         .frame(minWidth: 560, minHeight: 480)
         .background(MenuMaterial().ignoresSafeArea())
-        .id(language)
+        .appearanceRoot(opaqueFill: Theme.surface)
     }
 
     private func chart(_ title: String, _ series: UsageHistory.Series, _ color: Color, now: Date) -> some View {

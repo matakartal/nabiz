@@ -1,3 +1,4 @@
+import AppKit
 import Darwin
 import Foundation
 import IOKit.ps
@@ -130,5 +131,56 @@ final class KeepAwake {
         if isOn { IOPMAssertionRelease(assertion) }
         isOn = false
         until = nil
+    }
+}
+
+// MARK: - Countdown timer
+
+/// A kitchen timer in the menu bar: counts down, then plays a sound and posts a notification.
+@MainActor
+@Observable
+final class CountdownTimer {
+    static let shared = CountdownTimer()
+
+    private(set) var endsAt: Date?
+    private(set) var minutes = 0
+    @ObservationIgnored private var task: Task<Void, Never>?
+
+    var isRunning: Bool { endsAt.map { $0 > Date() } ?? false }
+
+    /// "12:34", or "1:02:03" past an hour.
+    var remainingText: String? {
+        guard let endsAt, endsAt > Date() else { return nil }
+        let seconds = Int(endsAt.timeIntervalSinceNow.rounded(.up))
+        let h = seconds / 3600, m = (seconds % 3600) / 60, s = seconds % 60
+        return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%d:%02d", m, s)
+    }
+
+    func start(minutes: Int) {
+        stop()
+        self.minutes = minutes
+        let end = Date().addingTimeInterval(Double(minutes) * 60)
+        endsAt = end
+        Notifier.shared.requestPermission(keepSetting: true)
+        task = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(Double(minutes) * 60))
+            guard !Task.isCancelled else { return }
+            self?.finish()
+        }
+    }
+
+    func stop() {
+        task?.cancel()
+        task = nil
+        endsAt = nil
+    }
+
+    private func finish() {
+        endsAt = nil
+        task = nil
+        NSSound(named: "Glass")?.play()
+        Notifier.shared.post(id: "timer-\(Date().timeIntervalSince1970)",
+                             title: L("Süre doldu", "Time's up"),
+                             body: L("\(minutes) dakikalık zamanlayıcı bitti.", "Your \(minutes)-minute timer is done."))
     }
 }
