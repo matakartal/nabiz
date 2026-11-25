@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1.0
+
+- ⌃⌥N opens the panel from anywhere, and right-clicking the menu bar item shows a short menu (Panel, Calculator, Settings, Quit).
+- Opt-in notifications when memory turns critical or an AI limit has less than 10% left, once per episode.
+- A confirmation in the menu bar after quitting an app or shutting down simulators.
+- Markets and exchange rates show "Couldn't connect · Try again" when offline instead of loading forever.
+- The status pill in the header opens Suggestions.
+- "Reset all settings…" in Settings → General; wider Settings sidebar.
+- Section headings are plain again (thin dividers, no cards).
+
 ## 1.0.0
 
 First release.

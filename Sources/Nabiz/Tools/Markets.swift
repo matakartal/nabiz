@@ -39,6 +39,8 @@ final class MarketStore {
     private(set) var markets: [String: Market] = [:]
     private(set) var dexes: [MarketDex] = []
     private(set) var loadingCatalog = false
+    /// The last fetch got nothing back (offline, or Hyperliquid unreachable).
+    private(set) var failed = false
     @ObservationIgnored private var pricesAt: Date?
     @ObservationIgnored private var catalogAt: Date?
     @ObservationIgnored private var fetching = false
@@ -57,10 +59,19 @@ final class MarketStore {
         let needed = Set(watchedIDs.map { $0.contains(":") ? String($0.split(separator: ":")[0]) : "" })
         fetching = true
         Task {
-            await load(dexes: Array(needed))
-            pricesAt = Date()
+            let ok = await load(dexes: Array(needed))
+            failed = !ok
+            // A failed fetch is retried on the next tick instead of waiting out maxAge.
+            pricesAt = ok ? Date() : nil
             fetching = false
         }
+    }
+
+    /// Tries again right away (the "Try again" row).
+    func retry() {
+        pricesAt = nil
+        failed = false
+        refreshWatched(maxAge: 0)
     }
 
     /// Every market on every dex, for choosing in Settings. At most hourly.
@@ -70,19 +81,26 @@ final class MarketStore {
         loadingCatalog = true
         Task {
             if let list = await Self.fetchDexes() { dexes = list }
-            await load(dexes: dexes.isEmpty ? [""] : dexes.map(\.id))
-            catalogAt = Date()
+            let ok = await load(dexes: dexes.isEmpty ? [""] : dexes.map(\.id))
+            failed = !ok
+            catalogAt = ok ? Date() : nil
             loadingCatalog = false
         }
     }
 
-    private func load(dexes names: [String]) async {
+    /// True when at least one dex answered.
+    @discardableResult
+    private func load(dexes names: [String]) async -> Bool {
+        var answered = false
         await withTaskGroup(of: [Market]?.self) { group in
             for dex in names { group.addTask { await Self.fetchMarkets(dex: dex) } }
             for await list in group {
-                for market in list ?? [] { markets[market.id] = market }
+                guard let list else { continue }
+                answered = true
+                for market in list { markets[market.id] = market }
             }
         }
+        return answered
     }
 
     // MARK: API

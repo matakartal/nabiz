@@ -24,6 +24,8 @@ final class RateStore {
     private(set) var table: Table?
     @ObservationIgnored private var fetchedAt: Date?
     @ObservationIgnored private var loading = false
+    /// The last fetch failed and there is no cached table to fall back on.
+    private(set) var failed = false
     @ObservationIgnored var onChange: (() -> Void)?
 
     private static let cacheKey = "rateCache"
@@ -55,7 +57,11 @@ final class RateStore {
                   (response as? HTTPURLResponse)?.statusCode == 200,
                   let series = try? JSONDecoder().decode(Series.self, from: data),
                   let latestDay = series.rates.keys.max(), let latest = series.rates[latestDay]
-            else { return }
+            else {
+                failed = table == nil
+                return
+            }
+            failed = false
             let previousDay = series.rates.keys.filter { $0 < latestDay }.max()
             let fresh = Table(date: latestDay, rates: latest, previous: previousDay.flatMap { series.rates[$0] })
             table = fresh

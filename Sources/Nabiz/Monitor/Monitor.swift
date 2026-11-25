@@ -27,6 +27,15 @@ enum Fix {
         }
     }
 
+    /// The confirmation shown in the menu bar after the tap, when there is something to confirm.
+    var doneMessage: String? {
+        switch self {
+        case .shutdownSimulators: L("Simülatörler kapatılıyor", "Shutting down simulators")
+        case .quit(let group): L("\(group.name) kapatıldı", "Quit \(group.name)")
+        case .openClaude, .openStorage: nil
+        }
+    }
+
     /// The button text, kept short so it fits next to the suggestion.
     var title: String {
         switch self {

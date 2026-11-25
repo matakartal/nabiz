@@ -38,7 +38,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.target = self
-        statusItem.button?.action = #selector(togglePanel)
+        statusItem.button?.action = #selector(statusItemClicked)
+        statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
         panel = StatusPanel(monitor: monitor, actions: PanelActions(
             copy: { [weak self] in self?.copy($0) },
             flash: { [weak self] in self?.flash($0) },
@@ -55,6 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 AILimitsStore.shared.refreshIfNeeded(maxAge: 300)
             }
             if Prefs.bool(Prefs.barCurrency) { RateStore.shared.refreshIfNeeded() }
+            Notifier.shared.check(monitor: monitor)
             // Market prices: every 10 s with the panel open, every 30 s for the menu bar.
             if monitor.panelVisible && Prefs.bool(Prefs.showMarkets) {
                 MarketStore.shared.refreshWatched(maxAge: 10)
@@ -63,10 +65,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         RateStore.shared.refreshIfNeeded()
-        HotKey.update(enabled: Prefs.bool(Prefs.hotkey))
+        HotKey.togglePanel = { [weak self] in self?.togglePanel() }
+        updateHotKeys()
         NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
-                HotKey.update(enabled: Prefs.bool(Prefs.hotkey))
+                self?.updateHotKeys()
                 AILimitsStore.shared.refreshIfNeeded()
                 self?.updateButton()
             }
@@ -80,6 +83,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func togglePanel() {
         guard let button = statusItem.button else { return }
         panel.toggle(below: button)
+    }
+
+    private func updateHotKeys() {
+        HotKey.update(.calculator, enabled: Prefs.bool(Prefs.hotkey))
+        HotKey.update(.panel, enabled: Prefs.bool(Prefs.panelHotkey))
+    }
+
+    /// Left click opens the panel; right click (or ⌃-click) shows a short native menu.
+    @objc private func statusItemClicked() {
+        let event = NSApp.currentEvent
+        guard event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true else {
+            togglePanel()
+            return
+        }
+        panel.close()
+        let menu = NSMenu()
+        func item(_ title: String, _ key: String = "", _ action: @escaping @MainActor () -> Void) -> NSMenuItem {
+            let item = ClosureMenuItem(title: title, keyEquivalent: key, handler: action)
+            return item
+        }
+        menu.addItem(item(L("Paneli aç", "Open Panel")) { [weak self] in self?.togglePanel() })
+        menu.addItem(item(L("Hızlı hesap", "Quick Calculator")) { CalculatorPanel.shared.show() })
+        menu.addItem(.separator())
+        menu.addItem(item(L("Ayarlar…", "Settings…"), ",") { SettingsWindow.show(nil) })
+        menu.addItem(.separator())
+        menu.addItem(item(L("Nabız'dan çık", "Quit Nabız"), "q") { NSApp.terminate(nil) })
+        statusItem.menu = menu
+        statusItem.button?.performClick(nil)
+        statusItem.menu = nil
     }
 
     private func updateButton() {
@@ -133,6 +165,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 /// The opaque panel under the status item. Closes on Escape, on a click elsewhere, or on a second click of the item.
+/// A menu item that runs a closure.
+@MainActor
+final class ClosureMenuItem: NSMenuItem {
+    private let handler: @MainActor () -> Void
+
+    init(title: String, keyEquivalent: String, handler: @escaping @MainActor () -> Void) {
+        self.handler = handler
+        super.init(title: title, action: #selector(fire), keyEquivalent: keyEquivalent)
+        target = self
+    }
+
+    required init(coder: NSCoder) { fatalError() }
+
+    @objc private func fire() { handler() }
+}
+
 @MainActor
 final class StatusPanel {
     private let window = KeyPanel()

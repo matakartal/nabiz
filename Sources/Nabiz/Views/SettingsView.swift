@@ -98,7 +98,7 @@ struct SettingsView: View {
             .scrollIndicators(.never)
             .scrollContentBackground(.hidden)
             .background(Theme.surfaceRaised)
-            .navigationSplitViewColumnWidth(min: 190, ideal: 200, max: 240)
+            .navigationSplitViewColumnWidth(min: 210, ideal: 220, max: 260)
             .toolbar(removing: .sidebarToggle)
         } detail: {
             Group {
@@ -129,6 +129,8 @@ private struct GeneralPage: View {
     @AppStorage(Prefs.language) private var language = "system"
     @AppStorage(Prefs.refreshSeconds) private var refresh = 5
     @AppStorage(Prefs.hotkey) private var hotkey = true
+    @AppStorage(Prefs.panelHotkey) private var panelHotkey = true
+    @AppStorage(Prefs.notifications) private var notifications = false
     @State private var login = SMAppService.mainApp.status == .enabled
 
     var body: some View {
@@ -150,12 +152,44 @@ private struct GeneralPage: View {
                        "While the panel is open it refreshes every 2 seconds. Slower refresh saves battery."))
             }
             Section {
-                Toggle(L("Hızlı hesap kısayolu: ⌃⌥Boşluk", "Quick calculator shortcut: ⌃⌥Space"), isOn: $hotkey)
+                Toggle(L("Paneli aç: ⌃⌥N", "Open the panel: ⌃⌥N"), isOn: $panelHotkey)
+                Toggle(L("Hızlı hesap: ⌃⌥Boşluk", "Quick calculator: ⌃⌥Space"), isOn: $hotkey)
+            } header: {
+                Text(L("Kısayollar", "Shortcuts"))
             } footer: {
-                Footnote(L("Her yerden hesap makinesini ve döviz çeviriciyi açar.", "Opens the calculator and currency converter from anywhere."))
+                Footnote(L("Her yerden çalışır. Menü çubuğundaki simgeye sağ tıklayınca da kısa bir menü açılır.",
+                           "They work from anywhere. Right-clicking the menu bar item also opens a short menu."))
+            }
+            Section {
+                Toggle(L("Bildirimler", "Notifications"), isOn: Binding(get: { notifications }, set: { on in
+                    notifications = on
+                    if on { Notifier.shared.requestPermission() }
+                }))
+            } footer: {
+                Footnote(L("Bellek kritik seviyeye inince ve açık bir AI limitinin %10'undan azı kalınca haber verir; her durum için bir kez.",
+                           "Tells you when memory turns critical and when an AI limit you turned on has less than 10% left, once each time."))
+            }
+            Section {
+                Button(L("Tüm ayarları sıfırla…", "Reset all settings…"), role: .destructive) { resetAll() }
             }
         }
         .formStyle(.grouped)
+    }
+
+    /// Back to the defaults; the cached rates and the welcome stay so nothing has to load or show again.
+    private func resetAll() {
+        let alert = NSAlert()
+        alert.messageText = L("Tüm ayarlar sıfırlansın mı?", "Reset all settings?")
+        alert.informativeText = L("Menü çubuğu, panel, piyasalar, döviz ve AI seçimleri ilk hâline döner.",
+                                  "Menu bar, panel, markets, currency and AI choices go back to how they started.")
+        alert.addButton(withTitle: L("Sıfırla", "Reset"))
+        alert.addButton(withTitle: L("Vazgeç", "Cancel"))
+        alert.buttons.first?.hasDestructiveAction = true
+        guard alert.runModal() == .alertFirstButtonReturn, let domain = Bundle.main.bundleIdentifier else { return }
+        let keep = ["rateCache", Prefs.onboarded]
+        let saved = keep.compactMap { key in UserDefaults.standard.object(forKey: key).map { (key, $0) } }
+        UserDefaults.standard.removePersistentDomain(forName: domain)
+        for (key, value) in saved { UserDefaults.standard.set(value, forKey: key) }
     }
 
     private func setLogin(_ on: Bool) {

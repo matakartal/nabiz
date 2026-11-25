@@ -6,6 +6,9 @@ enum Prefs {
     static let language = "language"
     static let refreshSeconds = "refreshSeconds"
     static let hotkey = "calculatorHotkey"
+    static let panelHotkey = "panelHotkey"
+    /// Alerts for critical memory and an almost-used AI limit.
+    static let notifications = "notifications"
     /// The welcome window has been shown.
     static let onboarded = "onboarded"
 
@@ -53,7 +56,7 @@ enum Prefs {
 
     static func registerDefaults() {
         UserDefaults.standard.register(defaults: [
-            language: "system", refreshSeconds: 5, hotkey: true, onboarded: false,
+            language: "system", refreshSeconds: 5, hotkey: true, panelHotkey: true, notifications: false, onboarded: false,
             barIcon: false, barLabels: true, barCPU: true, barRAM: true, barGPU: false, barNetwork: false,
             barStyle: "stacked", aiRemaining: true, barMarket: false, barMarketID: "",
             showMarkets: true, hiddenTools: "", watchedMarkets: "BTC,ETH,SOL,xyz:XYZ100,xyz:TSLA,xyz:GOLD", "expanded.markets": true, barSwap: false, barDisk: false, barBattery: false, barAI: false, barCurrency: false,

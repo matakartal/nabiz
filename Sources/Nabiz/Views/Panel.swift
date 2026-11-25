@@ -28,6 +28,7 @@ struct PanelView: View {
         .frame(width: Theme.menuPanelWidth, height: min(max(contentHeight, Theme.menuRow), Theme.menuPanelMaxHeight))
         // The window behind is the native menu material (frosted), like system menus.
         .environment(\.panelOpen, monitor.panelVisible)
+        .environment(\.flash, actions.flash)
         .id(language)
     }
 }
@@ -35,6 +36,8 @@ struct PanelView: View {
 extension EnvironmentValues {
     /// False while the panel is hidden, so rows drop a hover highlight left over from the last time it was open.
     @Entry var panelOpen = true
+    /// A short confirmation in the menu bar ("Quit Chrome").
+    @Entry var flash: @MainActor @Sendable (String) -> Void = { _ in }
 }
 
 struct PanelContent: View {
@@ -184,15 +187,21 @@ private struct StatusSection: View {
 private struct AdviceSection: View {
     let monitor: Monitor
     let advice: [Advice]
+    @Environment(\.flash) private var flash
+
+    private func run(_ fix: Fix) {
+        monitor.perform(fix)
+        if let message = fix.doneMessage { flash(message) }
+    }
 
     var body: some View {
         ForEach(advice) { item in
             PanelRow(icon: .dot(color(item.level)), title: item.title, subtitle: item.detail,
                      titleColor: item.level == .danger ? Theme.danger : nil,
-                     action: item.fix.map { fix in { monitor.perform(fix) } }) { _ in
+                     action: item.fix.map { fix in { run(fix) } }) { _ in
                 // The fix is always visible: one tap, no hunting for it.
                 if let fix = item.fix {
-                    InlineButton(fix.title, role: fix.isDestructive ? .destructive : nil) { monitor.perform(fix) }
+                    InlineButton(fix.title, role: fix.isDestructive ? .destructive : nil) { run(fix) }
                 }
             }
         }
@@ -209,12 +218,16 @@ private struct AdviceSection: View {
 
 private struct SimulatorSection: View {
     let monitor: Monitor
+    @Environment(\.flash) private var flash
 
     var body: some View {
         ForEach(monitor.simulators) { simulator in
             let busy = monitor.stopping.contains(simulator.id) || monitor.stopping.contains("all")
             PanelRow(icon: .symbol("iphone"), title: simulator.name, subtitle: simulator.runtime,
-                     action: busy ? nil : { monitor.shutdown(simulator) }) { hovering in
+                     action: busy ? nil : {
+                         monitor.shutdown(simulator)
+                         flash(L("\(simulator.name) kapatılıyor", "Shutting down \(simulator.name)"))
+                     }) { hovering in
                 if busy {
                     ProgressView().controlSize(.mini)
                 } else {
@@ -223,7 +236,10 @@ private struct SimulatorSection: View {
             }
         }
         PanelRow(icon: .symbol("xmark.circle"), title: L("Hepsini kapat", "Shut down all"),
-                 action: monitor.stopping.contains("all") ? nil : { monitor.shutdownAllSimulators() }) { _ in EmptyView() }
+                 action: monitor.stopping.contains("all") ? nil : {
+                     monitor.shutdownAllSimulators()
+                     flash(L("Simülatörler kapatılıyor", "Shutting down simulators"))
+                 }) { _ in EmptyView() }
     }
 }
 
@@ -232,6 +248,7 @@ private struct AppRow: View {
     let group: ProcessGroup
     let value: String
     let monitor: Monitor
+    @Environment(\.flash) private var flash
 
     var body: some View {
         PanelRow(icon: icon, title: group.name, hoverable: true) { hovering in
@@ -246,10 +263,16 @@ private struct AppRow: View {
                     case .claudeCode:
                         InlineButton(L("Arşivle", "Archive")) { monitor.perform(Fix.openClaude) }
                     case .simulators:
-                        InlineButton(L("Kapat", "Shut down")) { monitor.shutdownAllSimulators() }
+                        InlineButton(L("Kapat", "Shut down")) {
+                            monitor.shutdownAllSimulators()
+                            flash(L("Simülatörler kapatılıyor", "Shutting down simulators"))
+                        }
                     default:
                         if monitor.canQuit(group) {
-                            InlineButton(L("Çık", "Quit"), role: .destructive) { monitor.quit(group) }
+                            InlineButton(L("Çık", "Quit"), role: .destructive) {
+                                monitor.quit(group)
+                                flash(L("\(group.name) kapatıldı", "Quit \(group.name)"))
+                            }
                         }
                     }
                 }
@@ -290,7 +313,7 @@ private struct CurrencySection: View {
                 if let value {
                     TwoColumns(changeText(code), Format.money(value, base), firstColor: changeColor(code), color: Theme.text)
                 } else {
-                    Value(L("yükleniyor…", "loading…"))
+                    Value(rates.failed ? L("bağlantı yok", "offline") : L("yükleniyor…", "loading…"))
                 }
             }
             .help(L("Kopyalamak için tıkla · \(rates.table?.date ?? "")", "Click to copy · \(rates.table?.date ?? "")"))
@@ -323,6 +346,11 @@ private struct MarketsSection: View {
                 actions.close()
                 SettingsWindow.show(.markets)
             }) { _ in EmptyView() }
+        } else if store.markets.isEmpty && store.failed {
+            PanelRow(icon: .symbol("wifi.exclamationmark"), title: L("Bağlanılamadı", "Couldn't connect"),
+                     action: { store.retry() }) { _ in
+                Value(L("Tekrar dene", "Try again"), color: Palette.green.mark)
+            }
         } else if store.markets.isEmpty {
             PanelRow(icon: .symbol("chart.line.uptrend.xyaxis"), title: L("Yükleniyor…", "Loading…")) { _ in
                 ProgressView().controlSize(.mini)
@@ -893,6 +921,11 @@ struct MetersView: View {
                 Text(verbatim: "Nabız").font(Theme.bodyStrong).foregroundStyle(Theme.text)
                 Spacer()
                 StatusPill(monitor: monitor)
+                    .onTapGesture {
+                        UserDefaults.standard.set(true, forKey: Prefs.showAdvice)
+                        PanelSection.advice.setExpanded(true)
+                    }
+                    .help(L("Önerileri göster", "Show suggestions"))
             }
             HStack(spacing: Theme.Spacing.m) {
                 if let system = monitor.system {

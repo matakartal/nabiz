@@ -187,29 +187,52 @@ struct CalculatorView: View {
     }
 }
 
-/// The global shortcut, ⌃⌥Space. Carbon hot keys need no Accessibility permission.
+/// Global shortcuts: ⌃⌥Space for the calculator, ⌃⌥N for the panel. Carbon hot keys need no Accessibility permission.
 @MainActor
 enum HotKey {
-    private static var ref: EventHotKeyRef?
+    enum Shortcut: UInt32, CaseIterable {
+        case calculator = 1, panel = 2
+
+        var key: Int {
+            switch self {
+            case .calculator: kVK_Space
+            case .panel: kVK_ANSI_N
+            }
+        }
+    }
+
+    /// What the panel shortcut does; set by the app delegate.
+    static var togglePanel: () -> Void = {}
+    private static var refs: [Shortcut: EventHotKeyRef] = [:]
     private static var handler: EventHandlerRef?
 
-    static func update(enabled: Bool) {
-        if enabled == (ref != nil) { return }
-        if let ref {
-            UnregisterEventHotKey(ref)
-            self.ref = nil
-        }
+    static func update(_ shortcut: Shortcut, enabled: Bool) {
+        if enabled == (refs[shortcut] != nil) { return }
+        if let ref = refs.removeValue(forKey: shortcut) { UnregisterEventHotKey(ref) }
         guard enabled else { return }
-        if handler == nil {
-            var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-            InstallEventHandler(GetApplicationEventTarget(), { _, _, _ in
-                Task { @MainActor in CalculatorPanel.shared.toggle() }
-                return noErr
-            }, 1, &spec, nil, &handler)
-        }
-        var newRef: EventHotKeyRef?
-        RegisterEventHotKey(UInt32(kVK_Space), UInt32(controlKey | optionKey),
-                            EventHotKeyID(signature: 0x4E42_5A31, id: 1), GetApplicationEventTarget(), 0, &newRef)
-        ref = newRef
+        installHandler()
+        var ref: EventHotKeyRef?
+        RegisterEventHotKey(UInt32(shortcut.key), UInt32(controlKey | optionKey),
+                            EventHotKeyID(signature: 0x4E42_5A31, id: shortcut.rawValue), GetApplicationEventTarget(), 0, &ref)
+        if let ref { refs[shortcut] = ref }
+    }
+
+    private static func installHandler() {
+        guard handler == nil else { return }
+        var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        InstallEventHandler(GetApplicationEventTarget(), { _, event, _ in
+            var id = EventHotKeyID()
+            GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil,
+                              MemoryLayout<EventHotKeyID>.size, nil, &id)
+            let pressed = id.id
+            Task { @MainActor in
+                switch Shortcut(rawValue: pressed) {
+                case .calculator: CalculatorPanel.shared.toggle()
+                case .panel: HotKey.togglePanel()
+                case nil: break
+                }
+            }
+            return noErr
+        }, 1, &spec, nil, &handler)
     }
 }
