@@ -500,18 +500,22 @@ private struct AISection: View {
 }
 
 /// "5 saat  ▬▬▬▬▬▬▭▭  %22   2 sa": label, bar, percent and time to reset, each in its own column.
-/// "Weekly  ▬▬▬|▬▭▭  6% left  5h", and under it, when it matters, where the window is heading.
-/// The tick on the bar is where an even pace would be by now.
+/// "Weekly  ▬▬▭▭▭▭  6% left  5h". The bar shows the same thing as the number: what's left (shrinking as you use it)
+/// or what's used, as chosen in Settings. Its colour says where the window is heading; a line under it appears only
+/// when there is something to do about it.
 private struct LimitRow: View {
     let limit: AILimit
+    @AppStorage(Prefs.aiRemaining) private var showRemaining = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: Theme.Spacing.s) {
                 Text(verbatim: limit.label).font(Theme.small).foregroundStyle(Theme.textMuted).lineLimit(1)
                     .frame(width: Theme.menuValueColumn, alignment: .leading)
-                PaceBar(value: limit.used, mark: limit.pace?.expected, fill: fill)
-                Text(verbatim: limit.displayText).font(Theme.small).monospacedDigit().foregroundStyle(Theme.text)
+                MeterBar(value: showRemaining ? limit.remaining : limit.used, fill: color, minimum: 0)
+                Text(verbatim: spent ? L("Bitti", "Used up") : limit.displayText)
+                    .font(spent ? Theme.smallStrong : Theme.small).monospacedDigit()
+                    .foregroundStyle(spent ? Theme.danger : Theme.text)
                     .frame(width: Theme.menuPercentColumn, alignment: .trailing)
                 Text(verbatim: limit.resetsAt.map(Format.countdown(until:)) ?? "")
                     .font(Theme.small).monospacedDigit().foregroundStyle(Theme.textMuted)
@@ -529,67 +533,38 @@ private struct LimitRow: View {
         .help(help)
     }
 
-    private var fill: Color {
-        switch limit.pace?.status {
-        case .spent, .behind: return Theme.danger
-        case .onTrack: return Theme.warning.fill
-        case .ahead: return Theme.accent
-        case nil: return limit.used >= 0.95 ? Theme.danger : limit.used >= 0.75 ? Theme.warning.fill : Theme.accent
-        }
+    private var spent: Bool { limit.used >= 1 }
+
+    /// Red when it is used up or will run out before the reset, orange when little is left, green otherwise.
+    private var color: Color {
+        if spent || limit.pace?.status == .behind { return Theme.danger }
+        if limit.remaining < 0.1 || limit.pace?.status == .onTrack { return Theme.warning.fill }
+        return Theme.accent
     }
 
-    /// Only when it changes what to do: running out early, cutting it close, or about to waste what's left.
     private var forecast: (text: String, color: Color)? {
         guard let pace = limit.pace else { return nil }
-        switch pace.status {
-        case .behind:
-            guard let runway = pace.runway else { return nil }
+        if pace.status == .behind, let runway = pace.runway {
             return (L("Bu hızla \(Format.duration(runway)) sonra biter", "At this speed: out in \(Format.duration(runway))"), Theme.danger)
-        case .onTrack:
-            return (L("Sınırda: sıfırlanırken ~\(Format.percent(pace.projected)) dolu", "Cutting close: ~\(Format.percent(pace.projected)) used at reset"),
-                    Theme.warning.mark)
-        case .ahead where pace.unusedNearReset:
-            return (L("Sıfırlanmadan kullan: \(Format.percent(limit.remaining)) duruyor", "Use it before it resets: \(Format.percent(limit.remaining)) left"),
-                    Palette.green.mark)
-        default:
-            return nil
         }
+        if pace.unusedNearReset {
+            return (L("\(Format.percent(limit.remaining)) kullanılmadan sıfırlanacak", "\(Format.percent(limit.remaining)) resets unused"),
+                    Palette.green.mark)
+        }
+        return nil
     }
 
     private var help: String {
         var lines: [String] = []
         if let pace = limit.pace, pace.status != .spent {
-            lines.append(L("Eşit tempoyla şu an \(Format.percent(pace.expected)) olmalıydı.", "An even pace would be at \(Format.percent(pace.expected)) by now."))
-            lines.append(L("Bu hızla sıfırlanırken ~\(Format.percent(min(pace.projected, 1)))\(pace.projected > 1 ? "+" : "") kullanılmış olur.",
-                           "At this speed ~\(Format.percent(min(pace.projected, 1)))\(pace.projected > 1 ? "+" : "") is used by the reset."))
+            let projected = Format.percent(min(pace.projected, 1)) + (pace.projected > 1 ? "+" : "")
+            lines.append(L("Bu hızla sıfırlanırken ~\(projected) kullanılmış olur.", "At this speed ~\(projected) is used by the reset."))
         }
         if let resetsAt = limit.resetsAt {
-            lines.append(L("Sıfırlanma: ", "Resets: ") + resetsAt.formatted(date: .abbreviated, time: .shortened))
+            let date = resetsAt.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(Format.locale))
+            lines.append(L("Sıfırlanma: \(date)", "Resets: \(date)"))
         }
         return lines.joined(separator: "\n")
-    }
-}
-
-/// A thin usage bar with an optional tick for where an even pace would be.
-private struct PaceBar: View {
-    let value: Double
-    let mark: Double?
-    let fill: Color
-
-    var body: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                Capsule().fill(Theme.field)
-                Capsule().fill(fill).frame(width: max(Theme.meter, geo.size.width * min(max(value, 0), 1)))
-                if let mark {
-                    Rectangle().fill(Theme.text)
-                        .frame(width: 1.5, height: Theme.meter + Theme.Spacing.xs)
-                        .offset(x: geo.size.width * min(max(mark, 0), 1) - 0.75)
-                }
-            }
-            .frame(height: geo.size.height)
-        }
-        .frame(height: Theme.meter + Theme.Spacing.xs)
     }
 }
 
@@ -1070,4 +1045,31 @@ private struct Sparkline: View {
         .frame(height: Theme.Spacing.xl)
         .clipShape(RoundedRectangle(cornerRadius: Theme.Spacing.xs, style: .continuous))
     }
+}
+
+/// Sample limits for `--snapshot … --limits`: every state a limit row can be in.
+struct LimitsPreview: View {
+    var body: some View {
+        let now = Date()
+        func limit(_ label: String, used: Double, hoursLeft: Double, period: Double, rate: Double? = nil) -> AILimit {
+            let reset = now.addingTimeInterval(hoursLeft * 3600)
+            var item = AILimit(id: label, label: label, used: used, resetsAt: reset, period: period * 3600)
+            item.pace = PaceModel.read(used: used, resetsAt: reset, period: period * 3600, recentRate: rate, now: now)
+            return item
+        }
+        return VStack(alignment: .leading, spacing: 0) {
+            LimitRowPreviewHost(limit: limit("Weekly", used: 0.98, hoursLeft: 2, period: 168))
+            LimitRowPreviewHost(limit: limit("Fable", used: 1, hoursLeft: 2, period: 168))
+            LimitRowPreviewHost(limit: limit("5-hour", used: 0.62, hoursLeft: 3.5, period: 5))
+            LimitRowPreviewHost(limit: limit("Burst", used: 0.30, hoursLeft: 100, period: 168, rate: 0.05 / 3600))
+            LimitRowPreviewHost(limit: limit("Codex", used: 0.2, hoursLeft: 20, period: 168))
+        }
+        .padding(.vertical, Theme.Spacing.s)
+        .frame(width: Theme.menuPanelWidth)
+    }
+}
+
+private struct LimitRowPreviewHost: View {
+    let limit: AILimit
+    var body: some View { LimitRow(limit: limit) }
 }

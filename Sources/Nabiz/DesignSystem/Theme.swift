@@ -123,12 +123,16 @@ extension ButtonStyle where Self == TextButtonStyle {
 struct MeterBar: View {
     let value: Double
     let fill: Color
+    /// The smallest visible fill, so a tiny value still shows; 0 lets an empty bar look empty.
+    var minimum: CGFloat = Theme.meter
 
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
                 Capsule().fill(Theme.field)
-                Capsule().fill(fill).frame(width: max(Theme.meter, geo.size.width * min(max(value, 0), 1)))
+                if value > 0 || minimum > 0 {
+                    Capsule().fill(fill).frame(width: max(minimum, geo.size.width * min(max(value, 0), 1)))
+                }
             }
         }
         .frame(height: Theme.meter)

@@ -262,6 +262,8 @@ enum Snapshot {
         let root: AnyView
         if args.contains("--welcome") {
             root = AnyView(WelcomeView {})
+        } else if args.contains("--limits") {
+            root = AnyView(LimitsPreview())
         } else if let text = value(after: "--calculator") {
             root = AnyView(CalculatorView(text: text) {})
         } else if settings {
