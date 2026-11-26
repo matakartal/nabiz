@@ -41,6 +41,8 @@ final class RecPlan: @unchecked Sendable {
     private let captionImages: [UUID: CIImage]
     /// Each note's label and arrow, drawn once and placed in output pixels.
     private let notes: [(note: RecNote, image: CIImage)]
+    /// A recorded window's corner shape in source pixels (nil for screens and areas).
+    private let windowShape: CIImage?
 
     /// `maxWidth` caps the output width (preview, 1080p, 4K); nil keeps the recording's full size.
     init(meta: RecMeta, edit: RecEdit, maxWidth: CGFloat?) {
@@ -62,6 +64,13 @@ final class RecPlan: @unchecked Sendable {
         content = CGRect(x: ((output.width - source.width * k) / 2).rounded(), y: ((output.height - source.height * k) / 2).rounded(),
                          width: source.width * k, height: source.height * k)
         map = RecTimeMap(edit.timeSegments, duration: meta.duration)
+        windowShape = meta.windowCorner.flatMap { corner in
+            let shape = CIFilter.roundedRectangleGenerator()
+            shape.extent = CGRect(origin: .zero, size: CGSize(width: meta.width, height: meta.height))
+            shape.radius = Float(corner)
+            shape.color = .white
+            return shape.outputImage
+        }
         keys = style.showKeys ? meta.track.keys : []
         cameraOn = style.camera && meta.cameraOffset != nil
 
@@ -142,7 +151,10 @@ final class RecPlan: @unchecked Sendable {
     // MARK: Frame
 
     /// One finished frame. `played` is the time in the (possibly sped-up) result.
-    func frame(source frame: CIImage, camera face: CIImage? = nil, time played: Double) -> CIImage {
+    func frame(source original: CIImage, camera face: CIImage? = nil, time played: Double) -> CIImage {
+        // A recorded window: its own rounded corners, so zooming in on a corner shows the background, not black.
+        let frame = windowShape.map { original.applyingFilter("CIBlendWithMask", parameters: [kCIInputBackgroundImageKey: CIImage.empty(), kCIInputMaskImageKey: $0]) }
+            ?? original
         let time = map.source(played)
         let (z, f) = camera(at: time)
         let transform = self.transform(zoom: z, focus: f)
