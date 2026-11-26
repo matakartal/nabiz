@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **License:** Nabız is now source-available, not open source. The app stays free to use; the code may be read
+  but not copied, reused, built or redistributed without written permission (see LICENSE).
+
 ## 1.9.0
 
 - **Made for developers** (Settings → Developer):

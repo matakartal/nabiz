@@ -6,7 +6,7 @@
 
 **Your Mac's pulse in the menu bar — and the tools you reach for all day.**
 
-A small, native, open-source menu bar app for macOS: a system monitor with one-tap fixes, AI chat with your own
+A small, native menu bar app for macOS — free to use, with its source open to read: a system monitor with one-tap fixes, AI chat with your own
 subscriptions, a launcher, screenshots and Screen Studio–style recordings, and tools made for developers.
 
 <a href="../../releases/latest"><img src="https://img.shields.io/badge/Download-Nab%C4%B1z%201.9.0-1DB954?style=for-the-badge&logo=apple&logoColor=white" alt="Download Nabız"></a>
@@ -15,7 +15,7 @@ subscriptions, a launcher, screenshots and Screen Studio–style recordings, and
 <img src="https://img.shields.io/badge/Apple%20silicon%20%2B%20Intel-universal-111" alt="Universal">
 <img src="https://img.shields.io/badge/Swift%206-SwiftUI%20%2B%20AppKit-F05138?logo=swift&logoColor=white" alt="Swift 6">
 <img src="https://img.shields.io/badge/notarized-Developer%20ID-1DB954" alt="Notarized">
-<img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT">
+<img src="https://img.shields.io/badge/license-source--available-blue" alt="Source-available">
 
 [Features](#features) · [Shortcuts](#shortcuts) · [Privacy](#privacy) · [Build](#build) · [Türkçe](README.tr.md)
 
@@ -34,7 +34,7 @@ subscriptions, a launcher, screenshots and Screen Studio–style recordings, and
 <td width="25%" valign="top"><b>Native and light</b><br>SwiftUI + AppKit, the system's own menu material and grid. Idle at 0–1% CPU.</td>
 <td width="25%" valign="top"><b>Fixes, not just numbers</b><br>When memory runs out it says why and offers the one step that frees the most.</td>
 <td width="25%" valign="top"><b>Your AI, your plans</b><br>Claude, Codex, Grok and Gemini through their own CLIs, or Apple's free on-device model.</td>
-<td width="25%" valign="top"><b>Private by default</b><br>No analytics, no account. Everything about your Mac stays on your Mac.</td>
+<td width="25%" valign="top"><b>Private and readable</b><br>No analytics, no account. The source is public, so you can see exactly what it does.</td>
 </tr>
 </table>
 
@@ -145,7 +145,7 @@ hidden files, desktop icons, schedules and a one-file backup.
 Settings has a searchable sidebar in Turkish and English, and **What can it do?** lists every shortcut and tool.
 
 </td>
-<td width="44%"><img src="docs/tools.png" alt="Tools grid"></td>
+<td width="34%"><img src="docs/tools.png" alt="Tools grid"></td>
 </tr>
 </table>
 
@@ -230,8 +230,12 @@ Every user-facing string is written in both languages side by side: `L("Türkçe
 
 </details>
 
-Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
+Bug reports and ideas are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+Nabız is **source-available, not open source.** You may read the code and use the official releases for free, but
+you may not copy, modify, reuse, build or redistribute the code or any part of it without written permission. See
+[LICENSE](LICENSE).
+
+© 2026 Finqt Veri Hizmetleri Sanayi ve Ticaret Limited Şirketi. All rights reserved.

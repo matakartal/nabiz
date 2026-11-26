@@ -1,21 +1,60 @@
-MIT License
+Nabız Source-Available License
 
-Copyright (c) 2026 Nabız contributors
+Copyright (c) 2026 Finqt Veri Hizmetleri Sanayi ve Ticaret Limited Şirketi.
+All rights reserved.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+Nabız's source code is published so that people can see what the app does on
+their Mac. It is not open source. Publishing it grants no rights beyond those
+written below.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+1. What you may do
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+   a. Read the source code, and link to it.
+   b. Download the official, signed releases of Nabız published by the copyright
+      holder and use them free of charge on your own Macs, for personal use or
+      inside your organization.
+   c. Fork this repository on GitHub, only as far as GitHub's Terms of Service
+      require, and only to propose changes back to this repository.
+
+2. What you may not do
+
+   Without the copyright holder's prior written permission, you may not:
+
+   a. copy, reproduce, modify, translate or adapt the source code or any part of
+      it, or make derivative works from it;
+   b. use the source code, or any part of it, in any other software, product,
+      service or project, whether free or commercial;
+   c. build, compile, package, sign or distribute the app or any version of it,
+      changed or unchanged, other than the official releases;
+   d. publish, distribute, sublicense, sell, rent or otherwise make available the
+      source code, the app, or the icons, images, screenshots and texts in this
+      repository;
+   e. use the source code or any part of this repository to train, fine-tune or
+      evaluate machine-learning models, or to build datasets;
+   f. use the names "Nabız" or "Nabiz", or the Nabız icon, for any other product,
+      or to suggest that the copyright holder endorses you;
+   g. remove or change this license or any copyright notice.
+
+3. Contributions
+
+   If you send a contribution (a pull request, a patch, an issue with code or
+   text), you confirm that you wrote it or have the right to send it, and you
+   grant the copyright holder a perpetual, worldwide, irrevocable, royalty-free
+   right to use, change, relicense and distribute it in any way. You get no
+   rights in Nabız from sending a contribution.
+
+4. Ending
+
+   If you break these terms, every permission in this license ends at once for
+   you, without notice.
+
+5. No warranty
+
+   NABIZ AND ITS SOURCE CODE ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+   EXPRESS OR IMPLIED, INCLUDING THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+   PARTICULAR PURPOSE AND NON-INFRINGEMENT. IN NO EVENT SHALL THE COPYRIGHT
+   HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING FROM, OUT
+   OF OR IN CONNECTION WITH NABIZ OR ITS USE.
+
+For any use not allowed above, ask for written permission at
+https://github.com/matakartal/nabiz/issues.

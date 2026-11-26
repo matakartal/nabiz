@@ -6,7 +6,7 @@
 
 **Mac'inin nabzı menü çubuğunda — gün boyu elinin altında olan araçlarla.**
 
-macOS için küçük, yerel ve açık kaynak bir menü çubuğu uygulaması: tek tuşla çözüm sunan sistem izleyici, kendi
+macOS için küçük, yerel ve ücretsiz bir menü çubuğu uygulaması; kaynak kodu okunmaya açık: tek tuşla çözüm sunan sistem izleyici, kendi
 aboneliklerinle AI sohbeti, başlatıcı, ekran görüntüsü ve ekran kaydı, geliştirici araçları.
 
 <a href="../../releases/latest"><img src="https://img.shields.io/badge/%C4%B0ndir-Nab%C4%B1z%201.9.0-1DB954?style=for-the-badge&logo=apple&logoColor=white" alt="Nabız'ı indir"></a>
@@ -61,4 +61,8 @@ ve AI sohbetleri diskte şifrelidir.
 
 ## Lisans
 
-MIT. Bkz. [LICENSE](LICENSE).
+Nabız **kaynağı görülebilir, ama açık kaynak değildir.** Kodu okuyabilir ve resmi sürümleri ücretsiz kullanabilirsin;
+yazılı izin olmadan kodu ya da bir parçasını kopyalayamaz, değiştiremez, başka projede kullanamaz, derleyemez ve
+dağıtamazsın. Bkz. [LICENSE](LICENSE).
+
+© 2026 Finqt Veri Hizmetleri Sanayi ve Ticaret Limited Şirketi. Tüm hakları saklıdır.
