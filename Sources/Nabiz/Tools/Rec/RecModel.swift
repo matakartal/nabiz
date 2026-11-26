@@ -87,6 +87,8 @@ struct RecStyle: Codable, Sendable, Equatable {
     var zoomLevel = 1.8
     /// The pointer's press-and-rebound on a click.
     var clickBounce = true
+    /// A soft click sound on every click.
+    var clickSound = false
     /// The pointer fades out after 2 s without moving.
     var hideIdleCursor = true
     var motionBlur = true
@@ -100,6 +102,17 @@ struct RecStyle: Codable, Sendable, Equatable {
     /// "bottomRight", "bottomLeft", "topRight", "topLeft".
     var cameraCorner = "bottomRight"
     var cameraCircle = true
+    /// 0 square corners … 0.5 a circle.
+    var cameraRoundness = 0.5
+    var cameraMirror = true
+    /// "gradient", "solid", "wallpaper" or "image".
+    var backgroundKind = "gradient"
+    var solidColor = "#1C1C1E"
+    /// The wallpaper or picture behind, for those kinds.
+    var backgroundImage = ""
+    /// 0…1.
+    var backgroundBlur = 0.0
+    var showCaptions = true
 
     init() {}
 
@@ -116,6 +129,7 @@ struct RecStyle: Codable, Sendable, Equatable {
         autoZoom = try c.decodeIfPresent(Bool.self, forKey: .autoZoom) ?? d.autoZoom
         zoomLevel = try c.decodeIfPresent(Double.self, forKey: .zoomLevel) ?? d.zoomLevel
         clickBounce = try c.decodeIfPresent(Bool.self, forKey: .clickBounce) ?? d.clickBounce
+        clickSound = try c.decodeIfPresent(Bool.self, forKey: .clickSound) ?? d.clickSound
         hideIdleCursor = try c.decodeIfPresent(Bool.self, forKey: .hideIdleCursor) ?? d.hideIdleCursor
         motionBlur = try c.decodeIfPresent(Bool.self, forKey: .motionBlur) ?? d.motionBlur
         aspect = try c.decodeIfPresent(String.self, forKey: .aspect) ?? d.aspect
@@ -124,6 +138,13 @@ struct RecStyle: Codable, Sendable, Equatable {
         cameraSize = try c.decodeIfPresent(Double.self, forKey: .cameraSize) ?? d.cameraSize
         cameraCorner = try c.decodeIfPresent(String.self, forKey: .cameraCorner) ?? d.cameraCorner
         cameraCircle = try c.decodeIfPresent(Bool.self, forKey: .cameraCircle) ?? d.cameraCircle
+        cameraRoundness = try c.decodeIfPresent(Double.self, forKey: .cameraRoundness) ?? (cameraCircle ? 0.5 : 0.18)
+        cameraMirror = try c.decodeIfPresent(Bool.self, forKey: .cameraMirror) ?? d.cameraMirror
+        backgroundKind = try c.decodeIfPresent(String.self, forKey: .backgroundKind) ?? d.backgroundKind
+        solidColor = try c.decodeIfPresent(String.self, forKey: .solidColor) ?? d.solidColor
+        backgroundImage = try c.decodeIfPresent(String.self, forKey: .backgroundImage) ?? d.backgroundImage
+        backgroundBlur = try c.decodeIfPresent(Double.self, forKey: .backgroundBlur) ?? d.backgroundBlur
+        showCaptions = try c.decodeIfPresent(Bool.self, forKey: .showCaptions) ?? d.showCaptions
     }
 
     /// Width ÷ height of the finished frame, nil for the recording's own shape.
@@ -167,6 +188,34 @@ struct RecSpeed: Codable, Sendable, Equatable, Identifiable {
     var rate: Double
 }
 
+/// One line of captions.
+struct RecCaption: Codable, Sendable, Equatable, Identifiable {
+    var id = UUID()
+    var start: Double
+    var end: Double
+    var text: String
+}
+
+/// A note on the video for a while: a label at a spot (0…1 of the frame), optionally with an arrow to another.
+struct RecNote: Codable, Sendable, Equatable, Identifiable {
+    var id = UUID()
+    var start: Double
+    var end: Double
+    var text: String
+    var x = 0.5
+    var y = 0.2
+    var arrow = false
+    var toX = 0.5
+    var toY = 0.5
+}
+
+/// A stretch taken out of the recording.
+struct RecCut: Codable, Sendable, Equatable, Identifiable {
+    var id = UUID()
+    var start: Double
+    var end: Double
+}
+
 /// Everything changed in the editor; the video itself is never touched.
 struct RecEdit: Codable, Sendable, Equatable {
     /// Zooms planned from the clicks (see `RecZoomPlanner`).
@@ -177,6 +226,9 @@ struct RecEdit: Codable, Sendable, Equatable {
     var style = RecStyle.saved
     var zooms: [RecZoom] = []
     var speeds: [RecSpeed] = []
+    var cuts: [RecCut] = []
+    var captions: [RecCaption] = []
+    var notes: [RecNote] = []
     /// Kept part, in seconds of the recording; `trimEnd` 0 means the end.
     var trimStart = 0.0
     var trimEnd = 0.0
@@ -190,9 +242,17 @@ struct RecEdit: Codable, Sendable, Equatable {
         style = try c.decodeIfPresent(RecStyle.self, forKey: .style) ?? RecStyle()
         zooms = try c.decodeIfPresent([RecZoom].self, forKey: .zooms) ?? []
         speeds = try c.decodeIfPresent([RecSpeed].self, forKey: .speeds) ?? []
+        cuts = try c.decodeIfPresent([RecCut].self, forKey: .cuts) ?? []
+        captions = try c.decodeIfPresent([RecCaption].self, forKey: .captions) ?? []
+        notes = try c.decodeIfPresent([RecNote].self, forKey: .notes) ?? []
         trimStart = try c.decodeIfPresent(Double.self, forKey: .trimStart) ?? 0
         trimEnd = try c.decodeIfPresent(Double.self, forKey: .trimEnd) ?? 0
         zoomsMade = try c.decodeIfPresent(Bool.self, forKey: .zoomsMade) ?? false
+    }
+
+    /// Speed-ups and cuts on one list: a cut is a stretch played infinitely fast.
+    var timeSegments: [RecSpeed] {
+        speeds + cuts.map { RecSpeed(id: $0.id, start: $0.start, end: $0.end, rate: .infinity) }
     }
 
     /// Stretches of steady typing (keys less than 1.2 s apart, at least 2 s long), to play 3× faster.

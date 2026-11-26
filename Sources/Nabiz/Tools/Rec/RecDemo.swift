@@ -22,6 +22,10 @@ enum RecDemo {
         edit.style = RecStyle()
         edit.style.aspect = "16:9"
         edit.zooms = [RecZoom(start: 1.8, end: 4.2, scale: 1.8)]
+        edit.captions = [RecCaption(start: 0, end: 2.5, text: "Önce görünüm ayarlarını açıyoruz"), RecCaption(start: 2.5, end: 6, text: "Sonra rengi seçiyoruz")]
+        edit.notes = [RecNote(start: 0, end: 6, text: "Yeni", x: 0.25, y: 0.25, arrow: true, toX: 0.45, toY: 0.45)]
+        edit.style.backgroundKind = "wallpaper"
+        edit.style.backgroundImage = RecBackdrop.wallpapers.first?.path ?? ""
         var meta = RecMeta(id: UUID(), created: Date(), duration: 6, width: width, height: height, scale: 2, track: track, edit: edit)
         meta.cameraOffset = 0
         return meta

@@ -36,6 +36,10 @@ final class RecPlan: @unchecked Sendable {
     private let keys: [RecTrack.Key]
     private let keyImages: [String: CIImage]
     private let cameraOn: Bool
+    private let captions: [RecCaption]
+    private let captionImages: [UUID: CIImage]
+    /// Each note's label and arrow, drawn once and placed in output pixels.
+    private let notes: [(note: RecNote, image: CIImage)]
 
     /// `maxWidth` caps the output width (preview, 1080p, 4K); nil keeps the recording's full size.
     init(meta: RecMeta, edit: RecEdit, maxWidth: CGFloat?) {
@@ -56,7 +60,7 @@ final class RecPlan: @unchecked Sendable {
         k = output.width / canvas.width
         content = CGRect(x: ((output.width - source.width * k) / 2).rounded(), y: ((output.height - source.height * k) / 2).rounded(),
                          width: source.width * k, height: source.height * k)
-        map = RecTimeMap(edit.speeds, duration: meta.duration)
+        map = RecTimeMap(edit.timeSegments, duration: meta.duration)
         keys = style.showKeys ? meta.track.keys : []
         cameraOn = style.camera && meta.cameraOffset != nil
 
@@ -70,6 +74,15 @@ final class RecPlan: @unchecked Sendable {
             keyImages[key.text] = Self.keyImage(key.text, height: output.height * 0.055)
         }
         self.keyImages = keyImages
+        captions = style.showCaptions ? edit.captions : []
+        var captionImages: [UUID: CIImage] = [:]
+        for caption in captions {
+            captionImages[caption.id] = Self.pill(caption.text, height: output.height * 0.062, fill: CGColor(gray: 0.06, alpha: 0.78))
+        }
+        self.captionImages = captionImages
+        let accent = MainActor.assumeIsolated { NSColor(Theme.accent).usingColorSpace(.sRGB)?.cgColor } ?? CGColor(srgbRed: 0.1, green: 0.7, blue: 0.4, alpha: 1)
+        let outputSize = output, videoBox = content
+        notes = edit.notes.map { note in (note, Self.noteImage(note, in: outputSize, on: videoBox, accent: accent)) }
         clicks = meta.track.clicks
         shapes = meta.track.shapes
         var cursors: [(CIImage, RecCursor)] = meta.cursors.compactMap { info in
@@ -90,6 +103,18 @@ final class RecPlan: @unchecked Sendable {
             gradient.color0 = CIColor(cgColor: from.cgColor)
             gradient.color1 = CIColor(cgColor: to.cgColor)
             var background = gradient.outputImage?.cropped(to: extent) ?? CIImage(color: .black).cropped(to: extent)
+            switch style.backgroundKind {
+            case "solid":
+                background = CIImage(color: CIColor(hex: style.solidColor) ?? .black).cropped(to: extent)
+            case "wallpaper", "image":
+                if !style.backgroundImage.isEmpty, let picture = MainActor.assumeIsolated({
+                    RecBackdrop.image(URL(fileURLWithPath: style.backgroundImage), size: extent.size, blur: style.backgroundBlur)
+                }) {
+                    background = CIImage(cgImage: picture)
+                }
+            default:
+                break
+            }
             let radius = CGFloat(style.radius) * source.width * k
             if style.shadow {
                 let shape = CIFilter.roundedRectangleGenerator()
@@ -133,7 +158,16 @@ final class RecPlan: @unchecked Sendable {
         let s = k * CGFloat(z)
         if style.clickRings { image = rings(at: time, transform: transform, scale: s).composited(over: image) }
         if let cursor = cursor(at: time, transform: transform, scale: s) { image = cursor.composited(over: image) }
-        if let key = keyOverlay(at: time) { image = key.composited(over: image) }
+        if let key = keyOverlay(at: time, raised: caption(at: time) != nil) { image = key.composited(over: image) }
+        if let line = captionOverlay(at: time) { image = line.composited(over: image) }
+        // Notes stick to what they point at: they move and grow with the zoom like the video under them.
+        let still = self.transform(zoom: 1, focus: CGPoint(x: source.width / 2, y: source.height / 2))
+        let follow = still.inverted().concatenating(transform)
+        for (note, picture) in notes where time >= note.start - 0.2 && time <= note.end + 0.2 {
+            let alpha = min(1, (time - note.start + 0.2) / 0.2, (note.end + 0.2 - time) / 0.2)
+            image = picture.applyingFilter("CIColorMatrix", parameters: ["inputAVector": CIVector(x: 0, y: 0, z: 0, w: alpha)])
+                .transformed(by: follow).cropped(to: content).composited(over: image)
+        }
         if cameraOn, let face, let bubble = bubble(face) { image = bubble.composited(over: image) }
         return image.cropped(to: CGRect(origin: .zero, size: output))
     }
@@ -233,11 +267,25 @@ final class RecPlan: @unchecked Sendable {
     }
 
     /// The latest shortcut, as a label at the bottom, for a second and a half.
-    private func keyOverlay(at time: Double) -> CIImage? {
+    private func caption(at time: Double) -> RecCaption? {
+        captions.first { time >= $0.start && time < $0.end }
+    }
+
+    /// The caption line at the bottom, fading in and out.
+    private func captionOverlay(at time: Double) -> CIImage? {
+        guard let line = caption(at: time), let image = captionImages[line.id] else { return nil }
+        let alpha = min(1, (time - line.start) / 0.12, (line.end - time) / 0.12)
+        let at = CGPoint(x: (output.width - image.extent.width) / 2, y: max(content.minY, 0) + output.height * 0.05)
+        return image.applyingFilter("CIColorMatrix", parameters: ["inputAVector": CIVector(x: 0, y: 0, z: 0, w: alpha)])
+            .transformed(by: CGAffineTransform(translationX: at.x, y: at.y))
+    }
+
+    private func keyOverlay(at time: Double, raised: Bool) -> CIImage? {
         guard let key = keys.last(where: { $0.t <= time && time - $0.t < 1.5 }), let image = keyImages[key.text] else { return nil }
         let age = time - key.t
         let alpha = min(1, age / 0.12, (1.5 - age) / 0.3)
-        let at = CGPoint(x: content.midX - image.extent.width / 2, y: content.minY + content.height * 0.06 + CGFloat(min(age / 0.12, 1) - 1) * 6 * k)
+        let lift = raised ? output.height * 0.13 : content.height * 0.06
+        let at = CGPoint(x: content.midX - image.extent.width / 2, y: content.minY + lift + CGFloat(min(age / 0.12, 1) - 1) * 6 * k)
         return image
             .applyingFilter("CIColorMatrix", parameters: ["inputAVector": CIVector(x: 0, y: 0, z: 0, w: alpha)])
             .transformed(by: CGAffineTransform(translationX: at.x, y: at.y))
@@ -250,14 +298,19 @@ final class RecPlan: @unchecked Sendable {
         let square = face.cropped(to: CGRect(x: face.extent.midX - edge / 2, y: face.extent.midY - edge / 2, width: edge, height: edge))
         let fit = side / edge
         let margin = (output.width * 0.03).rounded()
-        let right = style.cameraCorner.hasSuffix("Right"), top = style.cameraCorner.hasPrefix("top")
-        let origin = CGPoint(x: right ? output.width - margin - side : margin, y: top ? output.height - margin - side : margin)
+        // Eight spots: the corners and the middle of each edge.
+        let corner = style.cameraCorner
+        let x: CGFloat = corner.hasSuffix("Right") || corner == "right" ? output.width - margin - side
+            : corner.hasSuffix("Left") || corner == "left" ? margin : (output.width - side) / 2
+        let y: CGFloat = corner.hasPrefix("top") ? output.height - margin - side
+            : corner.hasPrefix("bottom") ? margin : (output.height - side) / 2
+        let origin = CGPoint(x: x, y: y)
         let box = CGRect(origin: origin, size: CGSize(width: side, height: side))
         let mirrored = square
             .transformed(by: CGAffineTransform(translationX: -square.extent.minX, y: -square.extent.minY))
-            .transformed(by: CGAffineTransform(scaleX: -fit, y: fit))
-            .transformed(by: CGAffineTransform(translationX: box.maxX, y: box.minY))
-        let radius = style.cameraCircle ? side / 2 : side * 0.18
+            .transformed(by: CGAffineTransform(scaleX: style.cameraMirror ? -fit : fit, y: fit))
+            .transformed(by: CGAffineTransform(translationX: style.cameraMirror ? box.maxX : box.minX, y: box.minY))
+        let radius = side * CGFloat(min(max(style.cameraRoundness, 0), 0.5))
         func rounded(_ rect: CGRect, _ r: CGFloat, _ color: CIColor) -> CIImage? {
             let shape = CIFilter.roundedRectangleGenerator()
             shape.extent = rect
@@ -284,6 +337,68 @@ final class RecPlan: @unchecked Sendable {
         guard let cg = cursor.image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
         return (CIImage(cgImage: cg), RecCursor(file: "", width: cursor.image.size.width, height: cursor.image.size.height,
                                                  hotX: cursor.hotSpot.x, hotY: cursor.hotSpot.y))
+    }
+
+    /// White text on a rounded label of `fill`, `height` pixels tall.
+    static func pill(_ text: String, height: CGFloat, fill: CGColor) -> CIImage {
+        let font = CTFontCreateWithName("SF Pro Rounded Semibold" as CFString, height * 0.5, nil)
+        let attributes = [kCTFontAttributeName: font, kCTForegroundColorAttributeName: CGColor(gray: 1, alpha: 1)] as [CFString: Any]
+        let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: attributes as [NSAttributedString.Key: Any]))
+        let bounds = CTLineGetBoundsWithOptions(line, .useOpticalBounds)
+        let width = Int(bounds.width + height * 1.1), tall = Int(height)
+        guard width > 0, tall > 0, let ctx = CGContext(data: nil, width: width, height: tall, bitsPerComponent: 8, bytesPerRow: 0,
+                                                     space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                                     bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return .empty() }
+        ctx.addPath(CGPath(roundedRect: CGRect(x: 0, y: 0, width: width, height: tall), cornerWidth: height * 0.3, cornerHeight: height * 0.3, transform: nil))
+        ctx.setFillColor(fill)
+        ctx.fillPath()
+        ctx.textPosition = CGPoint(x: (CGFloat(width) - bounds.width) / 2 - bounds.minX, y: (CGFloat(tall) - bounds.height) / 2 - bounds.minY)
+        CTLineDraw(line, ctx)
+        return ctx.makeImage().map(CIImage.init(cgImage:)) ?? .empty()
+    }
+
+    /// A note's label (accent, white text) and its arrow, placed in an output-sized frame.
+    private static func noteImage(_ note: RecNote, in size: CGSize, on video: CGRect, accent: CGColor) -> CIImage {
+        let label = pill(note.text.isEmpty ? " " : note.text, height: size.height * 0.06, fill: accent)
+        // Spots are 0…1 of the video (top-left origin), so they stay on what they point at whatever the frame.
+        let spot = CGPoint(x: video.minX + note.x * video.width, y: video.minY + (1 - note.y) * video.height)
+        var image = label.transformed(by: CGAffineTransform(translationX: spot.x - label.extent.width / 2, y: spot.y - label.extent.height / 2))
+        guard note.arrow else { return image }
+        let target = CGPoint(x: video.minX + note.toX * video.width, y: video.minY + (1 - note.toY) * video.height)
+        // From the label's edge toward the target, tapered, with a soft shadow.
+        let dx = target.x - spot.x, dy = target.y - spot.y, length = hypot(dx, dy)
+        guard length > 20 else { return image }
+        let startGap = min(label.extent.width, label.extent.height) * 0.55
+        let from = CGPoint(x: spot.x + dx / length * startGap, y: spot.y + dy / length * startGap)
+        let w = size.height * 0.006
+        let box = CGRect(from: from, to: target).insetBy(dx: -w * 8, dy: -w * 8).integral
+        guard box.width > 0, box.height > 0,
+              let ctx = CGContext(data: nil, width: Int(box.width), height: Int(box.height), bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return image }
+        let a = CGPoint(x: from.x - box.minX, y: from.y - box.minY), b = CGPoint(x: target.x - box.minX, y: target.y - box.minY)
+        let u = CGVector(dx: (b.x - a.x) / length, dy: (b.y - a.y) / length), n = CGVector(dx: -u.dy, dy: u.dx)
+        let head = w * 4.5, base = CGPoint(x: b.x - u.dx * head * 1.6, y: b.y - u.dy * head * 1.6)
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: a.x + n.dx * w * 0.3, y: a.y + n.dy * w * 0.3))
+        path.addLine(to: CGPoint(x: base.x + n.dx * w, y: base.y + n.dy * w))
+        path.addLine(to: CGPoint(x: base.x + n.dx * head, y: base.y + n.dy * head))
+        path.addLine(to: b)
+        path.addLine(to: CGPoint(x: base.x - n.dx * head, y: base.y - n.dy * head))
+        path.addLine(to: CGPoint(x: base.x - n.dx * w, y: base.y - n.dy * w))
+        path.addLine(to: CGPoint(x: a.x - n.dx * w * 0.3, y: a.y - n.dy * w * 0.3))
+        path.closeSubpath()
+        ctx.setShadow(offset: CGSize(width: 0, height: -w), blur: w * 3, color: CGColor(gray: 0, alpha: 0.35))
+        ctx.setFillColor(accent)
+        ctx.setStrokeColor(accent)
+        ctx.setLineJoin(.round)
+        ctx.setLineWidth(w * 0.6)
+        ctx.addPath(path)
+        ctx.drawPath(using: .fillStroke)
+        if let arrow = ctx.makeImage() {
+            image = image.composited(over: CIImage(cgImage: arrow).transformed(by: CGAffineTransform(translationX: box.minX, y: box.minY)))
+        }
+        return image
     }
 
     /// A dark rounded label with the shortcut in white, `height` pixels tall.
@@ -331,7 +446,8 @@ final class RecPlan: @unchecked Sendable {
         let camera: CMPersistentTrackID?
     }
 
-    static func build(meta: RecMeta, speeds: [RecSpeed]) async -> Built? {
+    /// `segments`: speed-ups and cuts (`RecEdit.timeSegments`); `clickSound` adds a click on every click.
+    static func build(meta: RecMeta, speeds: [RecSpeed], clickSound: Bool = false) async -> Built? {
         let source = AVURLAsset(url: RecStore.video(for: meta.id))
         guard let duration = try? await source.load(.duration), let video = try? await source.loadTracks(withMediaType: .video).first else { return nil }
         let composition = AVMutableComposition()
@@ -356,11 +472,25 @@ final class RecPlan: @unchecked Sendable {
                 }
             }
         }
-        // Latest first, so earlier times stay where they were.
+        if clickSound, !meta.track.clicks.isEmpty, let click = RecClickSound.file,
+           let sound = try? await AVURLAsset(url: click).loadTracks(withMediaType: .audio).first,
+           let length = try? await AVURLAsset(url: click).load(.duration),
+           let track = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) {
+            var free = 0.0
+            for click in meta.track.clicks.sorted(by: { $0.t < $1.t }) where click.t >= free && click.t < duration.seconds - length.seconds {
+                try? track.insertTimeRange(CMTimeRange(start: .zero, duration: length), of: sound, at: CMTime(seconds: click.t, preferredTimescale: 6000))
+                free = click.t + length.seconds
+            }
+        }
+        // Latest first, so earlier times stay where they were. A cut is removed, a speed-up squeezed.
         for speed in speeds.sorted(by: { $0.start > $1.start }) where speed.rate > 1 && speed.end > speed.start {
             let range = CMTimeRange(start: CMTime(seconds: speed.start, preferredTimescale: 6000),
                                     end: CMTime(seconds: min(speed.end, duration.seconds), preferredTimescale: 6000))
-            composition.scaleTimeRange(range, toDuration: CMTime(seconds: range.duration.seconds / speed.rate, preferredTimescale: 6000))
+            if speed.rate.isInfinite {
+                composition.removeTimeRange(range)
+            } else {
+                composition.scaleTimeRange(range, toDuration: CMTime(seconds: range.duration.seconds / speed.rate, preferredTimescale: 6000))
+            }
         }
         return Built(asset: composition, screen: screen.trackID, camera: cameraID)
     }
@@ -383,9 +513,12 @@ struct RecTimeMap: Sendable {
     let speeds: [RecSpeed]
 
     init(_ speeds: [RecSpeed], duration: Double) {
-        self.speeds = speeds.filter { $0.rate > 1 && $0.end > $0.start }
-            .map { RecSpeed(id: $0.id, start: max(0, $0.start), end: min($0.end, duration), rate: $0.rate) }
-            .sorted { $0.start < $1.start }
+        var kept: [RecSpeed] = []
+        for speed in speeds.filter({ $0.rate > 1 && $0.end > $0.start }).sorted(by: { $0.start < $1.start }) {
+            var speed = RecSpeed(id: speed.id, start: max(0, speed.start, kept.last?.end ?? 0), end: min(speed.end, duration), rate: speed.rate)
+            if speed.end > speed.start { kept.append(speed) } else { speed.end = speed.start }
+        }
+        self.speeds = kept
     }
 
     /// Recording seconds → seconds in the result.

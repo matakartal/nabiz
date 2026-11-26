@@ -61,9 +61,15 @@ final class RecEditorModel {
     var playing = false
     var selectedZoom: UUID?
     var selectedSpeed: UUID?
+    var selectedCut: UUID?
+    var selectedNote: UUID?
+    /// Captions being recognised.
+    var transcribing = false
     var exportProgress: Double?
     var toast: String?
     var thumbnails: [CGImage] = []
+    /// Loudness along the recording, 0…1, for the timeline's waveform.
+    var waveform: [Float] = []
     /// The look being shown; its time map turns recording time into played time.
     private(set) var plan: RecPlan
 
@@ -71,6 +77,7 @@ final class RecEditorModel {
     @ObservationIgnored private let asset: AVURLAsset
     @ObservationIgnored private var built: RecPlan.Built?
     @ObservationIgnored private var builtSpeeds: [RecSpeed] = []
+    @ObservationIgnored private var builtClickSound = false
     @ObservationIgnored private var observer: Any?
     @ObservationIgnored private var rebuildTask: Task<Void, Never>?
 
@@ -129,7 +136,7 @@ final class RecEditorModel {
         rebuildTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(120))
             guard let self, !Task.isCancelled else { return }
-            await rebuild(recompose: edit.speeds != builtSpeeds)
+            await rebuild(recompose: edit.timeSegments != builtSpeeds || edit.style.clickSound != builtClickSound)
         }
     }
 
@@ -138,9 +145,10 @@ final class RecEditorModel {
         let keep = time
         plan = RecPlan(meta: meta, edit: edit, maxWidth: 1600)
         if recompose || built == nil {
-            guard let fresh = await RecPlan.build(meta: meta, speeds: edit.speeds) else { show(L("Kayıt açılamadı", "Couldn't open the recording")); return }
+            guard let fresh = await RecPlan.build(meta: meta, speeds: RecTimeMap(edit.timeSegments, duration: meta.duration).speeds, clickSound: edit.style.clickSound) else { show(L("Kayıt açılamadı", "Couldn't open the recording")); return }
             built = fresh
-            builtSpeeds = edit.speeds
+            builtSpeeds = edit.timeSegments
+            builtClickSound = edit.style.clickSound
             let item = AVPlayerItem(asset: fresh.asset)
             item.audioTimePitchAlgorithm = .spectral
             item.videoComposition = plan.composition(for: fresh)
@@ -164,6 +172,18 @@ final class RecEditorModel {
             if let image = try? await generator.image(at: CMTime(seconds: t, preferredTimescale: 600)).image { images.append(image) }
         }
         thumbnails = images
+        let url = RecStore.video(for: meta.id)
+        waveform = await Task.detached(priority: .utility) { RecWaveform.read(url, bins: 360) }.value
+    }
+
+    /// A time snapped to the nearest edge (playhead, trim, other parts) within `slop` seconds.
+    func snap(_ t: Double, slop: Double, except id: UUID) -> Double {
+        var edges = [0, duration, time, edit.trimStart, trimEnd]
+        for zoom in edit.zooms where zoom.id != id { edges += [zoom.start, zoom.end] }
+        for speed in edit.speeds where speed.id != id { edges += [speed.start, speed.end] }
+        for cut in edit.cuts where cut.id != id { edges += [cut.start, cut.end] }
+        guard let nearest = edges.min(by: { abs($0 - t) < abs($1 - t) }), abs(nearest - t) <= slop else { return t }
+        return nearest
     }
 
     // MARK: Zooms
@@ -197,8 +217,9 @@ final class RecEditorModel {
     func addSpeed() {
         let start = min(time, max(0, duration - 1))
         var speed = RecSpeed(start: start, end: min(duration, start + 3), rate: 2)
-        if let next = edit.speeds.filter({ $0.start > start }).map(\.start).min() { speed.end = min(speed.end, next) }
-        if let inside = edit.speeds.first(where: { $0.start <= start && $0.end > start }) { speed.start = inside.end }
+        let taken = edit.speeds.map { ($0.start, $0.end) } + edit.cuts.map { ($0.start, $0.end) }
+        if let next = taken.map(\.0).filter({ $0 > start }).min() { speed.end = min(speed.end, next) }
+        if let inside = taken.first(where: { $0.0 <= start && $0.1 > start }) { speed.start = inside.1 }
         guard speed.end - speed.start > 0.4 else { return }
         edit.speeds.append(speed)
         edit.speeds.sort { $0.start < $1.start }
@@ -206,8 +227,66 @@ final class RecEditorModel {
         selectedZoom = nil
     }
 
+    // MARK: Captions and notes
+
+    func transcribe(language: String) {
+        guard !transcribing else { return }
+        transcribing = true
+        let meta = meta
+        Task {
+            defer { transcribing = false }
+            do {
+                let lines = try await RecCaptions.transcribe(meta, locale: Locale(identifier: language))
+                edit.captions = lines
+                show(lines.isEmpty ? L("Konuşma bulunamadı", "No speech found") : L("\(lines.count) satır altyazı", "\(lines.count) caption lines"))
+            } catch RecCaptions.Failure.notAllowed {
+                show(L("Konuşma tanıma izni yok", "No speech recognition access"))
+            } catch RecCaptions.Failure.noAudio {
+                show(L("Bu kayıtta ses yok", "This recording has no sound"))
+            } catch {
+                show(L("Altyazı çıkarılamadı", "Couldn't make captions"))
+            }
+        }
+    }
+
+    /// Leaves out what a caption line says (and the line).
+    func cutCaption(_ id: UUID) {
+        guard let line = edit.captions.first(where: { $0.id == id }) else { return }
+        edit.captions.removeAll { $0.id == id }
+        edit.cuts.append(RecCut(start: line.start, end: line.end))
+        edit.cuts.sort { $0.start < $1.start }
+    }
+
+    func addNote() {
+        let note = RecNote(start: min(time, max(0, duration - 1)), end: min(duration, time + 3), text: L("Buraya bak", "Look here"))
+        edit.notes.append(note)
+        selectedNote = note.id
+        selectedZoom = nil; selectedSpeed = nil; selectedCut = nil
+    }
+
+    /// Takes 1.5 s out at the playhead (drag its edge to change how much).
+    func addCut() {
+        let start = min(time, max(0, duration - 0.5))
+        var cut = RecCut(start: start, end: min(duration, start + 1.5))
+        let taken = edit.speeds.map { ($0.start, $0.end) } + edit.cuts.map { ($0.start, $0.end) }
+        if let next = taken.map(\.0).filter({ $0 > start }).min() { cut.end = min(cut.end, next) }
+        if let inside = taken.first(where: { $0.0 <= start && $0.1 > start }) { cut.start = inside.1 }
+        guard cut.end - cut.start > 0.2 else { return }
+        edit.cuts.append(cut)
+        edit.cuts.sort { $0.start < $1.start }
+        selectedCut = cut.id
+        selectedSpeed = nil
+        selectedZoom = nil
+    }
+
     func deleteSelection() {
-        if selectedSpeed != nil {
+        if selectedNote != nil {
+            edit.notes.removeAll { $0.id == selectedNote }
+            selectedNote = nil
+        } else if selectedCut != nil {
+            edit.cuts.removeAll { $0.id == selectedCut }
+            selectedCut = nil
+        } else if selectedSpeed != nil {
             edit.speeds.removeAll { $0.id == selectedSpeed }
             selectedSpeed = nil
         } else {
@@ -300,7 +379,7 @@ struct RecEditorView: View {
                 }
                 Rectangle().fill(Theme.hairline).frame(height: 1)
                 RecTimeline(model: model)
-                    .frame(height: 158)
+                    .frame(height: 190)
             }
             .ignoresSafeArea(.container, edges: .top)
         }
@@ -414,12 +493,68 @@ struct RecInspector: View {
                         .font(Theme.small).foregroundStyle(Theme.textMuted)
                 }
                 section(L("Arka plan", "Background")) {
-                    LazyVGrid(columns: Array(repeating: GridItem(.fixed(24), spacing: 8), count: 8), alignment: .leading, spacing: 8) {
-                        ForEach(Array(ShotBackground.presets.enumerated()), id: \.offset) { index, pair in
-                            ShotSwatch(fill: AnyShapeStyle(LinearGradient(colors: [Color(nsColor: pair.0.nsColor), Color(nsColor: pair.1.nsColor)],
-                                                                          startPoint: .topLeading, endPoint: .bottomTrailing)),
-                                       selected: model.edit.style.background == index, help: "") {
-                                model.edit.style.background = index
+                    Picker(L("Tür", "Kind"), selection: $model.edit.style.backgroundKind) {
+                        Text(L("Gradyan", "Gradient")).tag("gradient")
+                        Text(L("Renk", "Colour")).tag("solid")
+                        Text(L("Duvar kağıdı", "Wallpaper")).tag("wallpaper")
+                        Text(L("Resim", "Image")).tag("image")
+                    }
+                    .pickerStyle(.segmented).labelsHidden().controlSize(.small)
+                    switch model.edit.style.backgroundKind {
+                    case "solid":
+                        LazyVGrid(columns: Array(repeating: GridItem(.fixed(24), spacing: 8), count: 8), alignment: .leading, spacing: 8) {
+                            ForEach(["#FFFFFF", "#F2F2F7", "#D1D1D6", "#8E8E93", "#3A3A3C", "#1C1C1E", "#000000", "#0A2540"], id: \.self) { hex in
+                                ShotSwatch(fill: AnyShapeStyle(Color(nsColor: NSColor(hexString: hex) ?? .black)),
+                                           selected: model.edit.style.solidColor == hex, help: hex) { model.edit.style.solidColor = hex }
+                            }
+                        }
+                        ColorPicker(L("Kendi rengin", "Your own colour"), selection: Binding(
+                            get: { Color(nsColor: NSColor(hexString: model.edit.style.solidColor) ?? .black) },
+                            set: { color in
+                                let c = NSColor(color).usingColorSpace(.sRGB) ?? .black
+                                model.edit.style.solidColor = String(format: "#%02X%02X%02X", Int(c.redComponent * 255), Int(c.greenComponent * 255), Int(c.blueComponent * 255))
+                            }), supportsOpacity: false)
+                            .font(Theme.small)
+                    case "wallpaper":
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3), spacing: 6) {
+                            ForEach(RecBackdrop.wallpapers, id: \.self) { url in
+                                Button { model.edit.style.backgroundImage = url.path } label: {
+                                    Group {
+                                        if let thumb = RecBackdrop.thumbnail(url) { Image(nsImage: thumb).resizable().aspectRatio(contentMode: .fill) } else { Theme.field }
+                                    }
+                                    .frame(height: 44).frame(maxWidth: .infinity).clipped()
+                                    .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                                    .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                        .strokeBorder(model.edit.style.backgroundImage == url.path ? Theme.accent : Theme.hairline,
+                                                      lineWidth: model.edit.style.backgroundImage == url.path ? 2 : 1))
+                                }
+                                .buttonStyle(.plain)
+                                .help(url.deletingPathExtension().lastPathComponent)
+                            }
+                        }
+                        slider(L("Bulanıklık", "Blur"), value: $model.edit.style.backgroundBlur, range: 0...1)
+                    case "image":
+                        HStack {
+                            Text(model.edit.style.backgroundImage.isEmpty ? L("Resim seçilmedi", "No image yet")
+                                 : URL(fileURLWithPath: model.edit.style.backgroundImage).lastPathComponent)
+                                .font(Theme.small).foregroundStyle(Theme.textMuted).lineLimit(1).truncationMode(.middle)
+                            Spacer()
+                            Button(L("Seç…", "Choose…")) {
+                                let panel = NSOpenPanel()
+                                panel.allowedContentTypes = [.image]
+                                if panel.runModal() == .OK, let url = panel.url { model.edit.style.backgroundImage = url.path }
+                            }
+                            .buttonStyle(TextButtonStyle(font: Theme.small, color: Theme.accent))
+                        }
+                        slider(L("Bulanıklık", "Blur"), value: $model.edit.style.backgroundBlur, range: 0...1)
+                    default:
+                        LazyVGrid(columns: Array(repeating: GridItem(.fixed(24), spacing: 8), count: 8), alignment: .leading, spacing: 8) {
+                            ForEach(Array(ShotBackground.presets.enumerated()), id: \.offset) { index, pair in
+                                ShotSwatch(fill: AnyShapeStyle(LinearGradient(colors: [Color(nsColor: pair.0.nsColor), Color(nsColor: pair.1.nsColor)],
+                                                                              startPoint: .topLeading, endPoint: .bottomTrailing)),
+                                           selected: model.edit.style.background == index, help: "") {
+                                    model.edit.style.background = index
+                                }
                             }
                         }
                     }
@@ -430,6 +565,8 @@ struct RecInspector: View {
                 section(L("İmleç", "Pointer")) {
                     slider(L("Boyut", "Size"), value: $model.edit.style.cursorSize, range: 1...3)
                     toggle(L("Pürüzsüz hareket", "Smooth movement"), $model.edit.style.smoothCursor)
+                    toggle(L("Tıklayınca zıpla", "Bounce on click"), $model.edit.style.clickBounce)
+                    toggle(L("Tıklama sesi", "Click sound"), $model.edit.style.clickSound)
                     toggle(L("Tıklama halkası", "Click rings"), $model.edit.style.clickRings)
                     toggle(L("Dururken gizle", "Hide when still"), $model.edit.style.hideIdleCursor)
                     toggle(L("Hareket bulanıklığı", "Motion blur"), $model.edit.style.motionBlur)
@@ -438,17 +575,34 @@ struct RecInspector: View {
                     section(L("Kamera", "Camera")) {
                         toggle(L("Göster", "Show"), $model.edit.style.camera)
                         slider(L("Boyut", "Size"), value: $model.edit.style.cameraSize, range: 0.12...0.4)
-                        HStack(spacing: Theme.Spacing.s) {
-                            ForEach([("topLeft", "arrow.up.left"), ("topRight", "arrow.up.right"), ("bottomLeft", "arrow.down.left"),
-                                     ("bottomRight", "arrow.down.right")], id: \.0) { corner, symbol in
-                                ShotToolButton(symbol: symbol, help: L("Köşe", "Corner"), active: model.edit.style.cameraCorner == corner) {
-                                    model.edit.style.cameraCorner = corner
+                        HStack(alignment: .top) {
+                            Grid(horizontalSpacing: 2, verticalSpacing: 2) {
+                                ForEach([["topLeft", "top", "topRight"], ["left", "", "right"], ["bottomLeft", "bottom", "bottomRight"]], id: \.self) { row in
+                                    GridRow {
+                                        ForEach(row, id: \.self) { spot in
+                                            if spot.isEmpty {
+                                                Color.clear.frame(width: 22, height: 16)
+                                            } else {
+                                                Button { model.edit.style.cameraCorner = spot } label: {
+                                                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                                        .fill(model.edit.style.cameraCorner == spot ? Theme.accent : Theme.hover)
+                                                        .frame(width: 22, height: 16)
+                                                }
+                                                .buttonStyle(.plain)
+                                            }
+                                        }
+                                    }
                                 }
                             }
+                            .padding(4)
+                            .background(Theme.track, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                             Spacer()
-                            ShotToolButton(symbol: model.edit.style.cameraCircle ? "circle" : "app", help: L("Daire ya da kare", "Circle or square"),
-                                           active: false) { model.edit.style.cameraCircle.toggle() }
+                            VStack(alignment: .trailing, spacing: Theme.Spacing.s) {
+                                Text(L("Konum", "Position")).font(Theme.small).foregroundStyle(Theme.textMuted)
+                            }
                         }
+                        slider(L("Yuvarlaklık", "Roundness"), value: $model.edit.style.cameraRoundness, range: 0...0.5)
+                        toggle(L("Ayna", "Mirror"), $model.edit.style.cameraMirror)
                     }
                 }
                 section(L("Kısayol tuşları", "Shortcut keys")) {
@@ -458,6 +612,20 @@ struct RecInspector: View {
                              "No shortcuts in this recording. With Accessibility access, shortcuts like ⌘C are recorded; what you type never is.")
                          : L("⌘C, ⌃⌥R gibi kısayollar altta kısa bir etiketle görünür.", "Shortcuts like ⌘C show as a short label at the bottom."))
                         .font(Theme.small).foregroundStyle(Theme.textMuted).fixedSize(horizontal: false, vertical: true)
+                }
+                section(L("Altyazı", "Captions")) {
+                    RecCaptionControls(model: model)
+                }
+                section(L("Notlar", "Notes")) {
+                    if let id = model.selectedNote, let index = model.edit.notes.firstIndex(where: { $0.id == id }) {
+                        TextField(L("Not", "Note"), text: $model.edit.notes[index].text).textFieldStyle(.roundedBorder).font(Theme.body)
+                        toggle(L("Ok ile göster", "Point with an arrow"), $model.edit.notes[index].arrow)
+                        RecNotePicker(model: model, index: index)
+                        Button(L("Bu notu sil  ⌫", "Delete this note  ⌫"), role: .destructive) { model.deleteSelection() }
+                            .buttonStyle(TextButtonStyle(font: Theme.small))
+                    }
+                    Button(L("Oynatma çizgisine not ekle", "Add a note at the playhead")) { model.addNote() }
+                        .buttonStyle(TextButtonStyle(font: Theme.small, color: Theme.accent))
                 }
                 section(L("Hız", "Speed")) {
                     if let id = model.selectedSpeed, let index = model.edit.speeds.firstIndex(where: { $0.id == id }) {
@@ -478,7 +646,19 @@ struct RecInspector: View {
                 }
                 section(L("Yakınlaştırma", "Zoom")) {
                     if let id = model.selectedZoom, let index = model.edit.zooms.firstIndex(where: { $0.id == id }) {
-                        slider(L("Bu yakınlaştırma", "This zoom"), value: $model.edit.zooms[index].scale, range: 1.2...3.5)
+                        slider(L("Bu yakınlaştırma: \(String(format: "%.2f", model.edit.zooms[index].scale))×", "This zoom: \(String(format: "%.2f", model.edit.zooms[index].scale))×"),
+                               value: $model.edit.zooms[index].scale, range: 1.1...5)
+                        Picker(L("Odak", "Focus"), selection: Binding(get: { model.edit.zooms[index].focusX == nil ? 0 : 1 }, set: { fixed in
+                            model.edit.zooms[index].focusX = fixed == 1 ? 0.5 : nil
+                            model.edit.zooms[index].focusY = fixed == 1 ? 0.5 : nil
+                        })) {
+                            Text(L("İmleci takip et", "Follow the pointer")).tag(0)
+                            Text(L("Sabit nokta", "Fixed point")).tag(1)
+                        }
+                        .pickerStyle(.segmented).labelsHidden().controlSize(.small)
+                        if model.edit.zooms[index].focusX != nil {
+                            RecFocusPicker(model: model, index: index)
+                        }
                         Button(L("Bu yakınlaştırmayı sil  ⌫", "Delete this zoom  ⌫"), role: .destructive) { model.deleteZoom() }
                             .buttonStyle(TextButtonStyle(font: Theme.small))
                     } else {
@@ -562,6 +742,11 @@ struct RecTimeline: View {
                     Label(L("Hızlandır", "Speed up"), systemImage: "forward").font(Theme.small)
                 }
                 .buttonStyle(TextButtonStyle(font: Theme.small, color: Theme.accent))
+                Button { model.addCut() } label: {
+                    Label(L("Kes", "Cut"), systemImage: "scissors").font(Theme.small)
+                }
+                .buttonStyle(TextButtonStyle(font: Theme.small, color: Theme.accent))
+                .help(L("Oynatma çizgisinden itibaren bir parçayı çıkar", "Take a part out from the playhead"))
             }
             GeometryReader { geometry in
                 let width = geometry.size.width
@@ -576,6 +761,7 @@ struct RecTimeline: View {
                     }
                     .frame(width: width, height: 44, alignment: .leading)
                     .background(Theme.field)
+                    .overlay(alignment: .bottom) { RecWaveformView(levels: model.waveform).frame(height: 18).allowsHitTesting(false) }
                     .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                     Rectangle().fill(.black.opacity(0.5)).frame(width: x(model.edit.trimStart), height: 44)
                     Rectangle().fill(.black.opacity(0.5)).frame(width: max(0, width - x(model.trimEnd)), height: 44)
@@ -586,11 +772,24 @@ struct RecTimeline: View {
                     ForEach(model.edit.speeds) { speed in
                         speedCapsule(speed, x: x, width: width)
                     }
+                    ForEach(model.edit.cuts) { cut in
+                        cutCapsule(cut, x: x, width: width)
+                    }
+                    ForEach(model.edit.notes) { note in
+                        noteCapsule(note, x: x, width: width)
+                    }
+                    // Caption lines as thin marks under everything.
+                    ForEach(model.edit.captions) { line in
+                        Capsule().fill(Theme.textMuted.opacity(0.6))
+                            .frame(width: max(3, x(line.end) - x(line.start)), height: 4)
+                            .offset(x: x(line.start), y: 124)
+                            .allowsHitTesting(false)
+                    }
                     ForEach(model.edit.zooms) { zoom in
                         zoomCapsule(zoom, x: x, width: width)
                     }
                     // Playhead.
-                    Rectangle().fill(Theme.text).frame(width: 2, height: 104).offset(x: x(model.time) - 1, y: -4)
+                    Rectangle().fill(Theme.text).frame(width: 2, height: 134).offset(x: x(model.time) - 1, y: -4)
                         .allowsHitTesting(false)
                 }
                 .contentShape(Rectangle())
@@ -598,7 +797,7 @@ struct RecTimeline: View {
                     model.seek(Double(drag.location.x / width) * model.duration)
                 })
             }
-            .frame(height: 100)
+            .frame(height: 130)
         }
         .padding(.horizontal, Theme.Spacing.l)
         .padding(.vertical, Theme.Spacing.m)
@@ -619,6 +818,69 @@ struct RecTimeline: View {
             .help(L("Baştan ya da sondan kırp", "Trim the start or the end"))
     }
 
+    private func noteCapsule(_ note: RecNote, x: (Double) -> CGFloat, width: CGFloat) -> some View {
+        let selected = model.selectedNote == note.id
+        let seconds = { (dx: CGFloat) in Double(dx / width) * model.duration }
+        return RoundedRectangle(cornerRadius: 5, style: .continuous)
+            .fill(Theme.accent.opacity(selected ? 0.9 : 0.45))
+            .overlay(alignment: .leading) {
+                Label(note.text, systemImage: note.arrow ? "arrow.up.right" : "text.bubble")
+                    .font(.system(size: 10, weight: .semibold)).foregroundStyle(.white).labelStyle(.titleAndIcon)
+                    .padding(.leading, 7).lineLimit(1)
+            }
+            .overlay(alignment: .trailing) {
+                Color.clear.frame(width: 8).contentShape(Rectangle())
+                    .onHover { inside in if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() } }
+                    .gesture(DragGesture(minimumDistance: 1).onChanged { drag in
+                        guard let index = model.edit.notes.firstIndex(where: { $0.id == note.id }) else { return }
+                        model.edit.notes[index].end = min(max(model.snap(note.end + seconds(drag.translation.width), slop: seconds(6), except: note.id), note.start + 0.4), model.duration)
+                    })
+            }
+            .frame(width: max(14, x(note.end) - x(note.start)), height: 18)
+            .offset(x: x(note.start), y: 102)
+            .onTapGesture { model.selectedNote = selected ? nil : note.id; model.selectedZoom = nil; model.selectedSpeed = nil; model.selectedCut = nil }
+            .gesture(DragGesture(minimumDistance: 3).onChanged { drag in
+                guard let index = model.edit.notes.firstIndex(where: { $0.id == note.id }) else { return }
+                let length = note.end - note.start
+                let start = min(max(model.snap(note.start + seconds(drag.translation.width), slop: seconds(6), except: note.id), 0), model.duration - length)
+                model.edit.notes[index].start = start
+                model.edit.notes[index].end = start + length
+                model.selectedNote = note.id
+            })
+    }
+
+    private func cutCapsule(_ cut: RecCut, x: (Double) -> CGFloat, width: CGFloat) -> some View {
+        let selected = model.selectedCut == cut.id
+        let seconds = { (dx: CGFloat) in Double(dx / width) * model.duration }
+        return RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .fill(Theme.text.opacity(selected ? 0.85 : 0.6))
+            .overlay(alignment: .leading) {
+                Label(L("Kesildi", "Cut"), systemImage: "scissors")
+                    .font(.system(size: 10, weight: .semibold)).foregroundStyle(Theme.surface).labelStyle(.titleAndIcon)
+                    .padding(.leading, 8).lineLimit(1)
+            }
+            .overlay(alignment: .trailing) {
+                Color.clear.frame(width: 8).contentShape(Rectangle())
+                    .onHover { inside in if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() } }
+                    .gesture(DragGesture(minimumDistance: 1).onChanged { drag in
+                        guard let index = model.edit.cuts.firstIndex(where: { $0.id == cut.id }) else { return }
+                        model.edit.cuts[index].end = min(max(model.snap(cut.end + seconds(drag.translation.width), slop: seconds(6), except: cut.id), cut.start + 0.2), model.duration)
+                    })
+            }
+            .frame(width: max(14, x(cut.end) - x(cut.start)), height: 22)
+            .offset(x: x(cut.start), y: 76)
+            .onTapGesture { model.selectedCut = selected ? nil : cut.id; model.selectedZoom = nil; model.selectedSpeed = nil }
+            .gesture(DragGesture(minimumDistance: 3).onChanged { drag in
+                guard let index = model.edit.cuts.firstIndex(where: { $0.id == cut.id }) else { return }
+                let length = cut.end - cut.start
+                let start = min(max(model.snap(cut.start + seconds(drag.translation.width), slop: seconds(6), except: cut.id), 0), model.duration - length)
+                model.edit.cuts[index].start = start
+                model.edit.cuts[index].end = start + length
+                model.selectedCut = cut.id
+            })
+            .help(L("Bu parça çıkarılır · ⌫ geri alır", "This part is left out · ⌫ puts it back"))
+    }
+
     private func speedCapsule(_ speed: RecSpeed, x: (Double) -> CGFloat, width: CGFloat) -> some View {
         let selected = model.selectedSpeed == speed.id
         let seconds = { (dx: CGFloat) in Double(dx / width) * model.duration }
@@ -635,18 +897,18 @@ struct RecTimeline: View {
                     .gesture(DragGesture(minimumDistance: 1).onChanged { drag in
                         guard let index = model.edit.speeds.firstIndex(where: { $0.id == speed.id }) else { return }
                         let limit = model.edit.speeds.filter { $0.start > speed.start }.map(\.start).min() ?? model.duration
-                        model.edit.speeds[index].end = min(max(speed.end + seconds(drag.translation.width), speed.start + 0.5), limit)
+                        model.edit.speeds[index].end = min(max(model.snap(speed.end + seconds(drag.translation.width), slop: seconds(6), except: speed.id), speed.start + 0.5), limit)
                     })
             }
             .frame(width: max(14, x(speed.end) - x(speed.start)), height: 22)
             .offset(x: x(speed.start), y: 76)
-            .onTapGesture { model.selectedSpeed = selected ? nil : speed.id; model.selectedZoom = nil }
+            .onTapGesture { model.selectedSpeed = selected ? nil : speed.id; model.selectedZoom = nil; model.selectedCut = nil }
             .gesture(DragGesture(minimumDistance: 3).onChanged { drag in
                 guard let index = model.edit.speeds.firstIndex(where: { $0.id == speed.id }) else { return }
                 let length = speed.end - speed.start
                 let previous = model.edit.speeds.filter { $0.end <= speed.start }.map(\.end).max() ?? 0
                 let next = model.edit.speeds.filter { $0.start >= speed.end }.map(\.start).min() ?? model.duration
-                let start = min(max(speed.start + seconds(drag.translation.width), previous), next - length)
+                let start = min(max(model.snap(speed.start + seconds(drag.translation.width), slop: seconds(6), except: speed.id), previous), next - length)
                 model.edit.speeds[index].start = start
                 model.edit.speeds[index].end = start + length
                 model.selectedSpeed = speed.id
@@ -670,22 +932,218 @@ struct RecTimeline: View {
                     .gesture(DragGesture(minimumDistance: 1).onChanged { drag in
                         guard let index = model.edit.zooms.firstIndex(where: { $0.id == zoom.id }) else { return }
                         let limit = model.edit.zooms.filter { $0.start > zoom.start }.map(\.start).min() ?? model.duration
-                        model.edit.zooms[index].end = min(max(zoom.end + seconds(drag.translation.width), zoom.start + 0.5), limit)
+                        model.edit.zooms[index].end = min(max(model.snap(zoom.end + seconds(drag.translation.width), slop: seconds(6), except: zoom.id), zoom.start + 0.5), limit)
                     })
             }
             .frame(width: max(14, x(zoom.end) - x(zoom.start)), height: 22)
             .offset(x: x(zoom.start), y: 50)
-            .onTapGesture { model.selectedZoom = selected ? nil : zoom.id; model.selectedSpeed = nil }
+            .onTapGesture { model.selectedZoom = selected ? nil : zoom.id; model.selectedSpeed = nil; model.selectedCut = nil; model.selectedNote = nil }
             .gesture(DragGesture(minimumDistance: 3).onChanged { drag in
                 guard let index = model.edit.zooms.firstIndex(where: { $0.id == zoom.id }) else { return }
                 let length = zoom.end - zoom.start
                 let previous = model.edit.zooms.filter { $0.end <= zoom.start }.map(\.end).max() ?? 0
                 let next = model.edit.zooms.filter { $0.start >= zoom.end }.map(\.start).min() ?? model.duration
-                let start = min(max(zoom.start + seconds(drag.translation.width), previous), next - length)
+                let start = min(max(model.snap(zoom.start + seconds(drag.translation.width), slop: seconds(6), except: zoom.id), previous), next - length)
                 model.edit.zooms[index].start = start
                 model.edit.zooms[index].end = start + length
                 model.selectedZoom = zoom.id
             })
             .help(L("Sürükle: taşı · Sağ kenar: uzat · Tıkla: seç", "Drag to move · Right edge to stretch · Click to select"))
+    }
+}
+
+/// Where a fixed zoom looks: a still of the recording with a dot to drag.
+struct RecFocusPicker: View {
+    @Bindable var model: RecEditorModel
+    let index: Int
+
+    var body: some View {
+        let zoom = model.edit.zooms[index]
+        let still = model.thumbnails.isEmpty ? nil
+            : model.thumbnails[min(model.thumbnails.count - 1, Int(zoom.start / max(model.duration, 0.01) * Double(model.thumbnails.count)))]
+        let aspect = CGFloat(model.meta.width) / CGFloat(max(model.meta.height, 1))
+        GeometryReader { geometry in
+            let size = geometry.size
+            ZStack(alignment: .topLeading) {
+                if let still {
+                    Image(decorative: still, scale: 1).resizable().aspectRatio(contentMode: .fill)
+                        .frame(width: size.width, height: size.height).clipped()
+                } else {
+                    Theme.field
+                }
+                // The part the zoom will show.
+                let box = CGSize(width: size.width / zoom.scale, height: size.height / zoom.scale)
+                let x = min(max(CGFloat(zoom.focusX ?? 0.5) * size.width - box.width / 2, 0), size.width - box.width)
+                let y = min(max(CGFloat(zoom.focusY ?? 0.5) * size.height - box.height / 2, 0), size.height - box.height)
+                RoundedRectangle(cornerRadius: 3).strokeBorder(Color.white, lineWidth: 1.5)
+                    .background(Theme.accent.opacity(0.18))
+                    .frame(width: box.width, height: box.height)
+                    .offset(x: x, y: y)
+                    .shadow(color: .black.opacity(0.4), radius: 2)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 0).onChanged { drag in
+                model.edit.zooms[index].focusX = Double(min(max(drag.location.x / size.width, 0), 1))
+                model.edit.zooms[index].focusY = Double(min(max(drag.location.y / size.height, 0), 1))
+            })
+        }
+        .aspectRatio(aspect, contentMode: .fit)
+        .help(L("Yakınlaşmanın göstereceği yeri sürükle", "Drag to where the zoom should look"))
+    }
+}
+
+/// The recording's loudness, read once off the main thread.
+enum RecWaveform {
+    nonisolated static func read(_ url: URL, bins: Int) -> [Float] {
+        let asset = AVURLAsset(url: url)
+        let semaphore = DispatchSemaphore(value: 0)
+        nonisolated(unsafe) var track: AVAssetTrack?
+        Task.detached {
+            track = try? await asset.loadTracks(withMediaType: .audio).first
+            semaphore.signal()
+        }
+        semaphore.wait()
+        guard let track, let reader = try? AVAssetReader(asset: asset) else { return [] }
+        let output = AVAssetReaderTrackOutput(track: track, outputSettings: [
+            AVFormatIDKey: kAudioFormatLinearPCM, AVLinearPCMBitDepthKey: 16, AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsBigEndianKey: false, AVNumberOfChannelsKey: 1, AVSampleRateKey: 8_000,
+        ])
+        reader.add(output)
+        guard reader.startReading() else { return [] }
+        var samples: [Float] = []
+        while let buffer = output.copyNextSampleBuffer(), let block = CMSampleBufferGetDataBuffer(buffer) {
+            let length = CMBlockBufferGetDataLength(block)
+            var data = [Int16](repeating: 0, count: length / 2)
+            CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: length, destination: &data)
+            samples.append(contentsOf: data.map { abs(Float($0)) / 32768 })
+        }
+        guard !samples.isEmpty else { return [] }
+        let per = max(1, samples.count / bins)
+        var levels: [Float] = []
+        var i = 0
+        while i < samples.count {
+            let slice = samples[i..<min(i + per, samples.count)]
+            levels.append((slice.reduce(0) { $0 + $1 * $1 } / Float(slice.count)).squareRoot())
+            i += per
+        }
+        let peak = max(levels.max() ?? 1, 0.02)
+        return levels.map { min(1, $0 / peak) }
+    }
+}
+
+/// Bars along the bottom of the timeline's stills.
+struct RecWaveformView: View {
+    let levels: [Float]
+
+    var body: some View {
+        Canvas { context, size in
+            guard !levels.isEmpty else { return }
+            let step = size.width / CGFloat(levels.count)
+            var path = Path()
+            for (i, level) in levels.enumerated() {
+                let h = max(1, CGFloat(level) * size.height)
+                path.addRect(CGRect(x: CGFloat(i) * step, y: size.height - h, width: max(1, step - 0.5), height: h))
+            }
+            context.fill(path, with: .color(.white.opacity(0.75)))
+        }
+        .background(LinearGradient(colors: [.clear, .black.opacity(0.35)], startPoint: .top, endPoint: .bottom))
+    }
+}
+
+/// Making, showing and editing captions.
+struct RecCaptionControls: View {
+    @Bindable var model: RecEditorModel
+    @AppStorage("rec.captionLanguage") private var language = Prefs.isTurkish ? "tr-TR" : "en-US"
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.s) {
+            HStack {
+                Picker(L("Dil", "Language"), selection: $language) {
+                    Text(verbatim: "Türkçe").tag("tr-TR")
+                    Text(verbatim: "English").tag("en-US")
+                }
+                .labelsHidden().controlSize(.small).fixedSize()
+                Spacer()
+                if model.transcribing { ProgressView().controlSize(.small) }
+                Button(model.edit.captions.isEmpty ? L("Konuşmadan oluştur", "Make from speech") : L("Yeniden oluştur", "Make again")) {
+                    model.transcribe(language: language)
+                }
+                .buttonStyle(TextButtonStyle(font: Theme.small, color: Theme.accent))
+                .disabled(model.transcribing)
+            }
+            if !model.edit.captions.isEmpty {
+                HStack {
+                    Text(L("Göster", "Show")).font(Theme.small).foregroundStyle(Theme.text)
+                    Spacer()
+                    Toggle("", isOn: $model.edit.style.showCaptions).labelsHidden().toggleStyle(.switch).controlSize(.mini)
+                }
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach($model.edit.captions) { $line in
+                            HStack(spacing: 6) {
+                                Button(RecTimeline.format(line.start)) { model.seek(line.start) }
+                                    .buttonStyle(TextButtonStyle(font: Theme.small, color: Theme.textMuted)).monospacedDigit()
+                                TextField("", text: $line.text).textFieldStyle(.plain).font(Theme.small)
+                                Button { model.cutCaption(line.id) } label: { Image(systemName: "scissors").font(.system(size: 10)) }
+                                    .buttonStyle(TextButtonStyle(font: Theme.small, color: Theme.textMuted))
+                                    .help(L("Bu sözü videodan çıkar", "Leave these words out of the video"))
+                            }
+                        }
+                    }
+                }
+                .frame(maxHeight: 200)
+            }
+            Text(L("Konuşman bu Mac'te yazıya dökülür; bir satırı düzeltebilir ya da makasla o sözleri videodan çıkarabilirsin.",
+                   "Your speech is transcribed on this Mac; fix a line, or use the scissors to leave those words out of the video."))
+                .font(Theme.small).foregroundStyle(Theme.textMuted).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+/// Where a note sits (and where its arrow points), dragged on a still of the recording.
+struct RecNotePicker: View {
+    @Bindable var model: RecEditorModel
+    let index: Int
+    @State private var movingTarget = false
+
+    var body: some View {
+        let note = model.edit.notes[index]
+        let still = model.thumbnails.isEmpty ? nil
+            : model.thumbnails[min(model.thumbnails.count - 1, Int(note.start / max(model.duration, 0.01) * Double(model.thumbnails.count)))]
+        let aspect = CGFloat(model.meta.width) / CGFloat(max(model.meta.height, 1))
+        GeometryReader { geometry in
+            let size = geometry.size
+            ZStack(alignment: .topLeading) {
+                if let still { Image(decorative: still, scale: 1).resizable().aspectRatio(contentMode: .fill).frame(width: size.width, height: size.height).clipped() } else { Theme.field }
+                if note.arrow {
+                    Path { path in
+                        path.move(to: CGPoint(x: note.x * size.width, y: note.y * size.height))
+                        path.addLine(to: CGPoint(x: note.toX * size.width, y: note.toY * size.height))
+                    }
+                    .stroke(Theme.accent, lineWidth: 2)
+                    Circle().fill(.white).frame(width: 9, height: 9).overlay(Circle().strokeBorder(Theme.accent, lineWidth: 2))
+                        .position(x: note.toX * size.width, y: note.toY * size.height)
+                }
+                Text(note.text).font(.system(size: 9, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
+                    .padding(.horizontal, 5).padding(.vertical, 2)
+                    .background(Theme.accent, in: RoundedRectangle(cornerRadius: 4))
+                    .position(x: note.x * size.width, y: note.y * size.height)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 0)
+                .onChanged { drag in
+                    let p = CGPoint(x: min(max(drag.location.x / size.width, 0), 1), y: min(max(drag.location.y / size.height, 0), 1))
+                    if drag.translation == .zero {
+                        // Grab whichever end is nearer.
+                        let label = hypot(p.x - note.x, p.y - note.y), tip = hypot(p.x - note.toX, p.y - note.toY)
+                        movingTarget = note.arrow && tip < label
+                    }
+                    if movingTarget { model.edit.notes[index].toX = p.x; model.edit.notes[index].toY = p.y } else { model.edit.notes[index].x = p.x; model.edit.notes[index].y = p.y }
+                })
+        }
+        .aspectRatio(aspect, contentMode: .fit)
+        .help(L("Etiketi ya da ok ucunu sürükle", "Drag the label or the arrow's tip"))
     }
 }

@@ -11,6 +11,12 @@
   Also: the camera in a circle or rounded square in any corner (with a live bubble while recording), shortcuts
   pressed shown as a label (never what you type), 16:9 / 9:16 / 1:1 / 4:3 frames, faster parts on the timeline and
   one-click "speed up typing", the pointer fading out when still, and motion blur on fast moves.
+  Motion now feels like Screen Studio: a stiffer spring that lands exactly on each click, a press-and-rebound
+  click, zooms that arrive as you click and chain into pans, zooms planned in shots. The bar picks the screen, a
+  window or an area live like ⌘⇧5. In the editor: cuts, a fixed focus point per zoom, a click sound, solid colour,
+  macOS wallpaper or your own picture behind (with blur), the camera in eight spots with any roundness and mirror,
+  a waveform and snapping on the timeline, captions transcribed on this Mac (edit a line, or cut those words out),
+  and notes with arrows that stay on what they point at.
 - **Settings, easier to search:** search now finds single settings, not just pages — in Turkish or English, without
   accents ("karanlik"), by word starts and with a typo forgiven. Results list the pages, then each setting with its
   page; ↑↓ walk them and the page scrolls to the setting and lights it up. Busy pages are split into smaller ones:
