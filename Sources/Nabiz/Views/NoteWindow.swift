@@ -25,6 +25,7 @@ enum NoteWindow {
         if store.current == nil { store.create() }
         let panel = self.panel ?? makePanel()
         self.panel = panel
+        if panel.contentViewController == nil { panel.contentViewController = NSHostingController(rootView: NoteView()) }
         applyLevel()
         panel.makeKeyAndOrderFront(nil)
         installKeys()
@@ -36,6 +37,9 @@ enum NoteWindow {
         NoteStore.shared.dropEmpty()
         NoteStore.shared.saveNow()
         panel?.orderOut(nil)
+        // The editor is rebuilt next time; nothing of it stays in memory meanwhile.
+        panel?.contentViewController = nil
+        editor = nil
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
         keyMonitor = nil
     }

@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import Observation
 
 /// One thing that was copied: text, a link, files, or an image.
@@ -9,8 +10,10 @@ struct ClipItem: Codable, Identifiable, Equatable, Sendable {
     var kind: Kind
     var text: String?
     var files: [String]?
-    /// PNG, only for images up to `ClipboardHistory.maxImageBytes`.
+    /// Only read from histories saved before 1.8; images now live in their own encrypted files.
     var image: Data?
+    /// SHA-256 of an image's PNG, to spot the same picture copied again without keeping it in memory.
+    var imageHash: String?
     var date: Date
     /// The app it was copied from.
     var app: String?
@@ -40,8 +43,46 @@ struct ClipItem: Codable, Identifiable, Equatable, Sendable {
     }
 }
 
+/// Encrypts the clipboard history on disk (AES-GCM) with a key kept in the login Keychain, so a copy of the files
+/// alone reveals nothing. Only this Mac's user can read it back.
+enum ClipVault {
+    private static let service = "app.nabiz.clipboard"
+    nonisolated(unsafe) private static var cached: SymmetricKey?
+
+    static var key: SymmetricKey? {
+        if let cached { return cached }
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
+                                    kSecAttrAccount as String: "history-key", kSecReturnData as String: true]
+        var result: CFTypeRef?
+        if SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess, let data = result as? Data, data.count == 32 {
+            cached = SymmetricKey(data: data)
+            return cached
+        }
+        let fresh = SymmetricKey(size: .bits256)
+        let data = fresh.withUnsafeBytes { Data($0) }
+        let add: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
+                                  kSecAttrAccount as String: "history-key", kSecValueData as String: data,
+                                  kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+                                  kSecAttrLabel as String: "Nabız clipboard history"]
+        guard SecItemAdd(add as CFDictionary, nil) == errSecSuccess else { return nil }
+        cached = fresh
+        return fresh
+    }
+
+    static func seal(_ data: Data) -> Data? {
+        guard let key else { return nil }
+        return try? AES.GCM.seal(data, using: key).combined
+    }
+
+    static func open(_ data: Data) -> Data? {
+        guard let key, let box = try? AES.GCM.SealedBox(combined: data) else { return nil }
+        return try? AES.GCM.open(box, using: key)
+    }
+}
+
 /// Everything copied, newest first. Polls the pasteboard twice a second (macOS has no copy notification).
 /// Never records what password managers mark as concealed or transient, nor anything copied in an excluded app.
+/// Text stays in memory; pictures are written to encrypted files and read back only when shown or pasted.
 @MainActor
 @Observable
 final class ClipboardHistory {
@@ -53,6 +94,7 @@ final class ClipboardHistory {
     @ObservationIgnored private var timer: Timer?
     /// Set when Nabız itself writes the pasteboard, so its own copy isn't recorded again.
     @ObservationIgnored private var ownChange: Int?
+    @ObservationIgnored private var saveTask: Task<Void, Never>?
 
     /// Apps whose copies are never kept.
     static let defaultExcluded = [
@@ -60,15 +102,40 @@ final class ClipboardHistory {
         "com.dashlane.dashlanephonefinal", "com.apple.keychainaccess", "com.apple.Passwords", "org.keepassxc.keepassxc",
     ]
 
-    private static var file: URL {
+    private static var folder: URL {
         let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Nabiz")
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        return folder.appendingPathComponent("clipboard.json")
+        return folder
     }
+    private static var file: URL { folder.appendingPathComponent("clipboard.bin") }
+    private static var legacyFile: URL { folder.appendingPathComponent("clipboard.json") }
+    private static var imageFolder: URL {
+        let url = folder.appendingPathComponent("ClipImages")
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+    private static func imageURL(_ id: UUID) -> URL { imageFolder.appendingPathComponent("\(id.uuidString).bin") }
 
     init() {
-        if Prefs.bool(Prefs.clipboardSave), let data = try? Data(contentsOf: Self.file) {
-            items = (try? JSONDecoder().decode([ClipItem].self, from: data)) ?? []
+        if Prefs.bool(Prefs.clipboardSave) {
+            if let sealed = try? Data(contentsOf: Self.file), let data = ClipVault.open(sealed) {
+                items = (try? JSONDecoder().decode([ClipItem].self, from: data)) ?? []
+            } else if let data = try? Data(contentsOf: Self.legacyFile) {
+                // Before 1.8: plain JSON with pictures inside. Move the pictures out, encrypt, delete the old file.
+                items = ((try? JSONDecoder().decode([ClipItem].self, from: data)) ?? []).map { item in
+                    var item = item
+                    if let image = item.image {
+                        item.imageHash = Self.hash(image)
+                        Self.writeImage(image, id: item.id)
+                        item.image = nil
+                    }
+                    return item
+                }
+                saveNow()
+                try? FileManager.default.removeItem(at: Self.legacyFile)
+            }
+        } else {
+            try? FileManager.default.removeItem(at: Self.imageFolder)
         }
         prune()
     }
@@ -81,6 +148,7 @@ final class ClipboardHistory {
             timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated { self?.poll() }
             }
+            timer?.tolerance = 0.2
         } else {
             timer?.invalidate()
             timer = nil
@@ -100,31 +168,49 @@ final class ClipboardHistory {
         let front = NSWorkspace.shared.frontmostApplication
         let excluded = Set(Self.defaultExcluded).union(Prefs.string(Prefs.clipboardExcluded).split(separator: ",").map(String.init))
         if let bundle = front?.bundleIdentifier, excluded.contains(bundle) { return }
-        guard let item = read(pasteboard, app: front?.localizedName) else { return }
-        insert(item)
+        read(pasteboard, app: front?.localizedName)
     }
 
-    private func read(_ pasteboard: NSPasteboard, app: String?) -> ClipItem? {
+    private func read(_ pasteboard: NSPasteboard, app: String?) {
         let now = Date()
         if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], !urls.isEmpty {
-            return ClipItem(kind: .files, files: urls.map(\.path), date: now, app: app)
+            insert(ClipItem(kind: .files, files: urls.map(\.path), date: now, app: app))
+            return
         }
         if let text = pasteboard.string(forType: .string), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
             let kind: ClipItem.Kind = trimmed.range(of: #"^#(?:[0-9a-fA-F]{3}){1,2}$"#, options: .regularExpression) != nil ? .color
                 : (URL(string: trimmed)?.scheme.map { ["http", "https"].contains($0) } ?? false) && !trimmed.contains(" ") ? .link : .text
-            return ClipItem(kind: kind, text: text, date: now, app: app)
+            insert(ClipItem(kind: kind, text: text, date: now, app: app))
+            return
         }
-        if let data = pasteboard.data(forType: .png) ?? pasteboard.data(forType: .tiff).flatMap({ NSBitmapImageRep(data: $0)?.representation(using: .png, properties: [:]) }),
-           data.count <= Self.maxImageBytes {
-            return ClipItem(kind: .image, image: data, date: now, app: app)
+        // Pictures: converting a big TIFF to PNG takes a moment, so it happens off the main thread.
+        let png = pasteboard.data(forType: .png)
+        let tiff = png == nil ? pasteboard.data(forType: .tiff) : nil
+        guard png != nil || tiff != nil else { return }
+        Task {
+            let data = await Task.detached(priority: .utility) {
+                png ?? tiff.flatMap { NSBitmapImageRep(data: $0)?.representation(using: .png, properties: [:]) }
+            }.value
+            guard let data, data.count <= Self.maxImageBytes else { return }
+            let hash = Self.hash(data)
+            if let index = items.firstIndex(where: { $0.imageHash == hash }) {
+                var existing = items.remove(at: index)
+                existing.date = now
+                items.insert(existing, at: 0)
+            } else {
+                let item = ClipItem(kind: .image, imageHash: hash, date: now, app: app)
+                Self.writeImage(data, id: item.id)
+                items.insert(item, at: 0)
+                prune()
+            }
+            scheduleSave()
         }
-        return nil
     }
 
     private func insert(_ item: ClipItem) {
         // The same text again moves to the top instead of repeating.
-        if let index = items.firstIndex(where: { $0.kind == item.kind && $0.text == item.text && $0.files == item.files && $0.image == item.image }) {
+        if let index = items.firstIndex(where: { $0.kind == item.kind && $0.text == item.text && $0.files == item.files }) {
             var existing = items.remove(at: index)
             existing.date = item.date
             existing.app = item.app
@@ -133,7 +219,7 @@ final class ClipboardHistory {
             items.insert(item, at: 0)
         }
         prune()
-        save()
+        scheduleSave()
     }
 
     /// Keeps the newest `clipboardLimit` items and drops ones older than `clipboardDays`; pinned items always stay.
@@ -141,20 +227,55 @@ final class ClipboardHistory {
         let limit = max(Prefs.int(Prefs.clipboardLimit), 10)
         let days = Prefs.int(Prefs.clipboardDays)
         var kept = 0
+        var dropped: [ClipItem] = []
         items = items.filter { item in
             if item.pinned { return true }
-            if days > 0, Date().timeIntervalSince(item.date) > Double(days) * 86_400 { return false }
+            if days > 0, Date().timeIntervalSince(item.date) > Double(days) * 86_400 { dropped.append(item); return false }
             kept += 1
-            return kept <= limit
+            if kept > limit { dropped.append(item); return false }
+            return true
+        }
+        dropped.filter { $0.kind == .image }.forEach { try? FileManager.default.removeItem(at: Self.imageURL($0.id)) }
+    }
+
+    // MARK: Storage
+
+    private static func hash(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func writeImage(_ data: Data, id: UUID) {
+        guard let sealed = ClipVault.seal(data) else { return }
+        try? sealed.write(to: imageURL(id), options: .atomic)
+    }
+
+    /// The picture of an image item, read and decrypted from its file.
+    func imageData(_ item: ClipItem) -> Data? {
+        if let image = item.image { return image }
+        guard let sealed = try? Data(contentsOf: Self.imageURL(item.id)) else { return nil }
+        return ClipVault.open(sealed)
+    }
+
+    /// Writes a moment after the last change, so a burst of copies is one write.
+    private func scheduleSave() {
+        saveTask?.cancel()
+        saveTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            self?.saveNow()
         }
     }
 
-    func save() {
+    func save() { scheduleSave() }
+
+    func saveNow() {
+        saveTask?.cancel()
         guard Prefs.bool(Prefs.clipboardSave) else {
             try? FileManager.default.removeItem(at: Self.file)
             return
         }
-        if let data = try? JSONEncoder().encode(items) { try? data.write(to: Self.file, options: [.atomic, .completeFileProtection]) }
+        guard let data = try? JSONEncoder().encode(items), let sealed = ClipVault.seal(data) else { return }
+        try? sealed.write(to: Self.file, options: .atomic)
     }
 
     // MARK: Actions
@@ -167,7 +288,7 @@ final class ClipboardHistory {
         case .files:
             pasteboard.writeObjects((item.files ?? []).map { URL(fileURLWithPath: $0) as NSURL })
         case .image:
-            if let image = item.image { pasteboard.setData(image, forType: .png) }
+            if let image = imageData(item) { pasteboard.setData(image, forType: .png) }
         case .text, .link, .color:
             pasteboard.setString(item.text ?? "", forType: .string)
         }
@@ -177,25 +298,28 @@ final class ClipboardHistory {
             var moved = items.remove(at: index)
             moved.date = Date()
             items.insert(moved, at: 0)
-            save()
+            scheduleSave()
         }
     }
 
     func togglePin(_ item: ClipItem) {
         guard let index = items.firstIndex(where: { $0.id == item.id }) else { return }
         items[index].pinned.toggle()
-        save()
+        scheduleSave()
     }
 
     func delete(_ item: ClipItem) {
         items.removeAll { $0.id == item.id }
-        save()
+        if item.kind == .image { try? FileManager.default.removeItem(at: Self.imageURL(item.id)) }
+        scheduleSave()
     }
 
     /// Everything but pinned items.
     func clear() {
+        let removed = items.filter { !$0.pinned }
         items.removeAll { !$0.pinned }
-        save()
+        removed.filter { $0.kind == .image }.forEach { try? FileManager.default.removeItem(at: Self.imageURL($0.id)) }
+        saveNow()
     }
 }
 

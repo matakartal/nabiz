@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.8.0
+
+- **Clearer:** every tool confirms what it did in the menu bar ("Desktop icons hidden", "Strong password copied",
+  "Focus on · 3 apps hidden"…) and explains itself on hover. The grid starts with the nine everyday tools; the rest
+  sit behind **More tools**. A new **What can it do?** window lists the shortcuts, launcher examples you can click to
+  try, and every tool (panel footer "?", the menu bar item's menu, Settings).
+- **Launcher:** files from Spotlight's index (in searches, or only files with `/`), with Quick Look, copy, copy path
+  and Move to Trash in ⌘K; your **Shortcuts** and your own **scripts** as commands (a scripts folder, Raycast-style
+  `# @nabiz.title` headers, output copied); **emoji** with `:` in English or Turkish (`:kalp`, `:ates`).
+- **Your own shortcuts:** record new keys for the launcher, clipboard, notes and panel in Settings → General.
+- **Lighter and safer:** clipboard pictures moved out of memory into their own files; the whole clipboard history is
+  encrypted on disk (AES-GCM, key in your Keychain); smaller cached icons; the launcher and notes free their views
+  when closed; app search looks up running apps once per keystroke instead of once per app. About 70 MB in use.
+- **Crash reports** are kept on this Mac (MetricKit) and can be sent as a GitHub issue from Settings → About.
+
 ## 1.7.1
 
 - Tool choices (timer, keep awake, Pomodoro, focus, screenshot, sleep) open right under the tile you tapped.

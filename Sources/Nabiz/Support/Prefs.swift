@@ -79,6 +79,10 @@ enum Prefs {
     /// Return pastes into the app in front (needs Accessibility) instead of only copying.
     static let autoPaste = "autoPaste"
     static let launcherApps = "launcherApps"
+    /// Shortcuts from the Shortcuts app appear as launcher commands.
+    static let launcherShortcuts = "launcherShortcuts"
+    /// Files from Spotlight appear in launcher searches (always with "/").
+    static let launcherFiles = "launcherFiles"
     static let launcherClipboard = "launcherClipboard"
     /// ⌃⌥ arrows, Return and C move the front window.
     static let windowHotkeys = "windowHotkeys"
@@ -140,7 +144,7 @@ enum Prefs {
             memoryAppCount: 5, cpuAppCount: 3,
             baseCurrency: "TRY", watchedCurrencies: "USD,EUR,GBP",
             clipboardHotkey: true, clipboardEnabled: true, clipboardSave: true, clipboardLimit: 200, clipboardDays: 30,
-            clipboardExcluded: "", autoPaste: true, launcherApps: true, launcherClipboard: true, windowHotkeys: false,
+            clipboardExcluded: "", autoPaste: true, launcherApps: true, launcherClipboard: true, launcherShortcuts: true, launcherFiles: true, windowHotkeys: false,
             noteOnTop: true, noteHotkey: true,
             pomodoroWork: 25, pomodoroShort: 5, pomodoroLong: 15, pomodoroLongEvery: 4, pomodoroAuto: true, pomodoroFocus: true,
             focusBlocked: "", focusHideOthers: false, focusHideDesktop: false, focusShortcutOn: "", focusShortcutOff: "",

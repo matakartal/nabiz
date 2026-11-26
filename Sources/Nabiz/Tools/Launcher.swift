@@ -7,6 +7,7 @@ struct LauncherItem: Identifiable {
         case symbol(String)
         case app(String)
         case clip(ClipItem)
+        case emoji(String)
     }
 
     /// Stable across searches, so recents can find the same item again ("app:/Applications/Safari.app", "cmd:lock").
@@ -39,7 +40,20 @@ final class LauncherModel {
 
     var mode: Mode = .all
     var text = "" {
-        didSet { if text != oldValue { selection = 0 } }
+        didSet {
+            guard text != oldValue else { return }
+            selection = 0
+            FileSearch.shared.search(fileTerm)
+        }
+    }
+
+    /// What to look for in files: everything after "/", or a normal search of three letters or more.
+    private var fileTerm: String {
+        let query = text.trimmingCharacters(in: .whitespaces)
+        if query.hasPrefix("/") { return String(query.dropFirst()) }
+        guard Prefs.bool(Prefs.launcherFiles), mode == .all, query.count >= 3,
+              let first = query.first, !"=>:".contains(first), Downloader.videoURL(query) == nil else { return "" }
+        return query
     }
     var selection = 0
     /// The ⌘K actions palette for the selected row.
@@ -169,7 +183,24 @@ final class LauncherModel {
         let query = text.trimmingCharacters(in: .whitespaces)
         var sections: [LauncherSection] = []
         let commands = commandItems()
-        let apps = Prefs.bool(Prefs.launcherApps) ? AppIndex.shared.apps.map(appItem) : []
+        let running = Dictionary(NSWorkspace.shared.runningApplications.compactMap { app in app.bundleURL.map { ($0.path, app) } },
+                                 uniquingKeysWith: { first, _ in first })
+        let apps = Prefs.bool(Prefs.launcherApps) ? AppIndex.shared.apps.map { appItem($0, running: running[$0.path]) } : []
+
+        // ":heart", ":kalp": emoji.
+        if query.hasPrefix(":") {
+            let found = EmojiIndex.search(String(query.dropFirst())).prefix(60).map(emojiItem)
+            return [LauncherSection(id: "emoji", title: "Emoji", items: Array(found))].filter { !$0.items.isEmpty }
+        }
+
+        // "/report": files only.
+        if query.hasPrefix("/") {
+            let search = FileSearch.shared
+            let rest = query.dropFirst().trimmingCharacters(in: .whitespaces)
+            let files = search.term == rest ? search.results.map(fileItem) : []
+            let title = rest.count < 2 ? L("Dosya adı yaz", "Type a file name") : search.searching && files.isEmpty ? L("Aranıyor…", "Searching…") : L("Dosyalar", "Files")
+            return [LauncherSection(id: "files", title: title, items: files)]
+        }
 
         // "=": the calculator alone; with nothing after it, the last calculations.
         if query.hasPrefix("=") {
@@ -242,7 +273,11 @@ final class LauncherModel {
         sections.append(LauncherSection(id: "apps", title: L("Uygulamalar", "Apps"),
                                         items: ranked(apps, keywords: { $0.subtitle ?? "" }, limit: 6)))
         sections.append(LauncherSection(id: "commands", title: L("Komutlar", "Commands"),
-                                        items: ranked(commands + timerItems(query), keywords: { Self.keywords[$0.id] ?? $0.id.split(separator: ":").last.map(String.init) ?? "" }, limit: 8)))
+                                        items: ranked(commands + timerItems(query), keywords: { item in
+                                            if item.id.hasPrefix("shortcut:") { return "shortcut kestirme" }
+                                            if item.id.hasPrefix("script:") { return "script betik" }
+                                            return Self.keywords[item.id] ?? item.id.split(separator: ":").last.map(String.init) ?? ""
+                                        }, limit: 8)))
 
         let notes = NoteStore.shared.sorted.filter { !$0.isEmpty && (Fuzzy.score(query, $0.title) != nil || Fuzzy.contains(query, $0.text)) }
         sections.append(LauncherSection(id: "notes", title: L("Notlar", "Notes"), items: notes.prefix(4).map(noteItem)))
@@ -260,6 +295,10 @@ final class LauncherModel {
         if Prefs.bool(Prefs.clipboardEnabled) && Prefs.bool(Prefs.launcherClipboard) {
             let clips = ClipboardHistory.shared.items.filter { Fuzzy.contains(query, $0.preview) }.prefix(4).map(clipRow)
             sections.append(LauncherSection(id: "clips", title: L("Pano", "Clipboard"), items: Array(clips)))
+        }
+
+        if FileSearch.shared.term == query && !FileSearch.shared.results.isEmpty {
+            sections.append(LauncherSection(id: "files", title: L("Dosyalar", "Files"), items: FileSearch.shared.results.prefix(5).map(fileItem)))
         }
 
         // Nothing else fits: search the web for it.
@@ -280,6 +319,41 @@ final class LauncherModel {
                                 if let url = link.url(for: query) { NSWorkspace.shared.open(url) }
                             },
                             remember: query.isEmpty)
+    }
+
+    private func emojiItem(_ emoji: EmojiIndex.Emoji) -> LauncherItem {
+        LauncherItem(id: "emoji:\(emoji.character)", icon: .emoji(emoji.character), title: emoji.name.capitalized,
+                     primaryTitle: Paster.canPaste ? L("Yapıştır", "Paste") : L("Kopyala", "Copy"),
+                     primary: { [weak self] in
+                         EmojiIndex.used(emoji.character)
+                         self?.paste(text: emoji.character)
+                     },
+                     secondaryTitle: L("Kopyala", "Copy"),
+                     secondary: { [weak self] in
+                         EmojiIndex.used(emoji.character)
+                         NSPasteboard.general.clearContents()
+                         NSPasteboard.general.setString(emoji.character, forType: .string)
+                         self?.close()
+                         Monitor.panelActions.flash(L("Kopyalandı", "Copied"))
+                     },
+                     remember: false)
+    }
+
+    private func fileItem(_ url: URL) -> LauncherItem {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let folder = url.deletingLastPathComponent().path.replacingOccurrences(of: home, with: "~")
+        return LauncherItem(id: "file:\(url.path)", icon: .app(url.path), title: url.lastPathComponent, subtitle: folder,
+                            primaryTitle: L("Aç", "Open"),
+                            primary: { [weak self] in
+                                self?.close()
+                                NSWorkspace.shared.open(url)
+                            },
+                            secondaryTitle: L("Finder'da göster", "Show in Finder"),
+                            secondary: { [weak self] in
+                                self?.close()
+                                NSWorkspace.shared.activateFileViewerSelecting([url])
+                            },
+                            remember: false)
     }
 
     private func downloadItems(_ url: URL) -> [LauncherItem] {
@@ -409,8 +483,7 @@ final class LauncherModel {
                      remember: false)
     }
 
-    private func appItem(_ app: AppIndex.App) -> LauncherItem {
-        let running = NSWorkspace.shared.runningApplications.first { $0.bundleURL?.path == app.path }
+    private func appItem(_ app: AppIndex.App, running: NSRunningApplication?) -> LauncherItem {
         return LauncherItem(id: "app:\(app.path)", icon: .app(app.path), title: app.name,
                             subtitle: app.name == app.fileName ? nil : app.fileName,
                             accessory: running == nil ? L("Uygulama", "App") : L("Açık", "Running"),
@@ -478,13 +551,13 @@ final class LauncherModel {
 
     private func commandItems() -> [LauncherItem] {
         var items: [LauncherItem] = [
-            command("clipboard", "doc.on.clipboard", L("Pano geçmişi", "Clipboard history"), accessory: "⌃⌥V", keepOpen: true) { [weak self] in
+            command("clipboard", "doc.on.clipboard", L("Pano geçmişi", "Clipboard history"), accessory: HotKey.label(.clipboard), keepOpen: true) { [weak self] in
                 self?.cameFromLauncher = true
                 self?.reset(mode: .clipboard)
             },
-            command("note", "note.text", L("Notlar", "Notes"), accessory: "⌃⌥M") { NoteWindow.show() },
+            command("note", "note.text", L("Notlar", "Notes"), accessory: HotKey.label(.note)) { NoteWindow.show() },
             command("note-new", "square.and.pencil", L("Yeni not", "New note")) { NoteWindow.show(NoteStore.shared.create()) },
-            command("panel", "menubar.rectangle", L("Paneli aç", "Open the panel"), accessory: "⌃⌥N") { HotKey.togglePanel() },
+            command("panel", "menubar.rectangle", L("Paneli aç", "Open the panel"), accessory: HotKey.label(.panel)) { HotKey.togglePanel() },
             command("history", "chart.xyaxis.line", L("Geçmiş grafikleri", "History charts")) { HistoryWindow.show() },
             command("settings", "gearshape", L("Nabız ayarları", "Nabız settings"), accessory: "⌘,") { SettingsWindow.show(nil) },
             command("schedules", "calendar.badge.clock", L("Zamanlanmış görevler", "Scheduled tasks")) { SettingsWindow.show(.schedules) },
@@ -565,6 +638,23 @@ final class LauncherModel {
                                       }))
         }
         // These already exist as commands above (or open the launcher itself).
+        for script in Extensions.shared.scripts {
+            items.append(LauncherItem(id: "script:\(script.path)", icon: script.icon.map { .emoji($0) } ?? .symbol("terminal"),
+                                      title: script.title, accessory: L("Betik", "Script"), primaryTitle: L("Çalıştır", "Run"),
+                                      primary: { [weak self] in
+                                          self?.close()
+                                          Extensions.shared.run(script)
+                                      }))
+        }
+        for name in Extensions.shared.shortcuts {
+            items.append(LauncherItem(id: "shortcut:\(name)", icon: .symbol("square.2.layers.3d"), title: name,
+                                      accessory: L("Kestirme", "Shortcut"), primaryTitle: L("Çalıştır", "Run"),
+                                      primary: { [weak self] in
+                                          self?.close()
+                                          Extensions.shared.runShortcut(name)
+                                      }))
+        }
+        items.append(command("help", "questionmark.circle", L("Neler yapabilir?", "What can Nabız do?")) { HelpWindow.show() })
         let skip: Set<ToolKind> = [.calculator, .keepAwake, .timer, .clipboard, .note, .displayOff, .pomodoro, .focus, .screenshot,
                                    .readText, .download, .mic, .sleepTimer]
         for tool in ToolKind.allCases where !skip.contains(tool) {
@@ -674,9 +764,30 @@ final class AppIndex {
         }
     }
 
+    /// A 40 px copy of the icon: the full one holds every size up to 1024 px, megabytes for a long list.
     func icon(_ path: String) -> NSImage {
         if let icon = icons[path] { return icon }
-        let icon = NSWorkspace.shared.icon(forFile: path)
+        let full = NSWorkspace.shared.icon(forFile: path)
+        let size = NSSize(width: 20, height: 20)
+        let small = NSImage(size: size, flipped: false) { rect in
+            full.draw(in: rect)
+            return true
+        }
+        // Draw once into a bitmap so the big original can go.
+        let icon: NSImage
+        if let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 40, pixelsHigh: 40, bitsPerSample: 8, samplesPerPixel: 4,
+                                      hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) {
+            rep.size = size
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+            small.draw(in: NSRect(origin: .zero, size: size))
+            NSGraphicsContext.restoreGraphicsState()
+            icon = NSImage(size: size)
+            icon.addRepresentation(rep)
+        } else {
+            icon = small
+        }
+        if icons.count > 400 { icons.removeAll() }
         icons[path] = icon
         return icon
     }
@@ -905,6 +1016,31 @@ extension LauncherModel {
                                        destructive: true) { [weak self] in
                 CalcHistory.clear()
                 self?.text = ""
+            })
+        }
+
+        if item.id.hasPrefix("file:") {
+            let url = URL(fileURLWithPath: String(item.id.dropFirst(5)))
+            list.append(LauncherAction(id: "quickLook", title: L("Hızlı bakış", "Quick Look"), symbol: "eye", group: main) {
+                Task { _ = await Toolbox.run("/usr/bin/qlmanage", ["-p", url.path]) }
+            })
+            list.append(LauncherAction(id: "copyFile", title: L("Dosyayı kopyala", "Copy the file"), symbol: "doc.on.doc", group: main) { [weak self] in
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.writeObjects([url as NSURL])
+                self?.close()
+                Monitor.panelActions.flash(L("Dosya kopyalandı", "File copied"))
+            })
+            list.append(LauncherAction(id: "copyPath", title: L("Yolunu kopyala", "Copy path"), symbol: "text.cursor", group: main) {
+                copyText(url.path, L("Kopyalandı", "Copied"))
+            })
+            list.append(LauncherAction(id: "trash", title: L("Çöp Sepeti'ne taşı", "Move to Trash"), symbol: "trash", group: main,
+                                       destructive: true) { [weak self] in
+                NSWorkspace.shared.recycle([url]) { _, error in
+                    MainActor.assumeIsolated {
+                        Monitor.panelActions.flash(error == nil ? L("Çöpe taşındı", "Moved to Trash") : L("Taşınamadı", "Couldn't move"))
+                    }
+                }
+                self?.close()
             })
         }
 

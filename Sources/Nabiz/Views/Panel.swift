@@ -478,10 +478,44 @@ private struct ChipRow<Content: View>: View {
     }
 }
 
+private enum GridEntry: Hashable {
+    case tool(ToolKind)
+    case more(Int)
+}
+
+/// "More tools 16 ⌄": shows the rest of the grid, or folds it back.
+private struct MoreTile: View {
+    let title: String
+    let detail: String?
+    let expanded: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: Theme.Spacing.s) {
+                Image(systemName: expanded ? "chevron.up" : "ellipsis").font(Theme.body).frame(width: Theme.menuIcon)
+                Text(verbatim: title).font(Theme.body).lineLimit(1)
+                Spacer(minLength: Theme.Spacing.xs)
+                if let detail { Text(verbatim: detail).font(Theme.small).monospacedDigit().foregroundStyle(Theme.textMuted) }
+            }
+            .padding(.horizontal, Theme.Spacing.s)
+            .foregroundStyle(Theme.textMuted)
+            .frame(maxWidth: .infinity, minHeight: Theme.toolTile)
+            .background(hovering ? Theme.hover : Color.clear, in: RoundedRectangle(cornerRadius: Theme.fieldRadius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Theme.fieldRadius, style: .continuous).strokeBorder(Theme.hairline))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+    }
+}
+
 private struct ToolsSection: View {
     let monitor: Monitor
     let actions: PanelActions
     @AppStorage(Prefs.hiddenTools) private var hidden = ""
+    @AppStorage("toolsShowAll") private var showAll = false
     /// The tool whose duration chips are showing under the grid (keep awake or the timer).
     @State private var chips: ToolKind?
     private let timer = CountdownTimer.shared
@@ -491,17 +525,30 @@ private struct ToolsSection: View {
     var body: some View {
         let hiddenSet = Set(hidden.split(separator: ",").map(String.init))
         let tools = ToolKind.allCases.filter { !hiddenSet.contains($0.rawValue) }
-        let rows = stride(from: 0, to: tools.count, by: Theme.toolColumns).map { Array(tools[$0..<min($0 + Theme.toolColumns, tools.count)]) }
+        // The everyday tools first; the rest behind "More" so the grid stays short.
+        let extra = tools.filter { !ToolKind.everyday.contains($0) }
+        let shown: [GridEntry] = (showAll ? tools : tools.filter { ToolKind.everyday.contains($0) }).map { .tool($0) }
+            + (extra.isEmpty ? [] : [.more(extra.count)])
+        let rows = stride(from: 0, to: shown.count, by: Theme.toolColumns).map { Array(shown[$0..<min($0 + Theme.toolColumns, shown.count)]) }
         VStack(spacing: Theme.Spacing.xs) {
             ForEach(rows, id: \.first) { row in
                 HStack(spacing: Theme.Spacing.xs) {
-                    ForEach(row) { kind in
-                        ToolTile(kind: kind, detail: toolbox.detail(kind), active: toolbox.isActive(kind),
-                                 enabled: toolbox.isEnabled(kind), busy: toolbox.isBusy(kind)) {
-                            if Self.withChips.contains(kind) {
-                                chips = chips == kind ? nil : kind
-                            } else {
-                                toolbox.run(kind, actions: actions, monitor: monitor)
+                    ForEach(row, id: \.self) { entry in
+                        switch entry {
+                        case .tool(let kind):
+                            ToolTile(kind: kind, detail: toolbox.detail(kind), active: toolbox.isActive(kind),
+                                     enabled: toolbox.isEnabled(kind), busy: toolbox.isBusy(kind)) {
+                                if Self.withChips.contains(kind) {
+                                    chips = chips == kind ? nil : kind
+                                } else {
+                                    toolbox.run(kind, actions: actions, monitor: monitor)
+                                }
+                            }
+                        case .more(let count):
+                            MoreTile(title: showAll ? L("Daha az", "Fewer") : L("Diğer araçlar", "More tools"),
+                                     detail: showAll ? nil : "\(count)", expanded: showAll) {
+                                showAll.toggle()
+                                if !showAll, let open = chips, !ToolKind.everyday.contains(open) { chips = nil }
                             }
                         }
                     }
@@ -509,7 +556,7 @@ private struct ToolsSection: View {
                     if row.count < Theme.toolColumns { Color.clear.frame(maxWidth: .infinity, maxHeight: 1) }
                 }
                 // The choices open right under the tile that was tapped.
-                if let chips, row.contains(chips) {
+                if let chips, row.contains(.tool(chips)) {
                     chipsView.padding(.horizontal, -Theme.menuInset).transition(.opacity)
                 }
             }
@@ -628,6 +675,7 @@ private struct ToolTile: View {
         .buttonStyle(.plain)
         .disabled(!enabled)
         .opacity(enabled ? 1 : 0.45)
+        .help(kind.help)
         .onHover { hovering = $0 }
         .onChange(of: panelOpen) { if !panelOpen { hovering = false } }
         .help(kind.help)
@@ -962,6 +1010,10 @@ private struct PanelFooter: View {
                 Text(verbatim: detail).font(Theme.small).foregroundStyle(Theme.textMuted).lineLimit(1)
             }
             Spacer()
+            FooterButton(symbol: "questionmark.circle", help: L("Neler yapabilir?", "What can it do?")) {
+                actions.close()
+                HelpWindow.show()
+            }
             FooterButton(symbol: "gearshape", help: L("Ayarlar (⌘,)", "Settings (⌘,)")) {
                 actions.close()
                 SettingsWindow.show(nil)

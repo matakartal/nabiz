@@ -10,6 +10,9 @@ enum ToolKind: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 
     /// Short enough for a 66 pt tile.
+    /// Shown in the grid straight away; the rest sit behind "More tools".
+    static let everyday: Set<ToolKind> = [.calculator, .clipboard, .note, .pomodoro, .focus, .keepAwake, .timer, .screenshot, .download]
+
     var title: String {
         switch self {
         case .calculator: L("Başlatıcı", "Launcher")
@@ -318,15 +321,22 @@ final class Toolbox {
             actions.close()
             Task { _ = await Self.run("/usr/bin/pmset", ["displaysleepnow"]) }
         case .darkMode:
+            actions.flash(darkMode ? L("Açık görünüm", "Light mode") : L("Karanlık görünüm", "Dark mode"))
             toggleDarkMode()
         case .speedTest:
+            actions.flash(L("Hız ölçülüyor (~15 sn)", "Measuring speed (~15 s)"))
             speedTest()
         case .ip:
-            if let ip = LocalIP.address() { actions.copy(ip) }
+            if let ip = LocalIP.address() {
+                actions.copy(ip)
+                actions.flash(L("IP kopyalandı: \(ip)", "IP copied: \(ip)"))
+            }
         case .password:
             actions.copy(Self.password())
+            actions.flash(L("Güçlü şifre kopyalandı", "Strong password copied"))
         case .uuid:
             actions.copy(UUID().uuidString)
+            actions.flash(L("UUID kopyalandı", "UUID copied"))
         case .eject:
             eject(actions: actions)
         case .xcode:
@@ -334,8 +344,10 @@ final class Toolbox {
         case .rust:
             cleanRust(actions: actions)
         case .hiddenFiles:
+            actions.flash(hiddenFilesShown ? L("Gizli dosyalar gizlendi", "Hidden files hidden") : L("Gizli dosyalar görünüyor", "Hidden files shown"))
             setFinderFlag("AppleShowAllFiles", !hiddenFilesShown)
         case .desktop:
+            actions.flash(desktopHidden ? L("Masaüstü simgeleri geri geldi", "Desktop icons are back") : L("Masaüstü simgeleri gizlendi", "Desktop icons hidden"))
             setFinderFlag("CreateDesktop", desktopHidden)
         case .clearClipboard:
             NSPasteboard.general.clearContents()
@@ -403,9 +415,11 @@ final class Toolbox {
                   let up = (json["ul_throughput"] as? NSNumber)?.doubleValue
             else {
                 speedResult = L("ölçülemedi", "failed")
+                Monitor.panelActions.flash(L("Hız ölçülemedi", "Speed test failed"))
                 return
             }
             speedResult = "↓\(Int((down / 1_000_000).rounded())) ↑\(Int((up / 1_000_000).rounded())) Mbps"
+            Monitor.panelActions.flash(L("İnternet: ", "Internet: ") + (speedResult ?? ""))
         }
     }
 

@@ -37,6 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var timerWasRunning = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        CrashReporter.shared.start()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.target = self
         statusItem.button?.action = #selector(statusItemClicked)
@@ -107,6 +108,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         KeepAwake.shared.stop()
         UsageHistory.shared.save()
         NoteStore.shared.saveNow()
+        ClipboardHistory.shared.saveNow()
         FocusMode.shared.stop()
     }
 
@@ -165,6 +167,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(item(L("Geçmiş", "History")) { HistoryWindow.show() })
         menu.addItem(item(L("Zamanlanmış görevler…", "Scheduled Tasks…")) { SettingsWindow.show(.schedules) })
         menu.addItem(.separator())
+        menu.addItem(item(L("Neler yapabilir?", "What Can It Do?")) { HelpWindow.show() })
         menu.addItem(item(L("Ayarlar…", "Settings…"), ",") { SettingsWindow.show(nil) })
         menu.addItem(.separator())
         menu.addItem(item(L("Nabız'dan çık", "Quit Nabız"), "q") { NSApp.terminate(nil) })
@@ -322,6 +325,8 @@ enum Snapshot {
         let root: AnyView
         if args.contains("--welcome") {
             root = AnyView(WelcomeView {})
+        } else if args.contains("--help") {
+            root = AnyView(HelpView().frame(width: 640, height: 900))
         } else if args.contains("--note") {
             root = AnyView(NoteView().frame(width: 380, height: 440))
         } else if args.contains("--history") {

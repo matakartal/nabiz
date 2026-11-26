@@ -132,3 +132,30 @@ struct NoteTests {
         #expect(TextTransform.lower.apply("abc") == nil)
     }
 }
+
+@MainActor
+@Suite("Emoji and shortcuts")
+struct EmojiShortcutTests {
+    @Test("Emoji are found by English and Turkish words")
+    func emoji() {
+        #expect(EmojiIndex.all.count > 800)
+        #expect(EmojiIndex.search("fire").contains { $0.character == "🔥" })
+        #expect(EmojiIndex.search("ates").contains { $0.character == "🔥" })
+        #expect(EmojiIndex.search("rocket").first?.character == "🚀")
+    }
+
+    @Test("Shortcut labels read like the menu bar")
+    func labels() {
+        UserDefaults.standard.set("en", forKey: Prefs.language)
+        #expect(HotKey.keyName(49, nil) == "Space")
+        #expect(HotKey.keyName(0, "a") == "A")
+        #expect(HotKey.modifiers([.control, .option]).symbols == "⌃⌥")
+        #expect(HotKey.modifiers([.command, .shift]).symbols == "⇧⌘")
+    }
+
+    @Test("The tools grid starts short")
+    func everyday() {
+        #expect(ToolKind.everyday.count == 9)
+        #expect(ToolKind.allCases.count > ToolKind.everyday.count)
+    }
+}

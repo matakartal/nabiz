@@ -65,6 +65,7 @@ final class Pomodoro {
         self.phase = phase
         pausedLeft = nil
         endsAt = Date().addingTimeInterval(Double(minutes(phase)) * 60)
+        Monitor.panelActions.flash("\(phase.title): \(minutes(phase)) " + L("dk", "min"))
         Notifier.shared.requestPermission(keepSetting: true)
         if Prefs.bool(Prefs.pomodoroFocus) {
             if phase == .work { FocusMode.shared.start(minutes: nil, byPomodoro: true) } else { FocusMode.shared.stop(onlyIfPomodoro: true) }
@@ -218,6 +219,10 @@ final class FocusMode {
             }
         }
         runShortcut(Prefs.string(Prefs.focusShortcutOn))
+        if !byPomodoro {
+            Monitor.panelActions.flash(blockedCount > 0 ? L("Odak açık · \(blockedCount) uygulama gizlendi", "Focus on · \(blockedCount) apps hidden")
+                                                        : L("Odak modu açık", "Focus mode on"))
+        }
     }
 
     func stop(onlyIfPomodoro: Bool = false) {
@@ -232,6 +237,7 @@ final class FocusMode {
             hidDesktop = false
         }
         runShortcut(Prefs.string(Prefs.focusShortcutOff))
+        Monitor.panelActions.flash(L("Odak modu kapalı", "Focus mode off"))
     }
 
     func toggle(minutes: Int? = nil) {

@@ -76,7 +76,7 @@ On first launch, a short welcome explains where things are and offers to open Na
   - timers: `25 dk` / `25 min`; keep awake for an hour or indefinitely
   - quicklinks: `g words` searches Google, `gh`, `yt`, `w`, `hl`, `cl`, `gpt`… (edit your own with `{query}`)
   - snippets: saved text with `{date}`, `{time}` and `{clipboard}`, pasted by keyword
-  - notes, by title or text
+  - notes, by title or text; files (`/name` for files only); emoji (`:fire`, `:kalp`); your Shortcuts and scripts
   - recent items and favourites (⇧⌘F) when the field is empty; start with `>` for commands only
   - ⌘K opens the actions for the selected row: show in Finder, force quit, copy path, pin, save as a note or
     snippet, and text changes for copied text (UPPERCASE, one line, pretty JSON, Base64, URL encode/decode…)
@@ -93,6 +93,8 @@ On first launch, a short welcome explains where things are and offers to open Na
 - **Personalization:** 17 accent colours plus the system accent and a colour of your own, light/dark/system theme,
   standard, rounded or monospaced type, compact/normal/roomy rows, thin or thick bars, frosted or opaque panel,
   panel width, menu bar icon, and the panel's section order.
+- **What can it do?** a window with every shortcut, clickable launcher examples and each tool explained.
+- **Your shortcuts:** change the launcher, clipboard, notes and panel keys in Settings → General.
 - **Settings:** a sidebar of pages:
   - General: language (Türkçe / English / system), open at login, refresh rate, shortcut
   - Menu Bar
@@ -119,6 +121,8 @@ Nabız reads only your own user's processes and never asks for administrator rig
 - Screenshot asks for screen recording.
 - Dark mode asks for control of System Events.
 - Pasting from the launcher and window layouts ask for Accessibility. Without it, items are only copied.
+- The clipboard history is encrypted on disk with a key kept in your Keychain. Crash reports stay on your Mac
+  until you choose to send one.
 
 ## Build
 

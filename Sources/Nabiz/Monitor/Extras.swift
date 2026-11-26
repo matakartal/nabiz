@@ -110,6 +110,8 @@ final class KeepAwake {
 
     func start(minutes: Int?) {
         stop()
+        Monitor.panelActions.flash(minutes.map { L("Uyanık: \(Format.duration(Double($0) * 60))", "Awake for \(Format.duration(Double($0) * 60))") }
+                                   ?? L("Uyanık: süresiz", "Awake until stopped"))
         var id: IOPMAssertionID = 0
         let result = IOPMAssertionCreateWithName("PreventUserIdleDisplaySleep" as CFString,
                                                  IOPMAssertionLevel(kIOPMAssertionLevelOn), "Nabız" as CFString, &id)
@@ -159,6 +161,7 @@ final class CountdownTimer {
     func start(minutes: Int) {
         stop()
         self.minutes = minutes
+        Monitor.panelActions.flash(L("Zamanlayıcı: \(minutes) dk", "Timer: \(minutes) min"))
         let end = Date().addingTimeInterval(Double(minutes) * 60)
         endsAt = end
         Notifier.shared.requestPermission(keepSetting: true)

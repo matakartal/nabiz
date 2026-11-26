@@ -1,6 +1,7 @@
 import AppKit
 import Observation
 import ServiceManagement
+import Carbon.HIToolbox
 import SwiftUI
 
 enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
@@ -198,15 +199,16 @@ private struct GeneralPage: View {
                        "While the panel is open it refreshes every 2 seconds. Slower refresh saves battery."))
             }
             Section {
-                Toggle(L("Paneli aç: ⌃⌥N", "Open the panel: ⌃⌥N"), isOn: $panelHotkey)
-                Toggle(L("Başlatıcı: ⌃⌥Boşluk", "Launcher: ⌃⌥Space"), isOn: $hotkey)
-                Toggle(L("Pano geçmişi: ⌃⌥V", "Clipboard history: ⌃⌥V"), isOn: $clipboardHotkey)
-                Toggle(L("Notlar: ⌃⌥M", "Notes: ⌃⌥M"), isOn: $noteHotkey)
+                HotKeyRow(title: L("Başlatıcı", "Launcher"), shortcut: .launcher, enabled: $hotkey)
+                HotKeyRow(title: L("Pano geçmişi", "Clipboard history"), shortcut: .clipboard, enabled: $clipboardHotkey)
+                HotKeyRow(title: L("Notlar", "Notes"), shortcut: .note, enabled: $noteHotkey)
+                HotKeyRow(title: L("Panel", "Panel"), shortcut: .panel, enabled: $panelHotkey)
+                Button(L("Neler yapabilir?", "What can it do?")) { HelpWindow.show() }
             } header: {
                 Text(L("Kısayollar", "Shortcuts"))
             } footer: {
-                Footnote(L("Her yerden çalışır. Pencere kısayolları Pencereler sayfasında. Menü çubuğundaki simgeye sağ tıklayınca da kısa bir menü açılır.",
-                           "They work from anywhere. Window shortcuts are on the Windows page. Right-clicking the menu bar item also opens a short menu."))
+                Footnote(L("Değiştirmek için kısayola tıkla ve yeni tuşlara bas (en az bir ⌘, ⌃ ya da ⌥ ile). ⎋ vazgeçer, ⌫ varsayılana döndürür. Pencere kısayolları Pencereler sayfasında.",
+                           "Click a shortcut and press the new keys (with at least ⌘, ⌃ or ⌥). ⎋ cancels, ⌫ goes back to the default. Window shortcuts are on the Windows page."))
             }
             Section {
                 Toggle(L("Bildirimler", "Notifications"), isOn: Binding(get: { notifications }, set: { on in
@@ -746,6 +748,16 @@ private struct AboutPage: View {
             Text(L("Ölçümler Mac'inde yapılır. Döviz kurları Avrupa Merkez Bankası'ndan (frankfurter.dev) gelir; AI limitleri yalnızca açtığın sağlayıcıların kendi sunucularından okunur.",
                    "Everything is measured on your Mac. Rates come from the European Central Bank (frankfurter.dev); AI limits are read only from the providers you turn on, from their own servers."))
                 .font(Theme.small).foregroundStyle(Theme.textMuted).multilineTextAlignment(.center)
+            HStack(spacing: Theme.Spacing.l) {
+                Button(L("Neler yapabilir?", "What can it do?")) { HelpWindow.show() }
+                if let crash = CrashReporter.latest {
+                    Button(L("Son çökmeyi bildir (\(crash.date.formatted(date: .abbreviated, time: .omitted)))",
+                             "Report the last crash (\(crash.date.formatted(date: .abbreviated, time: .omitted)))")) {
+                        if let url = CrashReporter.reportURL(crash.url) { NSWorkspace.shared.open(url) }
+                    }
+                }
+            }
+            .font(Theme.small)
         }
         .padding(Theme.Spacing.xxl)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1203,9 +1215,40 @@ private struct LauncherPage: View {
                 Footnote(L("Adreste {query} yazan yere, kısaltmadan sonra yazdığın gelir: \"gh nabiz\" → GitHub'da nabiz araması. İlk bağlantı, başka sonuç olmayınca web araması için kullanılır.",
                            "{query} in the address is replaced by what you type after the keyword: \"gh nabiz\" searches GitHub for nabiz. The first link is used for web search when nothing else matches."))
             }
+            ExtensionsSection()
             DownloadSection()
         }
         .formStyle(.grouped)
+    }
+}
+
+/// Files, Shortcuts and scripts in the launcher.
+private struct ExtensionsSection: View {
+    @AppStorage(Prefs.launcherFiles) private var files = true
+    @AppStorage(Prefs.launcherShortcuts) private var shortcuts = true
+    private let extensions = Extensions.shared
+
+    var body: some View {
+        Section {
+            Toggle(L("Aramada dosyaları da göster", "Show files in searches"), isOn: $files)
+            Toggle(L("Kestirmeler uygulamasındaki kestirmeleri göster", "Show your Shortcuts"), isOn: Binding(get: { shortcuts }, set: { on in
+                shortcuts = on
+                extensions.refreshIfNeeded(force: true)
+            }))
+            LabeledContent(L("Betikler", "Scripts")) {
+                HStack(spacing: Theme.Spacing.m) {
+                    Text(L("\(extensions.scripts.count) betik", "\(extensions.scripts.count) scripts")).foregroundStyle(Theme.textMuted)
+                    Button(L("Klasörü aç", "Open folder")) { NSWorkspace.shared.open(Extensions.scriptsFolder) }
+                    Button(L("Örnek ekle", "Add example")) { extensions.createSample() }
+                }
+            }
+        } header: {
+            Text(L("Dosyalar, kestirmeler ve betikler", "Files, Shortcuts and scripts"))
+        } footer: {
+            Footnote(L("\"/\" ile başlarsan yalnızca dosyalar aranır (Spotlight dizini). Betik klasörüne koyduğun her .sh, .py ya da çalıştırılabilir dosya başlatıcıda bir komut olur; yazdığı çıktı panoya kopyalanır. Başlık için ilk satırlara \"# @nabiz.title Adı\" yaz.",
+                       "Start with \"/\" to search only files (Spotlight's index). Every .sh, .py or executable in the scripts folder becomes a launcher command; whatever it prints is copied. Add \"# @nabiz.title Name\" near the top for its title."))
+        }
+        .onAppear { extensions.refreshIfNeeded(force: true) }
     }
 }
 
@@ -1588,5 +1631,72 @@ private struct WindowsPage: View {
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+/// One global shortcut: on/off, and a button that records a new key combination.
+private struct HotKeyRow: View {
+    let title: String
+    let shortcut: HotKey.Shortcut
+    @Binding var enabled: Bool
+    @State private var recording = false
+    @State private var label = ""
+    @State private var monitor: Any?
+
+    var body: some View {
+        LabeledContent(title) {
+            HStack(spacing: Theme.Spacing.m) {
+                Button { recording ? stop() : start() } label: {
+                    Text(verbatim: recording ? L("Tuşlara bas…", "Press keys…") : label)
+                        .font(Theme.bodyStrong).monospacedDigit()
+                        .foregroundStyle(recording ? Theme.accent : Theme.text)
+                        .frame(minWidth: 96)
+                }
+                .disabled(!enabled)
+                Toggle(title, isOn: $enabled).labelsHidden().toggleStyle(.switch).controlSize(.small)
+            }
+        }
+        .onAppear { label = HotKey.label(shortcut) }
+        .onDisappear { stop() }
+    }
+
+    private func start() {
+        recording = true
+        HotKey.suspend(true)
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let keyCode = Int(event.keyCode), flags = event.modifierFlags, characters = event.charactersIgnoringModifiers
+            let done = MainActor.assumeIsolated { record(keyCode, flags, characters) }
+            return done ? nil : event
+        }
+    }
+
+    private func record(_ keyCode: Int, _ flags: NSEvent.ModifierFlags, _ characters: String?) -> Bool {
+        if keyCode == 53 { stop(); return true }
+        if keyCode == 51 && HotKey.modifiers(flags).carbon == 0 {
+            HotKey.set(shortcut, nil)
+            label = HotKey.label(shortcut)
+            stop()
+            return true
+        }
+        let modifiers = HotKey.modifiers(flags)
+        // A plain letter would fire while typing anywhere; it needs ⌘, ⌃ or ⌥ (F-keys may stand alone).
+        let isFunctionKey = (96...122).contains(keyCode)
+        guard modifiers.carbon & (cmdKey | controlKey | optionKey) != 0 || isFunctionKey else {
+            NSSound.beep()
+            return true
+        }
+        let combo = HotKey.Combo(keyCode: keyCode, modifiers: modifiers.carbon,
+                                 label: modifiers.symbols + HotKey.keyName(keyCode, characters))
+        HotKey.set(shortcut, combo)
+        label = combo.label
+        stop()
+        return true
+    }
+
+    private func stop() {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
+        recording = false
+        HotKey.suspend(false)
     }
 }

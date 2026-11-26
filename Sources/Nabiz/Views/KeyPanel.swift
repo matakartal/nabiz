@@ -136,20 +136,106 @@ enum HotKey {
         static var windows: [Shortcut] { allCases.filter { $0.window != nil } }
     }
 
+    /// A key and its modifiers (Carbon flags), with how it reads: "⌃⌥Space".
+    struct Combo: Codable, Equatable {
+        var keyCode: Int
+        var modifiers: Int
+        var label: String
+    }
+
     /// What the panel shortcut does; set by the app delegate.
     static var togglePanel: () -> Void = {}
     private static var refs: [Shortcut: EventHotKeyRef] = [:]
+    private static var registered: [Shortcut: Combo] = [:]
     private static var handler: EventHandlerRef?
+    /// While a shortcut is being recorded in Settings, none of them fire.
+    private(set) static var suspended = false
+
+    /// The shortcuts a person can change in Settings.
+    static let customizable: [Shortcut] = [.launcher, .clipboard, .note, .panel]
+
+    static func combo(_ shortcut: Shortcut) -> Combo {
+        if let data = UserDefaults.standard.data(forKey: "hotkey.\(shortcut.rawValue)"),
+           let saved = try? JSONDecoder().decode(Combo.self, from: data) { return saved }
+        return Combo(keyCode: shortcut.key, modifiers: controlKey | optionKey, label: "⌃⌥" + keyName(shortcut.key, nil))
+    }
+
+    static func label(_ shortcut: Shortcut) -> String { combo(shortcut).label }
+
+    /// Saves a new combination (nil goes back to the default) and registers it right away.
+    static func set(_ shortcut: Shortcut, _ combo: Combo?) {
+        if let combo { UserDefaults.standard.set(try? JSONEncoder().encode(combo), forKey: "hotkey.\(shortcut.rawValue)") } else {
+            UserDefaults.standard.removeObject(forKey: "hotkey.\(shortcut.rawValue)")
+        }
+        let enabled = refs[shortcut] != nil
+        unregister(shortcut)
+        if enabled { update(shortcut, enabled: true) }
+    }
+
+    static func suspend(_ on: Bool) {
+        suspended = on
+    }
 
     static func update(_ shortcut: Shortcut, enabled: Bool) {
-        if enabled == (refs[shortcut] != nil) { return }
-        if let ref = refs.removeValue(forKey: shortcut) { UnregisterEventHotKey(ref) }
+        let combo = combo(shortcut)
+        if enabled == (refs[shortcut] != nil) && (!enabled || registered[shortcut] == combo) { return }
+        unregister(shortcut)
         guard enabled else { return }
         installHandler()
         var ref: EventHotKeyRef?
-        RegisterEventHotKey(UInt32(shortcut.key), UInt32(controlKey | optionKey),
+        RegisterEventHotKey(UInt32(combo.keyCode), UInt32(combo.modifiers),
                             EventHotKeyID(signature: 0x4E42_5A31, id: shortcut.rawValue), GetApplicationEventTarget(), 0, &ref)
-        if let ref { refs[shortcut] = ref }
+        if let ref {
+            refs[shortcut] = ref
+            registered[shortcut] = combo
+        }
+    }
+
+    private static func unregister(_ shortcut: Shortcut) {
+        if let ref = refs.removeValue(forKey: shortcut) { UnregisterEventHotKey(ref) }
+        registered[shortcut] = nil
+    }
+
+    /// "Space", "↩", "←", "F5", or the letter itself.
+    static func keyName(_ keyCode: Int, _ characters: String?) -> String {
+        switch keyCode {
+        case kVK_Space: L("Boşluk", "Space")
+        case kVK_Return: "↩"
+        case kVK_Tab: "⇥"
+        case kVK_Delete: "⌫"
+        case kVK_Escape: "⎋"
+        case kVK_LeftArrow: "←"
+        case kVK_RightArrow: "→"
+        case kVK_UpArrow: "↑"
+        case kVK_DownArrow: "↓"
+        case kVK_F1: "F1"
+        case kVK_F2: "F2"
+        case kVK_F3: "F3"
+        case kVK_F4: "F4"
+        case kVK_F5: "F5"
+        case kVK_F6: "F6"
+        case kVK_F7: "F7"
+        case kVK_F8: "F8"
+        case kVK_F9: "F9"
+        case kVK_F10: "F10"
+        case kVK_F11: "F11"
+        case kVK_F12: "F12"
+        case kVK_ANSI_N: "N"
+        case kVK_ANSI_V: "V"
+        case kVK_ANSI_M: "M"
+        case kVK_ANSI_C: "C"
+        default: (characters ?? "?").uppercased()
+        }
+    }
+
+    /// Carbon modifier flags and their symbols, from an AppKit event.
+    static func modifiers(_ flags: NSEvent.ModifierFlags) -> (carbon: Int, symbols: String) {
+        var carbon = 0, symbols = ""
+        if flags.contains(.control) { carbon |= controlKey; symbols += "⌃" }
+        if flags.contains(.option) { carbon |= optionKey; symbols += "⌥" }
+        if flags.contains(.shift) { carbon |= shiftKey; symbols += "⇧" }
+        if flags.contains(.command) { carbon |= cmdKey; symbols += "⌘" }
+        return (carbon, symbols)
     }
 
     private static func installHandler() {
@@ -161,7 +247,7 @@ enum HotKey {
                               MemoryLayout<EventHotKeyID>.size, nil, &id)
             let pressed = id.id
             Task { @MainActor in
-                guard let shortcut = Shortcut(rawValue: pressed) else { return }
+                guard !HotKey.suspended, let shortcut = Shortcut(rawValue: pressed) else { return }
                 switch shortcut {
                 case .launcher: LauncherPanel.shared.toggle(.all)
                 case .panel: HotKey.togglePanel()

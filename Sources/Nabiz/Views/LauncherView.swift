@@ -20,13 +20,23 @@ final class LauncherPanel {
     func show(_ mode: LauncherModel.Mode = .all, text: String = "") {
         RateStore.shared.refreshIfNeeded()
         AppIndex.shared.refreshIfNeeded()
+        Extensions.shared.refreshIfNeeded()
         model.reset(mode: mode, text: text)
         model.cameFromLauncher = false
         model.close = { [weak self] in self?.close() }
         if isVisible { return }
         let panel = self.panel ?? KeyPanel()
         self.panel = panel
-        panel.onClose = { [weak self] in self?.removeKeys() }
+        panel.onClose = { [weak self] in
+            self?.removeKeys()
+            FileSearch.shared.stop()
+            // Let the view tree and its images go while the launcher is closed.
+            DispatchQueue.main.async {
+                guard let panel = self?.panel, !panel.isVisible else { return }
+                panel.contentView = nil
+                Thumbnails.clear()
+            }
+        }
         // A fresh view each time: focused field, top of the list.
         let host = NSHostingView(rootView: LauncherView(model: model))
         let size = NSSize(width: Theme.launcherWidth, height: Theme.launcherHeight)
@@ -119,8 +129,8 @@ struct LauncherView: View {
     private let clipboard = ClipboardHistory.shared
 
     var body: some View {
-        // Reading these makes the list follow new rates and new copies while it is open.
-        let _ = (rates.table, clipboard.items.count)
+        // Reading these makes the list follow new rates, copies and file results while it is open.
+        let _ = (rates.table, clipboard.items.count, FileSearch.shared.results.count, FileSearch.shared.searching)
         let sections = model.sections
         let items = sections.flatMap(\.items)
         let selectedID = items.isEmpty ? nil : items[min(model.selection, items.count - 1)].id
@@ -231,7 +241,7 @@ struct LauncherView: View {
                     .buttonStyle(TextButtonStyle(font: Theme.small, color: Theme.accent))
             } else {
                 Text(model.mode == .clipboard ? L("↑↓ seç · esc geri", "↑↓ to pick · esc back")
-                                              : L("= hesap · > komutlar · g web'de ara", "= maths · > commands · g web search"))
+                                              : L("= hesap · > komut · / dosya · : emoji", "= maths · > commands · / files · : emoji"))
                     .foregroundStyle(Theme.textMuted)
             }
             Spacer()
@@ -379,6 +389,8 @@ private struct LauncherRow: View {
             Image(nsImage: AppIndex.shared.icon(path)).resizable().interpolation(.high).aspectRatio(contentMode: .fit)
         case .clip(let clip):
             ClipIcon(clip: clip, selected: selected)
+        case .emoji(let character):
+            Text(verbatim: character).font(Theme.title)
         }
     }
 }
@@ -438,7 +450,7 @@ private struct ClipPreview: View {
     @ViewBuilder private func content(_ clip: ClipItem) -> some View {
         switch clip.kind {
         case .image:
-            if let data = clip.image, let image = NSImage(data: data) {
+            if let data = ClipboardHistory.shared.imageData(clip), let image = NSImage(data: data) {
                 Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
                     .clipShape(RoundedRectangle(cornerRadius: Theme.fieldRadius, style: .continuous))
             }
@@ -470,18 +482,25 @@ private struct ClipPreview: View {
     }
 }
 
-/// Small copies of clipboard images, decoded once.
+/// Small copies of clipboard images (64 px), decoded once; the full pictures stay on disk.
 @MainActor
 enum Thumbnails {
     private static var cache: [UUID: NSImage] = [:]
 
     static func image(for clip: ClipItem) -> NSImage? {
         if let image = cache[clip.id] { return image }
-        guard let data = clip.image, let image = NSImage(data: data) else { return nil }
-        if cache.count > 300 { cache.removeAll() }
+        guard let data = ClipboardHistory.shared.imageData(clip),
+              let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                  kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: 64,
+              ] as CFDictionary) else { return nil }
+        if cache.count > 200 { cache.removeAll() }
+        let image = NSImage(cgImage: thumbnail, size: NSSize(width: thumbnail.width / 2, height: thumbnail.height / 2))
         cache[clip.id] = image
         return image
     }
+
+    static func clear() { cache.removeAll() }
 }
 
 extension Color {
