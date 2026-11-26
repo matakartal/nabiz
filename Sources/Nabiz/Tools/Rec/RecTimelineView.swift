@@ -7,6 +7,7 @@ import SwiftUI
 /// one there; edges snap to the playhead and to each other.
 struct RecTimeline: View {
     @Bindable var model: RecEditorModel
+    @State private var showKeys = false
 
     static let gutter: CGFloat = 30
     static let ruler: CGFloat = 22
@@ -55,6 +56,12 @@ struct RecTimeline: View {
             addButton(L("Hızlandır", "Speed up"), "forward", key: "S") { model.addSpeed() }
             addButton(L("Kes", "Cut"), "scissors", key: "X") { model.addCut() }
             addButton(L("Not", "Note"), "text.bubble", key: "N") { model.addNote() }
+            Rectangle().fill(Theme.hairline).frame(width: 1, height: 18)
+            BarButton(symbol: model.looping ? "repeat.circle.fill" : "repeat", help: L("Döngü  L", "Loop  L"), active: model.looping) {
+                model.looping.toggle()
+            }
+            BarButton(symbol: "keyboard", help: L("Kısayollar", "Shortcuts")) { showKeys.toggle() }
+                .popover(isPresented: $showKeys, arrowEdge: .top) { RecShortcutList() }
         }
     }
 
@@ -92,6 +99,8 @@ struct RecHoverButton<Label: View>: View {
 private struct RecLanes: View {
     @Bindable var model: RecEditorModel
     let width: CGFloat
+    /// Where the pointer is over the timeline, for a guide line and its time.
+    @State private var hover: CGFloat?
 
     private var track: CGFloat { max(width - RecTimeline.gutter, 1) }
     private func x(_ t: Double) -> CGFloat { RecTimeline.gutter + CGFloat(t / max(model.duration, 0.01)) * track }
@@ -131,9 +140,27 @@ private struct RecLanes: View {
                 RecPart(model: model, selection: .note(note.id), start: note.start, end: note.end, y: RecTimeline.textY,
                         symbol: note.arrow ? "arrow.up.right" : "text.bubble", label: note.text, style: .soft, track: track, x: x, seconds: seconds)
             }
+            if let hover, hover >= RecTimeline.gutter, abs(hover - x(model.time)) > 4 {
+                Rectangle().fill(Theme.text.opacity(0.35)).frame(width: 1, height: RecTimeline.height - RecTimeline.ruler)
+                    .offset(x: hover, y: RecTimeline.ruler).allowsHitTesting(false)
+                Text(verbatim: RecFormat.time(time(hover)))
+                    .font(.system(size: 10, weight: .medium).monospacedDigit()).foregroundStyle(Theme.text)
+                    .padding(.horizontal, 5).padding(.vertical, 1)
+                    .background(MenuMaterial(blending: .withinWindow).clipShape(Capsule()))
+                    .overlay(Capsule().strokeBorder(Theme.hairline))
+                    .fixedSize()
+                    .offset(x: min(hover + 4, width - 52), y: 2)
+                    .allowsHitTesting(false)
+            }
             playhead
         }
         .frame(width: width, height: RecTimeline.height, alignment: .topLeading)
+        .onContinuousHover { phase in
+            switch phase {
+            case let .active(location): hover = location.x
+            case .ended: hover = nil
+            }
+        }
         .coordinateSpace(name: "lanes")
     }
 
@@ -441,5 +468,42 @@ struct RecWaveformView: View {
             }
             context.fill(path, with: .color(Theme.accent.opacity(0.75)))
         }
+    }
+}
+
+/// Every key the editor answers, in one list.
+struct RecShortcutList: View {
+    private let rows: [(String, String)] = [
+        ("Boşluk", L("Oynat / durdur (sondaysa baştan)", "Play / pause (from the start at the end)")),
+        ("↩", L("Baştan oynat", "Play from the start")),
+        ("← →", L("Bir kare geri / ileri", "One frame back / forward")),
+        ("⇧← ⇧→", L("Bir saniye geri / ileri", "One second back / forward")),
+        ("Home End", L("Başa / sona git", "Go to the start / end")),
+        ("L", L("Döngü", "Loop")),
+        ("Z", L("Yakınlaştırma ekle", "Add a zoom")),
+        ("S", L("Hızlandırma ekle", "Add a speed-up")),
+        ("X", L("Kes", "Cut")),
+        ("N", L("Not ekle", "Add a note")),
+        ("⌫", L("Seçileni sil", "Delete the selected part")),
+        ("⎋", L("Seçimi bırak", "Deselect")),
+        ("⌘Z ⇧⌘Z", L("Geri al / yinele", "Undo / redo")),
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(L("Kısayollar", "Shortcuts")).font(Theme.bodyStrong).foregroundStyle(Theme.text).padding(.bottom, 2)
+            ForEach(rows, id: \.0) { key, what in
+                HStack(spacing: Theme.Spacing.m) {
+                    Text(verbatim: key == "Boşluk" ? L("Boşluk", "Space") : key)
+                        .font(Theme.smallStrong).monospaced().foregroundStyle(Theme.text)
+                        .padding(.horizontal, 6).frame(minWidth: 64, minHeight: 20)
+                        .background(Theme.field, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                    Text(what).font(Theme.small).foregroundStyle(Theme.textMuted)
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+        .padding(Theme.Spacing.l)
+        .frame(width: 330)
     }
 }

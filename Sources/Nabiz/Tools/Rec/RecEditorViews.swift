@@ -26,26 +26,6 @@ struct RecEditorView: View {
         }
         .background(MenuMaterial().ignoresSafeArea())
         .appearanceRoot(opaqueFill: Theme.surface)
-        .focusable()
-        .focusEffectDisabled()
-        .onKeyPress(.space) { model.togglePlay(); return .handled }
-        .onKeyPress(.delete) { model.deleteSelection(); return .handled }
-        .onKeyPress(.escape) { model.selection = nil; return .handled }
-        .onKeyPress(keys: [.leftArrow, .rightArrow]) { press in
-            let step = press.modifiers.contains(.shift) ? 1.0 : 1.0 / 30
-            model.step(press.key == .leftArrow ? -step : step)
-            return .handled
-        }
-        .onKeyPress(characters: CharacterSet(charactersIn: "zsxn"), phases: .down) { press in
-            guard press.modifiers.isEmpty else { return .ignored }
-            switch press.characters {
-            case "z": model.addZoom()
-            case "s": model.addSpeed()
-            case "x": model.addCut()
-            default: model.addNote()
-            }
-            return .handled
-        }
     }
 
     private var preview: some View {
@@ -421,7 +401,8 @@ struct RecInspector: View {
             RecSwitch(title: L("Pürüzsüz hareket", "Smooth movement"), detail: L("Titremeyi alır, tıkladığın yere tam iner.", "Takes out the jitter, lands exactly where you clicked."),
                       isOn: $model.edit.style.smoothCursor)
             RecSwitch(title: L("Dururken gizle", "Hide when still"), isOn: $model.edit.style.hideIdleCursor)
-            RecSwitch(title: L("Hareket bulanıklığı", "Motion blur"), isOn: $model.edit.style.motionBlur)
+            RecSwitch(title: L("Hareket bulanıklığı", "Motion blur"), detail: L("İmleç ve kamera hızlı giderken, gerçek bir kameradaki gibi.", "When the pointer and the camera move fast, like a real camera."),
+                      isOn: $model.edit.style.motionBlur)
         }
         RecGroup(L("Tıklama", "Click")) {
             RecSwitch(title: L("Basılıp sekme", "Press and bounce"), isOn: $model.edit.style.clickBounce)

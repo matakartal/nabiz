@@ -8,6 +8,7 @@ import SwiftUI
 @MainActor
 enum RecEditor {
     private static var open: [UUID: NSWindow] = [:]
+    private static var monitors: [UUID: Any] = [:]
 
     static func show(_ meta: RecMeta) {
         if let window = open[meta.id] { window.makeKeyAndOrderFront(nil); return }
@@ -25,8 +26,20 @@ enum RecEditor {
         window.setContentSize(size)
         window.setFrameOrigin(NSPoint(x: screen.midX - size.width / 2, y: screen.midY - size.height / 2))
         open[meta.id] = window
+        // Keys go to the editor from anywhere in the window, except while a text field is being typed in.
+        let number = window.windowNumber
+        monitors[meta.id] = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.windowNumber == number else { return event }
+            let code = Int(event.keyCode), flags = event.modifierFlags, characters = event.charactersIgnoringModifiers
+            let handled = MainActor.assumeIsolated {
+                guard let window = NSApp.window(withWindowNumber: number), !(window.firstResponder is NSText) else { return false }
+                return model.handleKey(code: code, flags: flags, characters: characters)
+            }
+            return handled ? nil : event
+        }
         NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { _ in
             MainActor.assumeIsolated {
+                if let monitor = monitors.removeValue(forKey: meta.id) { NSEvent.removeMonitor(monitor) }
                 model.close()
                 open[meta.id] = nil
             }
@@ -202,21 +215,71 @@ final class RecEditorModel {
 
     // MARK: Playback
 
+    /// Plays the kept part over and over.
+    var looping = false
+
     private func tick(_ seconds: Double) {
         guard seconds.isFinite else { return }
         time = plan.map.source(seconds)
-        if playing && player.rate == 0 { playing = false }
+        guard playing, player.rate == 0 else { return }
+        // At the end: start over when looping, else stop there.
+        if looping, time >= trimEnd - 0.1 {
+            seek(edit.trimStart)
+            player.play()
+        } else {
+            playing = false
+        }
     }
 
+    /// Space: play or pause; at the end it starts over from the beginning.
     func togglePlay() {
         if playing {
             player.pause()
             playing = false
         } else {
-            if time >= trimEnd - 0.05 { seek(edit.trimStart) }
+            if time >= trimEnd - 0.1 || time < edit.trimStart { seek(edit.trimStart) }
             player.play()
             playing = true
         }
+    }
+
+    /// ↩: from the beginning of the kept part.
+    func playFromStart() {
+        seek(edit.trimStart)
+        player.play()
+        playing = true
+    }
+
+    func jump(toEnd: Bool) {
+        if playing { togglePlay() }
+        seek(toEnd ? trimEnd : edit.trimStart)
+    }
+
+    /// The editor's keys, wherever the focus is in the window (except while typing in a field).
+    func handleKey(code: Int, flags: NSEvent.ModifierFlags, characters: String?) -> Bool {
+        guard flags.intersection([.command, .control, .option]).isEmpty else { return false }
+        let shift = flags.contains(.shift)
+        switch code {
+        case 49: togglePlay()
+        case 36, 76: playFromStart()
+        case 123: step(shift ? -1 : -1.0 / 30)
+        case 124: step(shift ? 1 : 1.0 / 30)
+        case 115, 126: jump(toEnd: false)
+        case 119, 125: jump(toEnd: true)
+        case 51, 117: deleteSelection()
+        case 53: selection = nil
+        default:
+            switch characters?.lowercased() {
+            case "z": addZoom()
+            case "s": addSpeed()
+            case "x": addCut()
+            case "n": addNote()
+            case "l": looping.toggle(); show(looping ? L("Döngü açık", "Loop on") : L("Döngü kapalı", "Loop off"))
+            case "k": if playing { togglePlay() }
+            default: return false
+            }
+        }
+        return true
     }
 
     func seek(_ seconds: Double) {
