@@ -308,3 +308,61 @@ enum WindowAction: String, CaseIterable, Identifiable {
 private extension CGRect {
     var area: CGFloat { isNull ? 0 : width * height }
 }
+
+// MARK: - Sleep timer and microphone
+
+/// Puts the Mac to sleep after a while ("sleep in 30 minutes"), for a film or music at night.
+@MainActor
+@Observable
+final class SleepTimer {
+    static let shared = SleepTimer()
+    private(set) var at: Date?
+    @ObservationIgnored private var task: Task<Void, Never>?
+
+    func start(minutes: Int) {
+        cancel()
+        at = Date().addingTimeInterval(Double(minutes) * 60)
+        task = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(Double(minutes) * 60))
+            guard !Task.isCancelled else { return }
+            self?.at = nil
+            _ = await Toolbox.run("/usr/bin/pmset", ["sleepnow"])
+        }
+        Monitor.panelActions.flash(L("\(minutes) dk sonra uyuyacak", "Sleeping in \(minutes) min"))
+    }
+
+    func cancel() {
+        task?.cancel()
+        task = nil
+        at = nil
+    }
+}
+
+/// Mutes and unmutes the microphone (input volume 0 and back), for calls.
+@MainActor
+enum Microphone {
+    static var isMuted: Bool { (volume() ?? 1) == 0 }
+
+    static func toggle() {
+        if isMuted {
+            let saved = UserDefaults.standard.integer(forKey: "micVolume")
+            set(saved > 0 ? saved : 75)
+            Monitor.panelActions.flash(L("Mikrofon açık", "Mic on"))
+        } else {
+            if let current = volume(), current > 0 { UserDefaults.standard.set(current, forKey: "micVolume") }
+            set(0)
+            Monitor.panelActions.flash(L("Mikrofon kapalı", "Mic muted"))
+        }
+    }
+
+    private static func volume() -> Int? {
+        var error: NSDictionary?
+        let result = NSAppleScript(source: "input volume of (get volume settings)")?.executeAndReturnError(&error)
+        return error == nil ? result.map { Int($0.int32Value) } : nil
+    }
+
+    private static func set(_ value: Int) {
+        var error: NSDictionary?
+        NSAppleScript(source: "set volume input volume \(value)")?.executeAndReturnError(&error)
+    }
+}

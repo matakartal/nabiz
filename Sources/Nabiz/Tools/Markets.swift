@@ -69,6 +69,15 @@ final class MarketStore {
         }
     }
 
+    @ObservationIgnored private var cryptoAt: Date?
+
+    /// Main-dex prices (BTC, ETH, SOL…) for the calculator's crypto conversions, at most once a minute.
+    func refreshCrypto() {
+        if let cryptoAt, Date().timeIntervalSince(cryptoAt) < 60 { return }
+        cryptoAt = Date()
+        Task { _ = await load(dexes: [""]) }
+    }
+
     /// Tries again right away (the "Try again" row).
     func retry() {
         pricesAt = nil

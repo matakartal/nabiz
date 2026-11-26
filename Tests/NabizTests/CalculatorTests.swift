@@ -54,3 +54,99 @@ struct CalculatorTests {
         #expect(Calculator.evaluate("5 km kg") == nil)
     }
 }
+
+@MainActor
+@Suite("Calculator, more")
+struct CalculatorMoreTests {
+    init() {
+        Prefs.registerDefaults()
+        UserDefaults.standard.set("en", forKey: Prefs.language)
+    }
+
+    private func copy(_ text: String) -> String? { Calculator.evaluate(text)?.copy }
+
+    @Test("Functions, constants, factorial, mod, implicit multiplication", arguments: [
+        ("sqrt 16", "4"), ("√2 * √2", "2"), ("sin 30", "0.5"), ("cos(60)", "0.5"), ("log 1000", "3"), ("ln e", "1"),
+        ("5!", "120"), ("17 mod 5", "2"), ("2pi", "6.28318531"), ("3(4+1)", "15"), ("abs(-7)", "7"), ("20% of 150", "30"),
+        ("pi", "3.14159265"), ("5 bin + 1", "5,001"), ("2,5 milyon / 1000", "2,500"),
+    ])
+    func maths(input: String, expected: String) {
+        #expect(copy(input) == expected)
+    }
+
+    @Test("Bases")
+    func bases() {
+        #expect(copy("255 hex") == "0xFF")
+        #expect(copy("10 binary") == "0b1010")
+        #expect(copy("0xff") == "255")
+        #expect(copy("0b1010 + 1") == "11")
+        #expect(Calculator.evaluateAll("255 hex").count == 4)
+    }
+
+    @Test("More units, with alternatives when no target is typed", arguments: [
+        ("120 km/h mph", "74.5645"), ("3 dönüm m2", "3,000"), ("2 l ml", "2,000"), ("100 kcal kj", "418.4"),
+        ("1 acre ha", "0.4047"), ("10 m/s km/h", "36"),
+    ])
+    func units(input: String, expected: String) {
+        #expect(copy(input) == expected)
+    }
+
+    @Test("A lone unit offers a few more targets")
+    func alternatives() {
+        let results = Calculator.evaluateAll("5 km")
+        #expect(results.count > 1)
+        #expect(results.first?.note == "mi")
+    }
+
+    @Test("Raw copy has no grouping and full precision")
+    func raw() {
+        #expect(Calculator.evaluate("1024*2")?.raw == "2048")
+        #expect(Calculator.evaluate("10/4")?.raw == "2.5")
+    }
+
+    @Test("A bare number or text gives nothing")
+    func nothing() {
+        #expect(Calculator.evaluate("42") == nil)
+        #expect(Calculator.evaluate("safari") == nil)
+        #expect(Calculator.evaluate("sqrt -1") == nil)
+    }
+}
+
+@MainActor
+@Suite("World clock and dates")
+struct ClockDateTests {
+    init() { UserDefaults.standard.set("en", forKey: Prefs.language) }
+
+    // 2026-06-01 12:00 UTC
+    private let now = Date(timeIntervalSince1970: 1_780_315_200)
+
+    @Test("Cities, aliases and abbreviations resolve")
+    func zones() {
+        #expect(WorldClock.zone("tokyo")?.identifier == "Asia/Tokyo")
+        #expect(WorldClock.zone("new york")?.identifier == "America/New_York")
+        #expect(WorldClock.zone("londra")?.identifier == "Europe/London")
+        #expect(WorldClock.zone("nyc")?.identifier == "America/New_York")
+        #expect(WorldClock.zone("km") == nil)
+    }
+
+    @Test("A time in one city, shown in another")
+    func conversion() throws {
+        let result = try #require(WorldClock.evaluate("15:00 istanbul to tokyo", now: now)?.first)
+        #expect(result.text.contains("Tokyo"))
+        #expect(result.note == "+6 h")
+        #expect(WorldClock.evaluate("5 km mi", now: now) == nil)
+        #expect(WorldClock.evaluate("2 saat dk", now: now) == nil)
+    }
+
+    @Test("Date sums and spans")
+    func dates() throws {
+        let plus = try #require(DateMath.evaluate("2026-01-01 + 30 days", now: now)?.first)
+        #expect(plus.text.contains("January 31, 2026"))
+        let span = try #require(DateMath.evaluate("2026-12-31 - 2026-01-01", now: now)?.first)
+        #expect(span.copy == "364")
+        let until = try #require(DateMath.evaluate("days until 2026-06-11", now: now)?.first)
+        #expect(until.copy == "10")
+        #expect(DateMath.evaluate("31.02.2026", now: now) == nil)
+        #expect(DateMath.evaluate("12.5", now: now) == nil)
+    }
+}

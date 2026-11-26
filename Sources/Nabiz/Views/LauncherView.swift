@@ -231,7 +231,7 @@ struct LauncherView: View {
                     .buttonStyle(TextButtonStyle(font: Theme.small, color: Theme.accent))
             } else {
                 Text(model.mode == .clipboard ? L("↑↓ seç · esc geri", "↑↓ to pick · esc back")
-                                              : L("Hesap: 100 usd · Web: g kelime · Komutlar: >", "Maths: 100 usd · Web: g words · Commands: >"))
+                                              : L("= hesap · > komutlar · g web'de ara", "= maths · > commands · g web search"))
                     .foregroundStyle(Theme.textMuted)
             }
             Spacer()

@@ -4,8 +4,8 @@ import Security
 
 /// The one-tap tools in the panel's grid. Each does its job directly; nothing sends the user to another app to finish.
 enum ToolKind: String, CaseIterable, Identifiable {
-    case calculator, clipboard, note, keepAwake, timer, color, screenshot, displayOff, darkMode, speedTest, ip
-    case password, uuid, eject, xcode, rust, hiddenFiles, desktop, clearClipboard, activity
+    case calculator, clipboard, note, pomodoro, focus, keepAwake, timer, color, screenshot, readText, download, mic
+    case displayOff, darkMode, speedTest, ip, password, uuid, eject, xcode, rust, hiddenFiles, desktop, clearClipboard, activity
 
     var id: String { rawValue }
 
@@ -15,6 +15,11 @@ enum ToolKind: String, CaseIterable, Identifiable {
         case .calculator: L("Başlatıcı", "Launcher")
         case .clipboard: L("Pano", "Clipboard")
         case .note: L("Notlar", "Notes")
+        case .pomodoro: "Pomodoro"
+        case .focus: L("Odak", "Focus")
+        case .readText: L("Metin oku", "Read text")
+        case .download: L("Video indir", "Download")
+        case .mic: L("Mikrofon", "Mic")
         case .keepAwake: L("Uyanık kal", "Keep awake")
         case .timer: L("Zamanlayıcı", "Timer")
         case .color: L("Renk al", "Pick color")
@@ -40,6 +45,11 @@ enum ToolKind: String, CaseIterable, Identifiable {
         case .calculator: "magnifyingglass"
         case .clipboard: "doc.on.clipboard"
         case .note: "note.text"
+        case .pomodoro: "brain.head.profile"
+        case .focus: "moon.circle"
+        case .readText: "text.viewfinder"
+        case .download: "arrow.down.circle"
+        case .mic: "mic.slash"
         case .keepAwake: "cup.and.saucer"
         case .timer: "timer"
         case .color: "eyedropper"
@@ -66,12 +76,21 @@ enum ToolKind: String, CaseIterable, Identifiable {
         case .calculator: L("Uygulama aç, komut çalıştır, hesapla, çevir, web'de ara (⌃⌥Boşluk).",
                             "Open apps, run commands, calculate, convert, search the web (⌃⌥Space).")
         case .clipboard: L("Kopyaladıklarının geçmişi; seç, yapıştır, sabitle (⌃⌥V).", "Everything you copied; pick, paste, pin (⌃⌥V).")
+        case .pomodoro: L("25 dk odak, 5 dk mola; dördüncüden sonra uzun mola. Süre menü çubuğunda.",
+                          "25 minutes of focus, 5 of rest, a long break after every fourth. The countdown sits in the menu bar.")
+        case .focus: L("Sohbet ve sosyal uygulamaları gizler, öne gelirlerse yine gizler.", "Hides chat and social apps, and again if they come forward.")
+        case .readText: L("Ekrandan bir alan seç; içindeki metin ya da QR kodu panoya kopyalanır.",
+                          "Select an area; its text or QR code is copied.")
+        case .download: L("Panodaki YouTube, X, Instagram, TikTok… bağlantısından video ya da ses indirir.",
+                          "Saves the video or sound from a YouTube, X, Instagram, TikTok… link you copied.")
+        case .mic: L("Mikrofonu kapatır ya da açar.", "Mutes or unmutes the microphone.")
         case .note: L("Her uygulamanın üstünde duran notlar; listeler ve yapılacaklar (⌃⌥M).", "Notes that float over every app, with lists and checklists (⌃⌥M).")
         case .keepAwake: L("Mac'in ve ekranın uyumasını bir süre engeller.", "Stops the Mac and display from sleeping for a while.")
         case .timer: L("Geri sayım; bitince ses ve bildirim. Kalan süre menü çubuğunda görünür.",
                        "A countdown with a sound and a notification at the end. The time left shows in the menu bar.")
         case .color: L("Ekrandan bir renk seç; hex kodu panoya kopyalanır.", "Pick a colour on screen; its hex code is copied.")
-        case .screenshot: L("Bir alan seç; görüntüsü panoya kopyalanır.", "Select an area; its picture is copied.")
+        case .screenshot: L("macOS'un kendi ekran görüntüsü: alan, pencere, tüm ekran, zamanlı ya da kayıt.",
+                            "macOS's own screenshots: area, window, whole screen, timed, or recording.")
         case .displayOff: L("Ekranı hemen uyutur; Mac çalışmaya devam eder.", "Puts the display to sleep now; the Mac keeps running.")
         case .darkMode: L("Karanlık ve açık görünüm arasında geçer.", "Switches between dark and light appearance.")
         case .speedTest: L("İnternet hızını ölçer (yaklaşık 15 saniye).", "Measures your internet speed (about 15 seconds).")
@@ -111,6 +130,7 @@ final class Toolbox {
     private(set) var hiddenFilesShown = false
     private(set) var desktopHidden = false
     private(set) var darkMode = false
+    private(set) var micMuted = false
     @ObservationIgnored private var scannedAt: Date?
 
     private static var derivedData: URL {
@@ -122,6 +142,7 @@ final class Toolbox {
         hiddenFilesShown = Self.finderFlag("AppleShowAllFiles", default: false)
         desktopHidden = !Self.finderFlag("CreateDesktop", default: true)
         darkMode = UserDefaults.standard.string(forKey: "AppleInterfaceStyle") == "Dark"
+        micMuted = Microphone.isMuted
         ejectable = Self.externalVolumes()
         if let scannedAt, Date().timeIntervalSince(scannedAt) < 600 { return }
         scannedAt = Date()
@@ -198,6 +219,16 @@ final class Toolbox {
             guard awake.isOn else { return nil }
             return awake.until.map { Format.countdown(until: $0) } ?? "∞"
         case .timer: return CountdownTimer.shared.remainingText
+        case .pomodoro:
+            let pomodoro = Pomodoro.shared
+            if let left = pomodoro.remainingText { return (pomodoro.isRunning ? "" : "⏸ ") + left }
+            return pomodoro.today.count > 0 ? "\(pomodoro.today.count)" : nil
+        case .focus:
+            return FocusMode.shared.isOn ? (FocusMode.shared.remainingText ?? L("açık", "on")) : nil
+        case .download:
+            let downloader = Downloader.shared
+            if downloader.installing { return L("kuruluyor", "installing") }
+            return downloader.running.map { job in job.progress.map { Format.percent($0) } ?? "…" }
         case .note:
             let count = NoteStore.shared.notes.filter { !$0.isEmpty }.count
             return count > 0 ? "\(count)" : nil
@@ -222,6 +253,10 @@ final class Toolbox {
         case .hiddenFiles: hiddenFilesShown
         case .desktop: desktopHidden
         case .note: NoteWindow.isVisible
+        case .pomodoro: Pomodoro.shared.isActive
+        case .focus: FocusMode.shared.isOn
+        case .mic: micMuted
+        case .download: Downloader.shared.running != nil
         default: false
         }
     }
@@ -254,23 +289,24 @@ final class Toolbox {
         case .note:
             actions.close()
             NoteWindow.toggle()
-        case .keepAwake, .timer:
-            break // the grid opens their duration chips
+        case .keepAwake, .timer, .pomodoro, .focus, .screenshot:
+            break // the grid opens their chips
+        case .readText:
+            Capture.run(.text, actions: actions)
+        case .download:
+            actions.close()
+            let copied = NSPasteboard.general.string(forType: .string).flatMap(Downloader.videoURL)
+            LauncherPanel.shared.show(text: copied?.absoluteString ?? "")
+            if copied == nil { actions.flash(L("Önce bir video bağlantısı kopyala", "Copy a video link first")) }
+        case .mic:
+            Microphone.toggle()
+            refreshMic()
         case .color:
             actions.close()
             NSColorSampler().show { color in
                 guard let rgb = color?.usingColorSpace(.sRGB) else { return }
                 let hex = String(format: "#%02X%02X%02X", Int(rgb.redComponent * 255), Int(rgb.greenComponent * 255), Int(rgb.blueComponent * 255))
                 MainActor.assumeIsolated { actions.copy(hex) }
-            }
-        case .screenshot:
-            actions.close()
-            let before = NSPasteboard.general.changeCount
-            Task {
-                // Give the panel a moment to leave the screen before the selection starts.
-                try? await Task.sleep(for: .milliseconds(250))
-                _ = await Self.run("/usr/sbin/screencapture", ["-i", "-c"])
-                if NSPasteboard.general.changeCount != before { actions.flash(L("Kopyalandı", "Copied")) }
             }
         case .displayOff:
             actions.close()
@@ -405,6 +441,14 @@ final class Toolbox {
     }
 
     /// Finder reads these flags at launch, so it is restarted (its windows come back).
+    func refreshMic() { micMuted = Microphone.isMuted }
+
+    /// For focus mode: hides the desktop icons, and brings them back after.
+    func setDesktopIcons(visible: Bool) {
+        desktopHidden = !visible
+        setFinderFlag("CreateDesktop", visible)
+    }
+
     private func setFinderFlag(_ key: String, _ value: Bool) {
         CFPreferencesSetAppValue(key as CFString, value as CFBoolean, "com.apple.finder" as CFString)
         CFPreferencesAppSynchronize("com.apple.finder" as CFString)

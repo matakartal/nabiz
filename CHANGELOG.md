@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.7.0
+
+- **Calculator, much stronger** (in the launcher; start with `=` for the calculator alone and its history):
+  functions (`sqrt`, `√`, `sin`/`cos`/`tan` in degrees, `log`, `ln`, `abs`, `round`…), `pi`, `e`, `5!`, `17 mod 5`,
+  `20% of 150`, `2pi`, `3(4+1)`, `ans`; Turkish amounts (`5 bin tl`, `2,5 milyon`); crypto from Hyperliquid
+  (`0.5 btc`, `1000 tl eth`); speed, area (dönüm, hectare, acre), volume and energy units; hex/binary/octal
+  (`255 hex`, `0xff`); world clock (`tokyo`, `15:00 istanbul to new york`, `9am pst to tsi`); dates
+  (`today + 30 days`, `bugün + 3 hafta`, `days until 2027-01-01`, `1.1.2027 ye kaç gün`). Several answers at once
+  (other currencies and units), and ⌘K to copy the raw number or the whole sum.
+- **Pomodoro:** 25/5 with a long break every fourth block (all adjustable), countdown in the menu bar, sound and
+  notification at each change, today's count. From Tools, the launcher or the menu bar item's menu.
+- **Focus mode:** hides Slack, Discord, Telegram, WhatsApp, Messages, Teams, Mail (your list) and hides them again if
+  they come forward; optionally other apps and desktop icons; can switch macOS Focus through your Shortcuts.
+  Pomodoro work blocks can turn it on by themselves.
+- **Video download:** paste a YouTube, X, Instagram, TikTok, Vimeo… link into the launcher (or tap the tool with
+  it copied) to save the video (best, 1080p or 720p) or only the sound, with progress and a notification.
+  Uses yt-dlp; Nabız offers to install it with Homebrew.
+- **Screenshots through macOS's own tool:** area, window or whole screen to the clipboard or a file (the system's
+  save folder and file type), a 5-second timer, and the recording toolbar (⇧⌘5).
+- **Read text or QR on screen** (Vision, Turkish and English), **QR codes** from copied text, **mute the mic**,
+  and a **sleep timer** ("sleep in 30 min").
+
 ## 1.6.0
 
 - **Notes, rebuilt** (⌃⌥M): as many notes as you like, the first line is the title. Markdown shows as you type:

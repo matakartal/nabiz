@@ -4,7 +4,7 @@ import ServiceManagement
 import SwiftUI
 
 enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
-    case general, appearance, menuBar, panel, launcher, clipboard, snippets, windows, schedules, markets, currency, ai, about
+    case general, appearance, menuBar, panel, launcher, clipboard, snippets, windows, focus, schedules, markets, currency, ai, about
 
     var id: String { rawValue }
 
@@ -18,6 +18,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
         case .clipboard: L("Pano", "Clipboard")
         case .snippets: L("Parçacıklar", "Snippets")
         case .windows: L("Pencereler", "Windows")
+        case .focus: L("Odak", "Focus")
         case .schedules: L("Görevler", "Schedules")
         case .markets: L("Piyasalar", "Markets")
         case .currency: L("Döviz", "Currency")
@@ -37,6 +38,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
         case .clipboard: L("Kopyaladıklarının geçmişi ve yapıştırma.", "The history of what you copied, and pasting.")
         case .snippets: L("Kısa bir kelimeyle yapıştırılan hazır metinler.", "Saved text you paste with a short keyword.")
         case .windows: L("Öndeki pencereyi kısayolla yerleştir.", "Place the front window with a shortcut.")
+        case .focus: L("Pomodoro süreleri ve odakta gizlenecek uygulamalar.", "Pomodoro lengths, and the apps focus mode hides.")
         case .schedules: L("Belirli gün ve saatlerde kendiliğinden yapılacak işler.", "Things done on their own at set days and times.")
         case .markets: L("Hyperliquid'den izlenecek piyasalar.", "The Hyperliquid markets to watch.")
         case .currency: L("Ana para birimi ve izlenen kurlar.", "Your main currency and the rates you watch.")
@@ -55,6 +57,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
         case .clipboard: "doc.on.clipboard.fill"
         case .snippets: "text.quote"
         case .windows: "rectangle.split.2x1.fill"
+        case .focus: "brain.head.profile"
         case .schedules: "calendar.badge.clock"
         case .markets: "chart.line.uptrend.xyaxis"
         case .currency: "dollarsign.arrow.circlepath"
@@ -142,6 +145,7 @@ struct SettingsView: View {
                 case .clipboard: ClipboardPage()
                 case .snippets: SnippetsPage()
                 case .windows: WindowsPage()
+                case .focus: FocusPage()
                 case .schedules: SchedulesPage()
                 case .markets: MarketsPage()
                 case .currency: CurrencyPage()
@@ -1199,8 +1203,153 @@ private struct LauncherPage: View {
                 Footnote(L("Adreste {query} yazan yere, kısaltmadan sonra yazdığın gelir: \"gh nabiz\" → GitHub'da nabiz araması. İlk bağlantı, başka sonuç olmayınca web araması için kullanılır.",
                            "{query} in the address is replaced by what you type after the keyword: \"gh nabiz\" searches GitHub for nabiz. The first link is used for web search when nothing else matches."))
             }
+            DownloadSection()
         }
         .formStyle(.grouped)
+    }
+}
+
+/// Video downloads: quality, folder, and whether yt-dlp and ffmpeg are there.
+private struct DownloadSection: View {
+    @AppStorage(Prefs.downloadQuality) private var quality = "best"
+    @AppStorage(Prefs.downloadFolder) private var folder = ""
+    private let downloader = Downloader.shared
+
+    var body: some View {
+        Section {
+            Picker(L("Video kalitesi", "Video quality"), selection: $quality) {
+                Text(L("En iyi", "Best")).tag("best")
+                Text(verbatim: "1080p").tag("1080")
+                Text(verbatim: "720p").tag("720")
+            }
+            LabeledContent(L("Kayıt yeri", "Save to")) {
+                HStack(spacing: Theme.Spacing.m) {
+                    Text(verbatim: downloader.folder.lastPathComponent).foregroundStyle(Theme.textMuted)
+                    Button(L("Değiştir…", "Change…")) {
+                        let panel = NSOpenPanel()
+                        panel.canChooseDirectories = true
+                        panel.canChooseFiles = false
+                        panel.directoryURL = downloader.folder
+                        NSApp.activate()
+                        if panel.runModal() == .OK, let url = panel.url { folder = url.path }
+                    }
+                }
+            }
+            LabeledContent("yt-dlp") {
+                if downloader.ytdlp != nil {
+                    Label(L("Kurulu", "Installed"), systemImage: "checkmark.circle.fill").foregroundStyle(Palette.green.mark)
+                } else {
+                    Button(downloader.installing ? L("Kuruluyor…", "Installing…") : L("Kur…", "Install…")) { downloader.install() }
+                        .disabled(downloader.installing)
+                }
+            }
+            LabeledContent("ffmpeg") {
+                Text(downloader.ffmpeg != nil ? L("Kurulu: en iyi kalite ve MP3", "Installed: best quality and MP3")
+                                              : L("Yok: en fazla 720p, ses M4A", "Missing: up to 720p, sound as M4A"))
+                    .foregroundStyle(Theme.textMuted)
+            }
+        } header: {
+            Text(L("Video indirme", "Video downloads"))
+        } footer: {
+            Footnote(L("Bir YouTube, X, Instagram, TikTok, Vimeo… bağlantısını başlatıcıya yapıştır ya da kopyalayıp Video indir aracına bas. yt-dlp ile indirilir. Yalnızca indirme hakkın olan içerik için kullan.",
+                       "Paste a YouTube, X, Instagram, TikTok, Vimeo… link into the launcher, or copy it and tap the Download tool. yt-dlp does the downloading. Use it only for content you have the right to download."))
+        }
+    }
+}
+
+private struct FocusPage: View {
+    @AppStorage(Prefs.pomodoroWork) private var work = 25
+    @AppStorage(Prefs.pomodoroShort) private var short = 5
+    @AppStorage(Prefs.pomodoroLong) private var long = 15
+    @AppStorage(Prefs.pomodoroLongEvery) private var every = 4
+    @AppStorage(Prefs.pomodoroAuto) private var auto = true
+    @AppStorage(Prefs.pomodoroFocus) private var withFocus = true
+    @AppStorage(Prefs.focusHideOthers) private var hideOthers = false
+    @AppStorage(Prefs.focusHideDesktop) private var hideDesktop = false
+    @AppStorage(Prefs.focusBlocked) private var blocked = ""
+    @AppStorage(Prefs.focusShortcutOn) private var shortcutOn = ""
+    @AppStorage(Prefs.focusShortcutOff) private var shortcutOff = ""
+    private let pomodoro = Pomodoro.shared
+
+    var body: some View {
+        Form {
+            Section {} header: { PageHeader(page: .focus) }
+            Section {
+                Stepper(L("Odak: \(work) dk", "Focus: \(work) min"), value: $work, in: 5...120, step: 5)
+                Stepper(L("Kısa mola: \(short) dk", "Short break: \(short) min"), value: $short, in: 1...30)
+                Stepper(L("Uzun mola: \(long) dk", "Long break: \(long) min"), value: $long, in: 5...60, step: 5)
+                Stepper(L("Uzun mola her \(every) blokta", "Long break every \(every) blocks"), value: $every, in: 2...8)
+                Toggle(L("Sıradaki blok kendiliğinden başlasın", "Start the next block by itself"), isOn: $auto)
+                Toggle(L("Odak bloklarında odak modunu aç", "Turn on focus mode during focus blocks"), isOn: $withFocus)
+                HStack {
+                    Button(pomodoro.isActive ? (pomodoro.isRunning ? L("Duraklat", "Pause") : L("Devam et", "Resume")) : L("Başlat", "Start")) {
+                        pomodoro.toggle()
+                    }
+                    if pomodoro.isActive { Button(L("Bitir", "Stop")) { pomodoro.stop() } }
+                    Spacer()
+                    Text(L("Bugün \(pomodoro.today.count) blok · \(pomodoro.today.minutes) dk", "Today \(pomodoro.today.count) blocks · \(pomodoro.today.minutes) min"))
+                        .foregroundStyle(Theme.textMuted)
+                }
+            } header: {
+                Text("Pomodoro")
+            } footer: {
+                Footnote(L("Kalan süre menü çubuğunda görünür; her geçişte ses ve bildirim gelir. Başlatıcıda \"pomodoro\" yaz ya da Araçlar'daki Pomodoro'ya bas.",
+                           "The time left shows in the menu bar; each change plays a sound and posts a notification. Type \"pomodoro\" in the launcher, or tap Pomodoro in Tools."))
+            }
+            Section {
+                // Only apps on this Mac; the rest of the list waits in case they're installed later.
+                ForEach(blockedList.filter { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) != nil }, id: \.self) { bundle in
+                    HStack {
+                        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundle) {
+                            Image(nsImage: AppIndex.shared.icon(url.path)).resizable().frame(width: Theme.menuIcon, height: Theme.menuIcon)
+                            Text(verbatim: FileManager.default.displayName(atPath: url.path).replacingOccurrences(of: ".app", with: ""))
+                        }
+                        Spacer()
+                        Button { setBlocked(blockedList.filter { $0 != bundle }) } label: { Image(systemName: "minus.circle") }
+                            .buttonStyle(TextButtonStyle(color: Theme.textMuted))
+                    }
+                }
+                HStack {
+                    Button { addBlocked() } label: { Label(L("Uygulama ekle…", "Add an app…"), systemImage: "plus") }
+                    Spacer()
+                    Button(L("Varsayılanlar", "Defaults")) { blocked = "" }.disabled(blocked.isEmpty)
+                }
+                Toggle(L("Başlarken diğer uygulamaları da gizle", "Also hide other apps when it starts"), isOn: $hideOthers)
+                Toggle(L("Masaüstü simgelerini gizle", "Hide desktop icons"), isOn: $hideDesktop)
+            } header: {
+                Text(L("Odak modunda gizlenenler", "Hidden during focus"))
+            } footer: {
+                Footnote(L("Bu uygulamalar odak boyunca arka planda bekler; öne gelirlerse yeniden gizlenir. Hiçbiri kapatılmaz, mesajların kaybolmaz. Varsayılan liste Slack, Discord, Telegram, WhatsApp, Mesajlar, Messenger, Teams ve Mail'dir; kurulu olanlar görünür.",
+                           "These apps wait in the background during focus; if they come forward they're hidden again. Nothing is quit, no messages are lost. The default list is Slack, Discord, Telegram, WhatsApp, Messages, Messenger, Teams and Mail; the installed ones show."))
+            }
+            Section {
+                TextField(L("Açarken çalışacak kestirme", "Shortcut to run when it starts"), text: $shortcutOn, prompt: Text(verbatim: "Odak Aç"))
+                TextField(L("Kapatırken çalışacak kestirme", "Shortcut to run when it ends"), text: $shortcutOff, prompt: Text(verbatim: "Odak Kapat"))
+            } header: {
+                Text(L("macOS Odak (isteğe bağlı)", "macOS Focus (optional)"))
+            } footer: {
+                Footnote(L("macOS'un Rahatsız Etme / Odak modunu açmak için Kestirmeler'de \"Odak Ayarla\" eylemiyle iki kestirme yap ve adlarını buraya yaz.",
+                           "To switch macOS Do Not Disturb / Focus too, make two shortcuts with the \"Set Focus\" action in Shortcuts and enter their names here."))
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private var blockedList: [String] {
+        blocked.isEmpty ? FocusMode.defaultBlocked : blocked.split(separator: ",").map(String.init)
+    }
+
+    private func setBlocked(_ list: [String]) { blocked = list.joined(separator: ",") }
+
+    private func addBlocked() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.application]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.allowsMultipleSelection = true
+        NSApp.activate()
+        guard panel.runModal() == .OK else { return }
+        let bundles = panel.urls.compactMap { Bundle(url: $0)?.bundleIdentifier }
+        setBlocked(Array(Set(blockedList + bundles)).sorted())
     }
 }
 

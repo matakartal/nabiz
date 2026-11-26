@@ -92,7 +92,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                let running = CountdownTimer.shared.endsAt != nil
+                Pomodoro.shared.tick()
+                FocusMode.shared.tick()
+                let running = CountdownTimer.shared.endsAt != nil || Pomodoro.shared.isActive || FocusMode.shared.isOn
                 // One last refresh when it stops, so the countdown doesn't linger.
                 if running || self.timerWasRunning { self.updateButton() }
                 self.timerWasRunning = running
@@ -105,6 +107,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         KeepAwake.shared.stop()
         UsageHistory.shared.save()
         NoteStore.shared.saveNow()
+        FocusMode.shared.stop()
     }
 
     @objc private func togglePanel() {
@@ -155,6 +158,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(item(L("Başlatıcı", "Launcher")) { LauncherPanel.shared.show() })
         menu.addItem(item(L("Pano geçmişi", "Clipboard History")) { LauncherPanel.shared.show(.clipboard) })
         menu.addItem(item(L("Notlar", "Notes")) { NoteWindow.toggle() })
+        let pomodoro = Pomodoro.shared
+        menu.addItem(item(pomodoro.isActive ? (pomodoro.isRunning ? L("Pomodoro'yu duraklat", "Pause Pomodoro") : L("Pomodoro'ya devam et", "Resume Pomodoro"))
+                                            : L("Pomodoro başlat", "Start Pomodoro")) { pomodoro.toggle() })
+        menu.addItem(item(FocusMode.shared.isOn ? L("Odak modunu kapat", "Turn Focus Mode Off") : L("Odak modu", "Focus Mode")) { FocusMode.shared.toggle() })
         menu.addItem(item(L("Geçmiş", "History")) { HistoryWindow.show() })
         menu.addItem(item(L("Zamanlanmış görevler…", "Scheduled Tasks…")) { SettingsWindow.show(.schedules) })
         menu.addItem(.separator())

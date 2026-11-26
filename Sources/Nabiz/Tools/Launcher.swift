@@ -171,6 +171,18 @@ final class LauncherModel {
         let commands = commandItems()
         let apps = Prefs.bool(Prefs.launcherApps) ? AppIndex.shared.apps.map(appItem) : []
 
+        // "=": the calculator alone; with nothing after it, the last calculations.
+        if query.hasPrefix("=") {
+            let rest = query.dropFirst().trimmingCharacters(in: .whitespaces)
+            if rest.isEmpty {
+                let history = CalcHistory.entries.enumerated().map { historyItem($1, index: $0) }
+                return [LauncherSection(id: "history", title: L("Hesap geçmişi", "Calculation history"), items: history)].filter { !$0.items.isEmpty }
+            }
+            let results = Calculator.evaluateAll(rest)
+            return [LauncherSection(id: "calc", title: L("Hesap", "Calculator"),
+                                    items: results.enumerated().map { calcItem($1, index: $0, expression: rest) })].filter { !$0.items.isEmpty }
+        }
+
         // "> lock": commands only, like an editor's command palette.
         if query.hasPrefix(">") {
             let rest = query.dropFirst().trimmingCharacters(in: .whitespaces)
@@ -191,30 +203,24 @@ final class LauncherModel {
                 let clips = ClipboardHistory.shared.items.prefix(3).map(clipRow)
                 sections.append(LauncherSection(id: "clips", title: L("Son kopyalananlar", "Recently copied"), items: Array(clips)))
             }
-            let suggested = ["cmd:clipboard", "cmd:note", "cmd:timer-25", "cmd:keepAwake-60", "sys:lock", "win:leftHalf", "win:maximize"]
+            let downloads = Downloader.shared.jobs.prefix(3).map(jobItem)
+            sections.append(LauncherSection(id: "downloads", title: L("İndirilenler", "Downloads"), items: Array(downloads)))
+            let suggested = ["cmd:clipboard", "cmd:note", "cmd:pomodoro", "cmd:focus-25", "cmd:capture-area", "sys:lock", "win:leftHalf"]
             let suggestions = suggested.compactMap { id in commands.first { $0.id == id } }
                 .filter { item in !recents.contains { $0.id == item.id } && !favorites.contains { $0.id == item.id } }
             sections.append(LauncherSection(id: "suggestions", title: L("Öneriler", "Suggestions"), items: suggestions))
             return sections.filter { !$0.items.isEmpty }
         }
 
-        // Maths, currency and units first: the old quick calculator lives here.
-        if let result = Calculator.evaluate(query) {
-            let copy = result.copy
-            let primary: @MainActor () -> Void = { [weak self] in
-                guard !copy.isEmpty else { return }
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(copy, forType: .string)
-                self?.close()
-                Monitor.panelActions.flash(L("Kopyalandı", "Copied"))
-            }
-            var item = LauncherItem(id: "calc", icon: .symbol("equal.circle.fill"), title: result.text, subtitle: query,
-                                    primaryTitle: L("Kopyala", "Copy"), primary: primary, remember: false)
-            if Paster.canPaste && !copy.isEmpty {
-                item.secondaryTitle = L("Yapıştır", "Paste")
-                item.secondary = { [weak self] in self?.paste(text: copy) }
-            }
-            sections.append(LauncherSection(id: "calc", title: L("Hesap", "Calculator"), items: [item]))
+        // Maths, money, units, time zones and dates first.
+        let results = Calculator.evaluateAll(query)
+        if !results.isEmpty {
+            sections.append(LauncherSection(id: "calc", title: L("Hesap", "Calculator"),
+                                            items: results.enumerated().map { calcItem($1, index: $0, expression: query) }))
+        }
+
+        if let url = Downloader.videoURL(query) {
+            sections.append(LauncherSection(id: "download", title: L("İndir", "Download"), items: downloadItems(url)))
         }
 
         // "gh nabiz": a quicklink keyword followed by a search.
@@ -274,6 +280,100 @@ final class LauncherModel {
                                 if let url = link.url(for: query) { NSWorkspace.shared.open(url) }
                             },
                             remember: query.isEmpty)
+    }
+
+    private func downloadItems(_ url: URL) -> [LauncherItem] {
+        let downloader = Downloader.shared
+        guard downloader.ytdlp != nil else {
+            return [LauncherItem(id: "dl-install", icon: .symbol("arrow.down.circle"),
+                                 title: downloader.installing ? L("yt-dlp kuruluyor…", "Installing yt-dlp…") : L("Video indirmek için yt-dlp'yi kur", "Install yt-dlp to download videos"),
+                                 subtitle: downloader.brew != nil ? "Homebrew" : nil, primaryTitle: L("Kur", "Install"),
+                                 primary: { [weak self] in
+                                     self?.close()
+                                     downloader.install()
+                                 }, remember: false)]
+        }
+        let quality = switch Prefs.string(Prefs.downloadQuality) {
+        case "1080": "1080p"
+        case "720": "720p"
+        default: L("en iyi", "best")
+        }
+        return [
+            LauncherItem(id: "dl-video", icon: .symbol("film"), title: L("Videoyu indir", "Download the video"),
+                         subtitle: url.host, accessory: "MP4 · \(quality)", primaryTitle: L("İndir", "Download"),
+                         primary: { [weak self] in
+                             self?.close()
+                             downloader.download(url.absoluteString, kind: .video)
+                             Monitor.panelActions.flash(L("İndiriliyor…", "Downloading…"))
+                         }, remember: false),
+            LauncherItem(id: "dl-audio", icon: .symbol("music.note"), title: L("Yalnızca sesi indir", "Download the sound only"),
+                         subtitle: url.host, accessory: downloader.ffmpeg != nil ? "MP3" : "M4A", primaryTitle: L("İndir", "Download"),
+                         primary: { [weak self] in
+                             self?.close()
+                             downloader.download(url.absoluteString, kind: .audio)
+                             Monitor.panelActions.flash(L("İndiriliyor…", "Downloading…"))
+                         }, remember: false),
+        ]
+    }
+
+    private func jobItem(_ job: Downloader.Job) -> LauncherItem {
+        let downloader = Downloader.shared
+        let status: String = switch job.status {
+        case .running: job.progress.map { Format.percent($0) + (job.eta.map { " · \($0)" } ?? "") } ?? L("başlıyor", "starting")
+        case .done: L("bitti", "done")
+        case .failed: L("hata", "failed")
+        }
+        var subtitle: String?
+        if case .failed(let message) = job.status { subtitle = message }
+        return LauncherItem(id: "job:\(job.id)", icon: .symbol(job.kind == .audio ? "music.note" : "film"), title: job.title,
+                            subtitle: subtitle, accessory: status,
+                            primaryTitle: job.status == .done ? L("Finder'da göster", "Show in Finder") : job.status == .running ? L("Klasörü aç", "Open folder") : L("Tekrar dene", "Try again"),
+                            primary: { [weak self] in
+                                self?.close()
+                                if case .failed = job.status { downloader.retry(job) } else { downloader.reveal(job) }
+                            },
+                            secondaryTitle: job.status == .running ? L("İptal et", "Cancel") : L("Listeden kaldır", "Remove"),
+                            secondary: { downloader.cancel(job.id) },
+                            remember: false)
+    }
+
+    private func calcItem(_ result: Calculator.Result, index: Int, expression: String) -> LauncherItem {
+        let usable = !result.copy.isEmpty
+        var item = LauncherItem(id: "calc:\(index)", icon: .symbol(index == 0 ? "equal.circle.fill" : "equal"),
+                                title: result.text, subtitle: index == 0 ? expression : nil, accessory: result.note,
+                                primaryTitle: L("Kopyala", "Copy"),
+                                primary: { [weak self] in
+                                    guard usable else { return }
+                                    CalcHistory.add(expression, result)
+                                    NSPasteboard.general.clearContents()
+                                    NSPasteboard.general.setString(result.copy, forType: .string)
+                                    self?.close()
+                                    Monitor.panelActions.flash(L("Kopyalandı", "Copied"))
+                                },
+                                remember: false)
+        if Paster.canPaste && usable {
+            item.secondaryTitle = L("Yapıştır", "Paste")
+            item.secondary = { [weak self] in
+                CalcHistory.add(expression, result)
+                self?.paste(text: result.copy)
+            }
+        }
+        return item
+    }
+
+    private func historyItem(_ entry: CalcHistory.Entry, index: Int) -> LauncherItem {
+        LauncherItem(id: "calchist:\(index)", icon: .symbol("clock.arrow.circlepath"), title: entry.text, subtitle: entry.expression,
+                     accessory: entry.date.formatted(.relative(presentation: .numeric, unitsStyle: .abbreviated).locale(Format.locale)),
+                     primaryTitle: L("Kopyala", "Copy"),
+                     primary: { [weak self] in
+                         NSPasteboard.general.clearContents()
+                         NSPasteboard.general.setString(entry.copy, forType: .string)
+                         self?.close()
+                         Monitor.panelActions.flash(L("Kopyalandı", "Copied"))
+                     },
+                     secondaryTitle: L("Yeniden hesapla", "Edit"),
+                     secondary: { [weak self] in self?.text = "= " + entry.expression },
+                     remember: false)
     }
 
     private func noteItem(_ note: Note) -> LauncherItem {
@@ -352,6 +452,17 @@ final class LauncherModel {
         "cmd:keepAwake-60": "caffeinate awake uyanık kahve", "cmd:keepAwake-0": "caffeinate awake uyanık kahve",
         "cmd:keepAwake-off": "caffeinate awake uyanık", "cmd:timer-5": "timer zamanlayıcı", "cmd:timer-25": "timer zamanlayıcı pomodoro",
         "cmd:timer-off": "timer zamanlayıcı stop durdur",
+        "cmd:pomodoro": "pomodoro odak focus domates tomato", "cmd:pomodoro-toggle": "pomodoro pause duraklat devam resume",
+        "cmd:pomodoro-skip": "pomodoro skip atla", "cmd:pomodoro-stop": "pomodoro stop bitir",
+        "cmd:focus-25": "focus odak dnd rahatsiz", "cmd:focus-60": "focus odak dnd", "cmd:focus-120": "focus odak dnd",
+        "cmd:focus-on": "focus odak dnd", "cmd:focus-off": "focus odak kapat",
+        "cmd:capture-area": "screenshot ekran goruntusu capture ss alan", "cmd:capture-window": "screenshot ekran pencere window",
+        "cmd:capture-screen": "screenshot ekran tum", "cmd:capture-areaFile": "screenshot ekran dosya file",
+        "cmd:capture-screenFile": "screenshot ekran dosya file", "cmd:capture-timed": "screenshot ekran timer zamanli",
+        "cmd:capture-toolbar": "screenshot record kayit video ekran", "cmd:capture-text": "ocr text metin qr oku read",
+        "cmd:download": "download indir video youtube yt mp3 ses", "cmd:qr": "qr kod code", "cmd:mic": "mic mikrofon mute sessiz",
+        "cmd:sleep-15": "sleep uyut uyku timer", "cmd:sleep-30": "sleep uyut uyku", "cmd:sleep-60": "sleep uyut uyku",
+        "cmd:sleep-90": "sleep uyut uyku", "cmd:sleep-off": "sleep uyku iptal",
     ]
 
     private func command(_ id: String, _ symbol: String, _ title: String, subtitle: String? = nil, accessory: String? = nil,
@@ -386,6 +497,52 @@ final class LauncherModel {
         if CountdownTimer.shared.isRunning {
             items.append(command("timer-off", "timer", L("Zamanlayıcıyı durdur", "Stop the timer")) { CountdownTimer.shared.stop() })
         }
+        let pomodoro = Pomodoro.shared
+        if pomodoro.isActive {
+            items.append(command("pomodoro-toggle", pomodoro.isRunning ? "pause.circle" : "play.circle",
+                                 pomodoro.isRunning ? L("Pomodoro'yu duraklat", "Pause the Pomodoro") : L("Pomodoro'ya devam et", "Resume the Pomodoro"),
+                                 accessory: pomodoro.remainingText) { pomodoro.toggle() })
+            items.append(command("pomodoro-skip", "forward.end", L("Pomodoro: sıradakine geç", "Pomodoro: skip to next")) { pomodoro.skip() })
+            items.append(command("pomodoro-stop", "stop.circle", L("Pomodoro'yu bitir", "Stop the Pomodoro")) { pomodoro.stop() })
+        } else {
+            items.append(command("pomodoro", "brain.head.profile", L("Pomodoro başlat (\(pomodoro.minutes(.work)) dk)", "Start a Pomodoro (\(pomodoro.minutes(.work)) min)"),
+                                 accessory: pomodoro.today.count > 0 ? L("bugün \(pomodoro.today.count)", "\(pomodoro.today.count) today") : nil) {
+                pomodoro.start()
+            })
+        }
+        let focus = FocusMode.shared
+        if focus.isOn {
+            items.append(command("focus-off", "moon.circle.fill", L("Odak modunu kapat", "Turn focus mode off"), accessory: focus.remainingText) { focus.stop() })
+        }
+        for (minutes, label) in [(25, L("25 dk", "25 min")), (60, L("1 saat", "1 hour")), (120, L("2 saat", "2 hours"))] {
+            items.append(command("focus-\(minutes)", "moon.circle", L("Odak modu: \(label)", "Focus mode: \(label)")) { focus.start(minutes: minutes) })
+        }
+        items.append(command("focus-on", "moon.circle", L("Odak modu: süresiz", "Focus mode: until I stop it")) { focus.start(minutes: nil) })
+        for mode in CaptureMode.allCases {
+            items.append(command("capture-\(mode.rawValue)", mode.symbol, L("Ekran görüntüsü: ", "Screenshot: ") + mode.title) { Capture.run(mode) })
+        }
+        items.append(command("download", "arrow.down.circle", L("Video indir (panodaki bağlantı)", "Download video (copied link)"), keepOpen: true) { [weak self] in
+            if let url = NSPasteboard.general.string(forType: .string).flatMap(Downloader.videoURL) {
+                self?.text = url.absoluteString
+            } else {
+                Monitor.panelActions.flash(L("Önce bir video bağlantısı kopyala", "Copy a video link first"))
+            }
+        })
+        if let copied = NSPasteboard.general.string(forType: .string), !copied.isEmpty, copied.count < 2000 {
+            items.append(command("qr", "qrcode", L("Panodaki metinden QR kodu", "QR code from the clipboard")) { Capture.copyQR(copied) })
+        }
+        let muted = Toolbox.shared.micMuted
+        items.append(command("mic", muted ? "mic" : "mic.slash", muted ? L("Mikrofonu aç", "Unmute the mic") : L("Mikrofonu kapat", "Mute the mic")) {
+            Microphone.toggle()
+            Toolbox.shared.refreshMic()
+        })
+        if let at = SleepTimer.shared.at {
+            items.append(command("sleep-off", "moon.zzz", L("Uyku zamanlayıcısını iptal et", "Cancel the sleep timer"),
+                                 accessory: at.formatted(date: .omitted, time: .shortened)) { SleepTimer.shared.cancel() })
+        }
+        for minutes in [15, 30, 60, 90] {
+            items.append(command("sleep-\(minutes)", "powersleep", L("\(minutes) dk sonra uyut", "Sleep in \(minutes) min")) { SleepTimer.shared.start(minutes: minutes) })
+        }
         items.append(command("keepAwake-60", "cup.and.saucer", L("Uyanık kal: 1 saat", "Keep awake: 1 hour")) { KeepAwake.shared.start(minutes: 60) })
         items.append(command("keepAwake-0", "cup.and.saucer.fill", L("Uyanık kal: süresiz", "Keep awake: indefinitely")) { KeepAwake.shared.start(minutes: nil) })
         if KeepAwake.shared.isOn {
@@ -408,7 +565,8 @@ final class LauncherModel {
                                       }))
         }
         // These already exist as commands above (or open the launcher itself).
-        let skip: Set<ToolKind> = [.calculator, .keepAwake, .timer, .clipboard, .note, .displayOff]
+        let skip: Set<ToolKind> = [.calculator, .keepAwake, .timer, .clipboard, .note, .displayOff, .pomodoro, .focus, .screenshot,
+                                   .readText, .download, .mic]
         for tool in ToolKind.allCases where !skip.contains(tool) {
             items.append(LauncherItem(id: "tool:\(tool.rawValue)", icon: .symbol(tool.symbol), title: tool.title, subtitle: tool.help,
                                       accessory: L("Araç", "Tool"), primaryTitle: L("Çalıştır", "Run"),
@@ -656,6 +814,22 @@ extension LauncherModel {
                         NSWorkspace.shared.open(url)
                     })
                 }
+                if let url = Downloader.videoURL(text) {
+                    list.append(LauncherAction(id: "dlVideo", title: L("Videoyu indir", "Download the video"), symbol: "film", group: main) { [weak self] in
+                        self?.close()
+                        Downloader.shared.download(url.absoluteString, kind: .video)
+                    })
+                    list.append(LauncherAction(id: "dlAudio", title: L("Sesi indir", "Download the sound"), symbol: "music.note", group: main) { [weak self] in
+                        self?.close()
+                        Downloader.shared.download(url.absoluteString, kind: .audio)
+                    })
+                }
+                if text.count < 2000 {
+                    list.append(LauncherAction(id: "qr", title: L("QR kodu oluştur", "Make a QR code"), symbol: "qrcode", group: main) { [weak self] in
+                        self?.close()
+                        Capture.copyQR(text)
+                    })
+                }
                 list.append(LauncherAction(id: "toNote", title: L("Not olarak kaydet", "Save as note"), symbol: "note.text.badge.plus", group: main) { [weak self] in
                     self?.close()
                     NoteWindow.show(NoteStore.shared.create(text))
@@ -695,6 +869,42 @@ extension LauncherModel {
             list.append(LauncherAction(id: "deleteNote", title: L("Notu sil…", "Delete note…"), symbol: "trash", group: main, destructive: true) { [weak self] in
                 self?.close()
                 NoteWindow.delete(note)
+            })
+        }
+
+        if item.id.hasPrefix("calc:"), let index = Int(item.id.dropFirst(5)) {
+            let expression = text.trimmingCharacters(in: .whitespaces).hasPrefix("=")
+                ? String(text.trimmingCharacters(in: .whitespaces).dropFirst()).trimmingCharacters(in: .whitespaces)
+                : text.trimmingCharacters(in: .whitespaces)
+            let results = Calculator.evaluateAll(expression)
+            if results.indices.contains(index), !results[index].copy.isEmpty {
+                let result = results[index]
+                if let raw = result.raw, raw != result.copy {
+                    list.append(LauncherAction(id: "copyRaw", title: L("Ham sayıyı kopyala (\(raw))", "Copy raw number (\(raw))"),
+                                               symbol: "number", group: main) {
+                        CalcHistory.add(expression, result)
+                        copyText(raw, L("Kopyalandı", "Copied"))
+                    })
+                }
+                list.append(LauncherAction(id: "copyAll", title: L("İşlemle birlikte kopyala", "Copy with the sum"), symbol: "text.append",
+                                           group: main) {
+                    CalcHistory.add(expression, result)
+                    copyText(result.text.hasPrefix("= ") ? "\(expression) \(result.text)" : result.text, L("Kopyalandı", "Copied"))
+                })
+                if !Paster.canPaste {
+                    list.append(LauncherAction(id: "allowPaste", title: L("Yapıştırmaya izin ver…", "Allow pasting…"), symbol: "hand.raised",
+                                               group: main) { Paster.requestTrust() })
+                }
+            }
+            list.append(LauncherAction(id: "history", title: L("Hesap geçmişi", "Calculation history"), symbol: "clock.arrow.circlepath",
+                                       shortcut: "=", group: main) { [weak self] in self?.text = "=" })
+        }
+
+        if item.id.hasPrefix("calchist:") {
+            list.append(LauncherAction(id: "clearHistory", title: L("Geçmişi temizle", "Clear history"), symbol: "trash", group: main,
+                                       destructive: true) { [weak self] in
+                CalcHistory.clear()
+                self?.text = ""
             })
         }
 

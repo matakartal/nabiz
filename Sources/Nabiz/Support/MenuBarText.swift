@@ -33,6 +33,14 @@ enum MenuBarText {
         if let left = CountdownTimer.shared.remainingText {
             parts.insert(MenuBarPart(item: .timer, label: L("Süre", "Timer"), value: left), at: 0)
         }
+        // So do a Pomodoro block and a timed focus session.
+        let pomodoro = Pomodoro.shared
+        if let left = pomodoro.remainingText {
+            let label = pomodoro.phase == .work ? L("Odak", "Focus") : L("Mola", "Break")
+            parts.insert(MenuBarPart(item: .timer, label: label, value: (pomodoro.isRunning ? "" : "⏸ ") + left), at: 0)
+        } else if FocusMode.shared.isOn {
+            parts.insert(MenuBarPart(item: .timer, label: L("Odak", "Focus"), value: FocusMode.shared.remainingText ?? L("açık", "on")), at: 0)
+        }
         return parts
     }
 

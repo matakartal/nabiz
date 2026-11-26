@@ -458,6 +458,26 @@ private struct MarketsSection: View {
 }
 
 /// The tools as a grid of tiles, Control Center style: one tap each. Keep awake opens its durations under the grid.
+/// "Label: [chip] [chip]" under the tools grid.
+private struct ChipRow<Content: View>: View {
+    let label: String
+    @ViewBuilder let content: Content
+
+    init(_ label: String, @ViewBuilder content: () -> Content) {
+        self.label = label
+        self.content = content()
+    }
+
+    var body: some View {
+        HStack(spacing: Theme.Spacing.xs) {
+            Text(verbatim: label).font(Theme.small).foregroundStyle(Theme.textMuted)
+            content
+        }
+        .padding(.horizontal, Theme.menuInset)
+        .padding(.vertical, Theme.Spacing.xs)
+    }
+}
+
 private struct ToolsSection: View {
     let monitor: Monitor
     let actions: PanelActions
@@ -476,7 +496,7 @@ private struct ToolsSection: View {
             ForEach(tools) { kind in
                 ToolTile(kind: kind, detail: toolbox.detail(kind), active: toolbox.isActive(kind),
                          enabled: toolbox.isEnabled(kind), busy: toolbox.isBusy(kind)) {
-                    if kind == .keepAwake || kind == .timer {
+                    if [.keepAwake, .timer, .pomodoro, .focus, .screenshot].contains(kind) {
                         chips = chips == kind ? nil : kind
                     } else {
                         toolbox.run(kind, actions: actions, monitor: monitor)
@@ -496,6 +516,38 @@ private struct ToolsSection: View {
             }
             .padding(.horizontal, Theme.menuInset)
             .padding(.vertical, Theme.Spacing.xs)
+        }
+        if chips == .pomodoro {
+            let pomodoro = Pomodoro.shared
+            ChipRow(L("Pomodoro:", "Pomodoro:")) {
+                if !pomodoro.isActive {
+                    Chip(L("Başlat \(pomodoro.minutes(.work)) dk", "Start \(pomodoro.minutes(.work))m")) { pomodoro.start(); chips = nil }
+                } else {
+                    Chip(pomodoro.isRunning ? L("Duraklat", "Pause") : L("Devam", "Resume")) { pomodoro.toggle(); chips = nil }
+                    Chip(L("Atla", "Skip")) { pomodoro.skip(); chips = nil }
+                    Chip(L("Bitir", "Stop")) { pomodoro.stop(); chips = nil }
+                }
+                if pomodoro.today.count > 0 {
+                    Text(L("bugün \(pomodoro.today.count)", "\(pomodoro.today.count) today")).font(Theme.small).foregroundStyle(Theme.textMuted)
+                }
+            }
+        }
+        if chips == .focus {
+            let focus = FocusMode.shared
+            ChipRow(L("Odak:", "Focus:")) {
+                Chip(L("25 dk", "25m")) { focus.start(minutes: 25); chips = nil }
+                Chip(L("1 sa", "1h")) { focus.start(minutes: 60); chips = nil }
+                Chip(L("2 sa", "2h")) { focus.start(minutes: 120); chips = nil }
+                Chip("∞") { focus.start(minutes: nil); chips = nil }
+                if focus.isOn { Chip(L("Kapat", "Off")) { focus.stop(); chips = nil } }
+            }
+        }
+        if chips == .screenshot {
+            ChipRow(L("Ekran:", "Capture:")) {
+                ForEach([CaptureMode.area, .window, .screenFile, .toolbar]) { mode in
+                    Chip(mode.chip) { chips = nil; Capture.run(mode, actions: actions) }
+                }
+            }
         }
         if chips == .keepAwake {
             HStack(spacing: Theme.Spacing.xs) {

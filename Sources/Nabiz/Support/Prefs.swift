@@ -88,6 +88,27 @@ enum Prefs {
     /// ⌃⌥M shows or hides the notes.
     static let noteHotkey = "noteHotkey"
 
+    // Pomodoro and focus.
+    static let pomodoroWork = "pomodoroWork"
+    static let pomodoroShort = "pomodoroShort"
+    static let pomodoroLong = "pomodoroLong"
+    /// A long break after this many work blocks.
+    static let pomodoroLongEvery = "pomodoroLongEvery"
+    /// The next block starts by itself.
+    static let pomodoroAuto = "pomodoroAuto"
+    /// Work blocks turn focus mode on, breaks turn it off.
+    static let pomodoroFocus = "pomodoroFocus"
+    /// Bundle ids hidden during focus, comma separated ("" = the defaults).
+    static let focusBlocked = "focusBlocked"
+    static let focusHideOthers = "focusHideOthers"
+    static let focusHideDesktop = "focusHideDesktop"
+    /// Names of the user's Shortcuts that turn macOS Focus on and off.
+    static let focusShortcutOn = "focusShortcutOn"
+    static let focusShortcutOff = "focusShortcutOff"
+    /// Video downloads: "best", "1080", "720" or "audio".
+    static let downloadQuality = "downloadQuality"
+    static let downloadFolder = "downloadFolder"
+
     // Personalization.
     /// "system", "light" or "dark": Nabız's own windows, whatever macOS uses.
     static let appearanceMode = "appearanceMode"
@@ -121,6 +142,9 @@ enum Prefs {
             clipboardHotkey: true, clipboardEnabled: true, clipboardSave: true, clipboardLimit: 200, clipboardDays: 30,
             clipboardExcluded: "", autoPaste: true, launcherApps: true, launcherClipboard: true, windowHotkeys: false,
             noteOnTop: true, noteHotkey: true,
+            pomodoroWork: 25, pomodoroShort: 5, pomodoroLong: 15, pomodoroLongEvery: 4, pomodoroAuto: true, pomodoroFocus: true,
+            focusBlocked: "", focusHideOthers: false, focusHideDesktop: false, focusShortcutOn: "", focusShortcutOff: "",
+            downloadQuality: "best", downloadFolder: "",
             appearanceMode: "system", fontDesign: "standard", density: "normal", meterStyle: "thin",
             barSymbol: "gauge.with.dots.needle.33percent", customAccent: "#1DB954", sectionOrder: "",
         ])
