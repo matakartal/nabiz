@@ -177,6 +177,21 @@ struct AIAssistantTests {
         #expect(!parser.progress.searching)
     }
 
+    @Test func geminiKeepsLettersSplitAcrossReads() {
+        let parser = StreamParser(engine: .gemini)
+        let bytes = Array("Güzel çiçek".utf8)
+        // Split inside "ü" (2 bytes) and inside "ç".
+        parser.feed(Data(bytes[0..<2]))
+        parser.feed(Data(bytes[2..<8]))
+        parser.feed(Data(bytes[8...]))
+        #expect(parser.progress.text == "Güzel çiçek")
+    }
+
+    @Test func codexAnswersWithoutActing() {
+        let codex = AIRunner.arguments(AIRequest(engine: .codex, system: "s", prompt: "p"), compatible: false)
+        #expect(codex.contains("computer_use") && codex.contains("plugins") && codex.contains("read-only"))
+    }
+
     @Test func statusCodesMatchOnlyWholeNumbers() {
         #expect(AIRunner.hasStatus("http 429 too many", 429))
         #expect(!AIRunner.hasStatus("took 14290 ms", 429))

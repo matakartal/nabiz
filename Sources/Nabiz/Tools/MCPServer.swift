@@ -85,7 +85,8 @@ final class MCPServer {
         try? FileManager.default.createDirectory(atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
         unlink(path)
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
-        guard fd >= 0, var address = MCPSocket.address(path) else { return }
+        guard fd >= 0 else { return }
+        guard var address = MCPSocket.address(path) else { close(fd); return }
         // Only this user may open it.
         let mask = umask(0o077)
         let bound = withUnsafePointer(to: &address) {
@@ -99,9 +100,13 @@ final class MCPServer {
         running = true
     }
 
+    /// The socket file goes now, not later on the listener's queue, so turning MCP off and on again quickly
+    /// never removes the new socket.
     func stop() {
-        source?.cancel()
-        source = nil
+        guard let source else { return }
+        source.cancel()
+        self.source = nil
+        unlink(MCPSocket.path)
         running = false
     }
 
@@ -117,10 +122,7 @@ final class MCPServer {
                 MCPConnection(fd: client).start()
             }
         }
-        source.setCancelHandler {
-            close(fd)
-            unlink(path)
-        }
+        source.setCancelHandler { close(fd) }
         source.resume()
         return source
     }

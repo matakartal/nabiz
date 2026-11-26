@@ -233,7 +233,7 @@ enum MCPTools {
                     FocusMode.shared.stop()
                     return "Focus mode off."
                 }
-                let minutes = int(args["minutes"])
+                let minutes = int(args["minutes"]).map { min(max($0, 1), 600) }
                 FocusMode.shared.start(minutes: minutes)
                 return minutes.map { "Focus mode on for \($0) min." } ?? "Focus mode on until stopped."
             },

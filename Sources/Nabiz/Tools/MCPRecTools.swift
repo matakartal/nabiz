@@ -43,7 +43,7 @@ extension MCPTools {
                     description: "Nabız's screen recordings, newest first: id, date, length and size.",
                     group: .commands,
                     properties: ["limit": ["type": "integer", "minimum": 1, "maximum": 50]]) { args in
-                json(RecStore.all().prefix(int(args["limit"]) ?? 10).map(summary))
+                json(RecStore.all().prefix(min(max(int(args["limit"]) ?? 10, 1), 50)).map(summary))
             },
             MCPTool(name: "recording_info", title: "Read a screen recording",
                     description: """
@@ -233,7 +233,12 @@ extension MCPTools {
         meta = RecStore.load(meta.id) ?? meta
         var edit = meta.edit
         do {
-            if let style = args["style"] as? [String: Any] { edit.style = try merged(edit.style, style) }
+            if var style = args["style"] as? [String: Any] {
+                // A picture behind the recording only from Settings: over MCP it would read any image on disk.
+                style.removeValue(forKey: "backgroundImage")
+                if style["backgroundKind"] as? String == "image" { style.removeValue(forKey: "backgroundKind") }
+                edit.style = try merged(edit.style, style)
+            }
             if let items = args["zooms"] as? [[String: Any]] {
                 edit.zooms = try items.map { try merged(RecZoom(start: 0, end: 0, scale: edit.style.zoomLevel), $0) }
                 edit.zoomsMade = true
@@ -315,12 +320,22 @@ extension MCPTools {
         }
         var target: URL?
         if let path = args["path"] as? String, !path.isEmpty {
-            let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
-            guard url.pathExtension.lowercased() == (kind == .gif ? "gif" : "mp4") else {
-                throw MCPToolError("The path must end in .\(kind == .gif ? "gif" : "mp4").")
+            let ext = kind == .gif ? "gif" : "mp4"
+            var url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath).standardizedFileURL.resolvingSymlinksInPath()
+            guard url.pathExtension.lowercased() == ext else { throw MCPToolError("The path must end in .\(ext).") }
+            // Only into the user's own Desktop, Movies, Downloads or Documents (or the screenshots folder), and never over a file.
+            let home = FileManager.default.homeDirectoryForCurrentUser.resolvingSymlinksInPath().path
+            let allowed = ["Desktop", "Movies", "Downloads", "Documents"].map { home + "/" + $0 + "/" } + [Capture.folder.resolvingSymlinksInPath().path + "/"]
+            guard allowed.contains(where: { url.path.hasPrefix($0) }) else {
+                throw MCPToolError("Exports can go to Desktop, Movies, Downloads or Documents only.")
             }
             try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try? FileManager.default.removeItem(at: url)
+            let base = url.deletingPathExtension().lastPathComponent
+            var number = 2
+            while FileManager.default.fileExists(atPath: url.path) {
+                url = url.deletingLastPathComponent().appendingPathComponent("\(base) \(number).\(ext)")
+                number += 1
+            }
             target = url
         }
         guard let url = await RecExport.run(meta, edit: meta.edit, kind: kind, to: target, progress: { _ in }) else {

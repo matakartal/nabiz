@@ -534,7 +534,14 @@ enum AIRunner {
             if !request.images.isEmpty { list += ["--input-format", "stream-json"] }
         case .codex:
             list = (request.web ? ["--search"] : []) + ["exec"] + request.images.flatMap { ["-i", $0.path] } + ["--json", "--skip-git-repo-check", "--sandbox", "read-only", "--color", "never"]
-            if !compatible { list += ["--ephemeral", "--ignore-user-config", "--ignore-rules"] }
+            // No browser, computer control, apps, plugins, sub-agents or memories: it answers, it doesn't act.
+            if !compatible {
+                list += ["--ephemeral", "--ignore-user-config", "--ignore-rules"]
+                for feature in ["apps", "plugins", "browser_use", "browser_use_external", "in_app_browser", "computer_use",
+                                "multi_agent", "multi_agent_v2", "memories", "image_generation"] {
+                    list += ["--disable", feature]
+                }
+            }
             if !request.model.isEmpty { list += ["-m", request.model] }
             if !request.effort.isEmpty { list += ["-c", "model_reasoning_effort=\"\(request.effort)\""] }
             list.append("-")
@@ -567,8 +574,26 @@ enum AIRunner {
     /// Grok's prompt file, one per request, removed once it has run.
     static func grokPromptFile(_ request: AIRequest) -> URL {
         let url = workFolder.appendingPathComponent("grok-\(UUID().uuidString).txt")
-        try? Data(request.prompt.utf8).write(to: url, options: [.atomic, .completeFileProtection])
+        // Readable by this user only.
+        FileManager.default.createFile(atPath: url.path, contents: Data(request.prompt.utf8), attributes: [.posixPermissions: 0o600])
         return url
+    }
+
+    /// Prompt files left by a crash or a force-quit (they hold your words): gone at launch.
+    static func sweepPromptFiles() {
+        for name in (try? FileManager.default.contentsOfDirectory(atPath: workFolder.path)) ?? [] where name.hasPrefix("grok-") {
+            try? FileManager.default.removeItem(at: workFolder.appendingPathComponent(name))
+        }
+    }
+
+    /// Asks a CLI to stop, and makes sure it does a few seconds later.
+    nonisolated static func end(_ process: Process) {
+        guard process.isRunning else { return }
+        process.terminate()
+        let pid = process.processIdentifier
+        DispatchQueue.global().asyncAfter(deadline: .now() + 5) {
+            if process.isRunning { kill(pid, SIGKILL) }
+        }
     }
 
     private static func run(_ request: AIRequest, path: String, shellPath: String, compatible: Bool,
@@ -632,13 +657,13 @@ enum AIRunner {
                 DispatchQueue.global().asyncAfter(deadline: .now() + 300) {
                     if process.isRunning {
                         timer.append(Data("timeout".utf8))
-                        process.terminate()
+                        Self.end(process)
                     }
                 }
             }
         } onCancel: {
             // Before it started there's nothing to end (and ending it then would crash).
-            if process.isRunning { process.terminate() }
+            if process.isRunning { Self.end(process) }
         }
         errors.fileHandleForReading.readabilityHandler = nil
         // What was still in the pipes when it finished.
@@ -742,10 +767,23 @@ final class StreamParser: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         guard !data.isEmpty else { return false }
         if engine == .gemini {
-            _progress.text += String(decoding: data, as: UTF8.self)
+            // Plain text, read in chunks that can split a letter (ç, ş, ğ): decode only whole characters.
+            buffer.append(data)
+            var end = buffer.count
+            while end > max(buffer.count - 3, 0), String(data: buffer.prefix(end), encoding: .utf8) == nil { end -= 1 }
+            if let text = String(data: buffer.prefix(end), encoding: .utf8) {
+                _progress.text += text
+                buffer.removeFirst(end)
+            } else {
+                // Not UTF-8 at all: show what there is rather than nothing.
+                _progress.text += String(decoding: buffer, as: UTF8.self)
+                buffer.removeAll()
+            }
             return true
         }
         buffer.append(data)
+        // A line that never ends (a broken CLI) mustn't grow without bound.
+        if buffer.count > 32 << 20, buffer.firstIndex(of: 0x0A) == nil { buffer.removeAll() }
         var changed = false
         while let newline = buffer.firstIndex(of: 0x0A) {
             let line = Data(buffer[buffer.startIndex..<newline])
@@ -812,7 +850,7 @@ final class StreamParser: @unchecked Sendable {
                 // What the chat holds now: the last request's input (fresh, cached and newly cached) plus the answer.
                 let last = (usage["iterations"] as? [[String: Any]])?.last { $0["type"] as? String == "message" } ?? usage
                 let tokens = ["input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens"]
-                    .reduce(0) { $0 + (last[$1] as? Int ?? 0) }
+                    .reduce(0) { $0 &+ max(last[$1] as? Int ?? 0, 0) }
                 let models = object["modelUsage"] as? [String: [String: Any]]
                 let window = models?.values.compactMap { $0["contextWindow"] as? Int }.max()
                 _progress.usage = AIUsage(tokens: tokens, window: window, cost: object["total_cost_usd"] as? Double)
@@ -870,7 +908,7 @@ final class StreamParser: @unchecked Sendable {
         case "turn.completed":
             // Codex reads the whole chat each turn, so its input is how full the chat is.
             if let usage = object["usage"] as? [String: Any] {
-                let tokens = (usage["input_tokens"] as? Int ?? 0) + (usage["output_tokens"] as? Int ?? 0)
+                let tokens = max(usage["input_tokens"] as? Int ?? 0, 0) &+ max(usage["output_tokens"] as? Int ?? 0, 0)
                 _progress.usage = AIUsage(tokens: tokens)
                 return true
             }
