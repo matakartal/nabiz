@@ -1,3 +1,4 @@
+import NaturalLanguage
 import AppKit
 import Foundation
 import Observation
@@ -23,6 +24,9 @@ enum AIEngine: String, CaseIterable, Identifiable, Codable, Sendable {
         case .onDevice: L("Apple (cihaz içi)", "Apple (on-device)")
         }
     }
+
+    /// Claude and Codex look at attached images themselves; the others get the text read from them.
+    var seesImages: Bool { self == .claude || self == .codex }
 
     /// For "Ask Claude…".
     var shortName: String { self == .onDevice ? "Apple" : title }
@@ -158,6 +162,15 @@ final class AIEngines {
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
         return String(decoding: data, as: UTF8.self)
+    }
+
+    /// How many tokens a Codex model can hold, from its cache (`context_window`).
+    nonisolated static func codexWindow(_ slug: String) -> Int? {
+        let file = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".codex/models_cache.json")
+        guard let data = try? Data(contentsOf: file),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let list = object["models"] as? [[String: Any]] else { return nil }
+        return list.first { $0["slug"] as? String == slug }?["context_window"] as? Int
     }
 
     /// Codex keeps the models your plan offers in ~/.codex/models_cache.json.
@@ -390,6 +403,13 @@ struct AIRequest: Sendable {
     var chatID: UUID?
     var latest = ""
     var answered = 0
+    /// Images for the newest message, for the AIs that can see them.
+    var images: [URL] = []
+    /// Claude keeps the chat itself: a new session with this id (`prompt` is then the whole chat), or, with `resume`,
+    /// the one it already has (`prompt` is only the newest message, `fallback` the whole chat in case it was lost).
+    var session: String?
+    var resume = false
+    var fallback = ""
 }
 
 /// An answer so far: the CLIs report the whole text each time, so updates never need ordering.
@@ -398,12 +418,48 @@ struct AIProgress: Sendable, Equatable {
     var thinking = ""
     /// The model that actually answered, when the CLI says ("claude-opus-5-5").
     var model: String?
+    /// How full the conversation is after this answer, when the CLI says.
+    var usage: AIUsage?
+    /// The plan's limit, when the CLI reports it during the answer (Claude does).
+    var limit: AILiveLimit?
+}
+
+/// The chat's size for the model: tokens it now holds, out of how many it can, and the answer's price at API rates.
+struct AIUsage: Codable, Equatable, Sendable {
+    var tokens: Int
+    var window: Int?
+    var cost: Double?
+
+    var fraction: Double? { window.map { $0 > 0 ? min(1, Double(tokens) / Double($0)) : 0 } }
+}
+
+/// What Claude says about the plan's limit while it answers: still fine, getting close, or used up until `resetsAt`.
+struct AILiveLimit: Codable, Equatable, Sendable {
+    enum Status: String, Codable, Sendable { case allowed, warning, rejected }
+    var status: Status
+    /// "five_hour", "seven_day"…
+    var kind: String
+    var resetsAt: Date?
+    /// 0...1 when given.
+    var used: Double?
+
+    var label: String {
+        switch kind {
+        case "five_hour": L("5 saatlik limit", "5-hour limit")
+        case "seven_day": L("Haftalık limit", "Weekly limit")
+        case "seven_day_opus": L("Haftalık Opus limiti", "Weekly Opus limit")
+        case "seven_day_sonnet": L("Haftalık Sonnet limiti", "Weekly Sonnet limit")
+        default: L("Limit", "Limit")
+        }
+    }
 }
 
 struct AIError: Error, Equatable {
     let message: String
     /// The CLI didn't know a flag: an older version, worth one more try with the basic ones.
     var unknownOption = false
+    /// Claude couldn't find the session to resume.
+    var sessionLost: Bool { message.localizedCaseInsensitiveContains("No conversation found") }
     init(_ message: String, unknownOption: Bool = false) {
         self.message = message
         self.unknownOption = unknownOption
@@ -427,6 +483,12 @@ enum AIRunner {
                         try await run(request, path: path, shellPath: shellPath, compatible: false, continuation: continuation)
                     } catch let error as AIError where error.unknownOption {
                         try await run(request, path: path, shellPath: shellPath, compatible: true, continuation: continuation)
+                    } catch let error as AIError where request.resume && error.sessionLost {
+                        // Claude no longer has the chat (cleaned up after a month, or removed): start it again, whole.
+                        var fresh = request
+                        fresh.resume = false
+                        fresh.prompt = request.fallback
+                        try await run(fresh, path: path, shellPath: shellPath, compatible: false, continuation: continuation)
                     }
                     continuation.finish()
                 } catch {
@@ -450,13 +512,19 @@ enum AIRunner {
         case .claude:
             // No tools, so it only writes. Its own chat prompt replaces Claude Code's coding one, so it answers like
             // the Claude app; safe mode skips your CLAUDE.md, hooks and plugins.
-            list = ["-p", "--tools", "", "--no-session-persistence", "--output-format", "stream-json", "--include-partial-messages",
-                    "--verbose", "--system-prompt", request.system]
+            list = ["-p", "--tools", ""]
+            if let session = request.session {
+                list += request.resume ? ["--resume", session] : ["--session-id", session]
+            } else {
+                list.append("--no-session-persistence")
+            }
+            list += ["--output-format", "stream-json", "--include-partial-messages", "--verbose", "--system-prompt", request.system]
             if !compatible { list.append("--safe-mode") }
             if !request.model.isEmpty { list += ["--model", request.model] }
             if !request.effort.isEmpty, !compatible { list += ["--effort", request.effort] }
+            if !request.images.isEmpty { list += ["--input-format", "stream-json"] }
         case .codex:
-            list = ["exec", "--json", "--skip-git-repo-check", "--sandbox", "read-only", "--color", "never"]
+            list = ["exec"] + request.images.flatMap { ["-i", $0.path] } + ["--json", "--skip-git-repo-check", "--sandbox", "read-only", "--color", "never"]
             if !compatible { list += ["--ephemeral", "--ignore-user-config", "--ignore-rules"] }
             if !request.model.isEmpty { list += ["-m", request.model] }
             if !request.effort.isEmpty { list += ["-c", "model_reasoning_effort=\"\(request.effort)\""] }
@@ -480,7 +548,7 @@ enum AIRunner {
     /// What goes in on stdin: Claude gets the system prompt as a flag, the others read it first; Grok reads a file.
     static func input(_ request: AIRequest) -> String {
         switch request.engine {
-        case .claude: request.prompt
+        case .claude: request.images.isEmpty ? request.prompt : AIImages.claudeMessage(prompt: request.prompt, images: request.images)
         case .grok: ""
         default: request.system + "\n\n" + request.prompt
         }
@@ -488,16 +556,26 @@ enum AIRunner {
 
     /// Grok's prompt file, one per request, removed once it has run.
     static func grokPromptFile(_ request: AIRequest) -> URL {
-        let url = workFolder.appendingPathComponent("grok-\(abs(request.prompt.hashValue)).txt")
+        let url = workFolder.appendingPathComponent("grok-\(UUID().uuidString).txt")
         try? Data(request.prompt.utf8).write(to: url, options: [.atomic, .completeFileProtection])
         return url
     }
 
     private static func run(_ request: AIRequest, path: String, shellPath: String, compatible: Bool,
                             continuation: AsyncThrowingStream<AIProgress, Error>.Continuation) async throws {
+        // A closed pipe (a CLI that quits before reading the question) must not end Nabız.
+        signal(SIGPIPE, SIG_IGN)
         let process = Process()
         process.executableURL = URL(fileURLWithPath: path)
         process.arguments = arguments(request, compatible: compatible)
+        // Grok's prompt file holds your words; it goes however this ends.
+        defer {
+            if request.engine == .grok, let index = process.arguments?.firstIndex(of: "--prompt-file"),
+               let list = process.arguments, index + 1 < list.count {
+                let file = list[index + 1]
+                try? FileManager.default.removeItem(atPath: file)
+            }
+        }
         // An empty folder, so nothing it might look at is yours.
         process.currentDirectoryURL = workFolder
         var environment = ProcessInfo.processInfo.environment
@@ -512,8 +590,13 @@ enum AIRunner {
 
         let parser = StreamParser(engine: request.engine)
         let errorText = ErrorBuffer()
+        let timer = ErrorBuffer()
+        // One queue reads and parses, so a late chunk can never land after the final read.
+        let reading = DispatchQueue(label: "nabiz.ai.read")
         output.fileHandleForReading.readabilityHandler = { handle in
-            if parser.feed(handle.availableData) { continuation.yield(parser.progress) }
+            reading.sync {
+                if parser.feed(handle.availableData) { continuation.yield(parser.progress) }
+            }
         }
         errors.fileHandleForReading.readabilityHandler = { handle in errorText.append(handle.availableData) }
 
@@ -527,28 +610,52 @@ enum AIRunner {
                     done.resume(throwing: AIError(L("\(request.engine.title) açılamadı", "Couldn't start \(request.engine.title)")))
                     return
                 }
-                input.fileHandleForWriting.write(Data(Self.input(request).utf8))
-                try? input.fileHandleForWriting.close()
+                // Stopped while it was starting: end it now.
+                if Task.isCancelled { process.terminate() }
+                let question = Data(Self.input(request).utf8)
+                let writer = input.fileHandleForWriting
+                DispatchQueue.global(qos: .userInitiated).async {
+                    try? writer.write(contentsOf: question)
+                    try? writer.close()
+                }
                 // A stuck CLI shouldn't hang here forever.
-                DispatchQueue.global().asyncAfter(deadline: .now() + 300) { if process.isRunning { process.terminate() } }
+                DispatchQueue.global().asyncAfter(deadline: .now() + 300) {
+                    if process.isRunning {
+                        timer.append(Data("timeout".utf8))
+                        process.terminate()
+                    }
+                }
             }
         } onCancel: {
-            process.terminate()
+            // Before it started there's nothing to end (and ending it then would crash).
+            if process.isRunning { process.terminate() }
         }
-        output.fileHandleForReading.readabilityHandler = nil
         errors.fileHandleForReading.readabilityHandler = nil
         // What was still in the pipes when it finished.
-        if let rest = try? output.fileHandleForReading.readToEnd() { parser.feed(rest) }
-        if let rest = try? errors.fileHandleForReading.readToEnd() { errorText.append(rest) }
-        if request.engine == .grok, let index = process.arguments?.firstIndex(of: "--prompt-file"), let file = process.arguments?[index + 1] {
-            try? FileManager.default.removeItem(atPath: file)
+        reading.sync {
+            output.fileHandleForReading.readabilityHandler = nil
+            if let rest = try? output.fileHandleForReading.readToEnd() { parser.feed(rest) }
         }
+        if let rest = try? errors.fileHandleForReading.readToEnd() { errorText.append(rest) }
         try Task.checkCancellation()
 
         let progress = parser.progress
+        let timedOut = !timer.text.isEmpty
         if !progress.text.isEmpty {
             continuation.yield(progress)
+            // Some text, then it broke off: keep the text, but say it isn't the whole answer.
+            if timedOut {
+                throw AIError(L("5 dakikada bitmediği için durduruldu; cevap yarım kalmış olabilir",
+                                "Stopped after 5 minutes; the answer may be cut short"))
+            }
+            if parser.failure != nil || status != 0 {
+                throw AIError(L("Cevap yarıda kesildi: ", "The answer was cut off: ")
+                              + explain(parser.failure ?? errorText.text, engine: request.engine))
+            }
             return
+        }
+        if timedOut {
+            throw AIError(L("\(request.engine.title) 5 dakikada cevap vermedi", "\(request.engine.title) didn't answer within 5 minutes"))
         }
         let problem = parser.failure ?? errorText.text
         if status != 0 && !compatible && (problem.contains("unknown option") || problem.contains("Unknown argument") || problem.contains("unexpected argument")) {
@@ -558,18 +665,24 @@ enum AIRunner {
         throw AIError(L("Boş cevap geldi", "The answer came back empty"))
     }
 
+    /// An HTTP status as a whole number ("429", "status: 429"), not inside "14290 ms".
+    static func hasStatus(_ text: String, _ code: Int) -> Bool {
+        text.range(of: "(?<![0-9])\(code)(?![0-9])", options: .regularExpression) != nil
+    }
+
     /// A CLI's error in plain words.
     static func explain(_ raw: String, engine: AIEngine) -> String {
         let text = raw.lowercased()
         if text.contains("ineligibletier") || text.contains("no longer supported") {
             return L("Google bu hesapta Gemini CLI'ı artık desteklemiyor", "Google no longer supports Gemini CLI for this account")
         }
-        if text.contains("not logged in") || text.contains("login") || text.contains("log in") || text.contains("sign in")
-            || text.contains("unauthorized") || text.contains("authenticat") || text.contains("401") || text.contains("oauth") {
+        if text.contains("not logged in") || text.contains("/login") || text.contains("login required") || text.contains("please login") || text.contains("log in") || text.contains("sign in")
+            || text.contains("unauthorized") || text.contains("authenticat") || Self.hasStatus(text, 401) {
             return L("\(engine.title) oturumu yok; Terminal'de \(engine.command ?? "") yazıp bir kez giriş yap",
                      "\(engine.title) isn't signed in; type \(engine.command ?? "") in Terminal and sign in once")
         }
-        if text.contains("rate limit") || text.contains("usage limit") || text.contains("quota") || text.contains("429") {
+        if text.contains("rate limit") || text.contains("usage limit") || text.contains("quota exceeded")
+            || text.contains("exceeded your") || Self.hasStatus(text, 429) {
             return L("\(engine.title) limiti doldu, biraz sonra dene", "\(engine.title) limit reached, try again later")
         }
         if text.contains("model") && (text.contains("not found") || text.contains("not available") || text.contains("invalid") || text.contains("not supported")) {
@@ -665,7 +778,29 @@ final class StreamParser: @unchecked Sendable {
             default:
                 return false
             }
+        case "rate_limit_event":
+            guard let info = object["rate_limit_info"] as? [String: Any] else { return false }
+            let status: AILiveLimit.Status = switch info["status"] as? String {
+            case "rejected": .rejected
+            case "allowed_warning": .warning
+            default: .allowed
+            }
+            let kind = info["rateLimitType"] as? String ?? ""
+            let windows = info["unifiedWindows"] as? [String: Any]
+            let used = (windows?[kind] as? [String: Any])?["utilization"] as? Double ?? info["utilization"] as? Double
+            let reset = (info["resetsAt"] as? Double).map { Date(timeIntervalSince1970: $0) }
+            _progress.limit = AILiveLimit(status: status, kind: kind, resetsAt: reset, used: used)
+            return true
         case "result":
+            if let usage = object["usage"] as? [String: Any] {
+                // What the chat holds now: the last request's input (fresh, cached and newly cached) plus the answer.
+                let last = (usage["iterations"] as? [[String: Any]])?.last { $0["type"] as? String == "message" } ?? usage
+                let tokens = ["input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens"]
+                    .reduce(0) { $0 + (last[$1] as? Int ?? 0) }
+                let models = object["modelUsage"] as? [String: [String: Any]]
+                let window = models?.values.compactMap { $0["contextWindow"] as? Int }.max()
+                _progress.usage = AIUsage(tokens: tokens, window: window, cost: object["total_cost_usd"] as? Double)
+            }
             let result = object["result"] as? String ?? ""
             if object["is_error"] as? Bool == true {
                 _failure = result.isEmpty ? (object["subtype"] as? String ?? "error") : result
@@ -712,6 +847,13 @@ final class StreamParser: @unchecked Sendable {
             _progress.text = items.filter { $0.kind == "agent_message" && !$0.text.isEmpty }.map(\.text).joined(separator: "\n\n")
             _progress.thinking = items.filter { $0.kind == "reasoning" && !$0.text.isEmpty }.map(\.text).joined(separator: "\n\n")
             return true
+        case "turn.completed":
+            // Codex reads the whole chat each turn, so its input is how full the chat is.
+            if let usage = object["usage"] as? [String: Any] {
+                let tokens = (usage["input_tokens"] as? Int ?? 0) + (usage["output_tokens"] as? Int ?? 0)
+                _progress.usage = AIUsage(tokens: tokens)
+                return true
+            }
         case "turn.failed":
             _failure = (object["error"] as? [String: Any])?["message"] as? String ?? "failed"
         case "error":
@@ -763,6 +905,35 @@ enum OnDeviceAI {
     }
 
     /// A 2–5 word title for a chat, in its language; nil when the model isn't here or says nothing useful.
+    /// What you'll probably say next, for the grey suggestion in the empty message box; nil when nothing fits.
+    @MainActor static func suggestion(question: String, answer: String) async -> String? {
+        #if canImport(FoundationModels)
+        if #available(macOS 26.0, *), problem == nil {
+            let session = LanguageModelSession(instructions: Instructions(
+                "You guess what the USER will type next to the assistant: a short follow-up question or request, in the user's "
+                    + "language, written by the user (\"How do I…?\", \"Show an example\", \"Peki bunu nasıl yaparım?\"). "
+                    + "Never answer, never write as the assistant, never repeat the question. Under 12 words. "
+                    + "If no follow-up is likely, reply NONE. Reply with the message only."))
+            // Small models drift into English; name the user's language outright.
+            let recognizer = NLLanguageRecognizer()
+            recognizer.processString(String(question.prefix(500)))
+            let language = recognizer.dominantLanguage.flatMap { Locale(identifier: "en").localizedString(forLanguageCode: $0.rawValue) } ?? "the user's language"
+            let text = "Write the follow-up in \(language).\n\nUser: \(question.prefix(1_500))\n\nAssistant: \(answer.prefix(2_500))"
+            guard let reply = try? await session.respond(to: text) else { return nil }
+            let line = reply.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                .trimmingCharacters(in: CharacterSet(charactersIn: "\"'“”«»"))
+                .split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
+            // A follow-up is short and asks for something; anything else is the model answering instead.
+            let words = line.split(separator: " ").count
+            let asks = line.hasSuffix("?") || words <= 8
+            guard (3...110).contains(line.count), words <= 14, asks, !line.uppercased().hasPrefix("NONE"),
+                  !line.lowercased().hasPrefix("user:"), !answer.contains(line) else { return nil }
+            return line
+        }
+        #endif
+        return nil
+    }
+
     @MainActor static func title(for text: String) async -> String? {
         #if canImport(FoundationModels)
         if #available(macOS 26.0, *), problem == nil {

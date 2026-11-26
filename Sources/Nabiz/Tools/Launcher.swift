@@ -98,6 +98,8 @@ final class LauncherModel {
         self.mode = mode
         self.text = text
         selection = 0
+        PortCache.shared.refresh()
+        ProjectStore.shared.refresh()
     }
 
     var sections: [LauncherSection] {
@@ -141,6 +143,7 @@ final class LauncherModel {
 
     /// An app, command or quicklink by its id, for its own shortcut (the launcher may be closed).
     func item(id: String) -> LauncherItem? {
+        if id.hasPrefix("proj:") { return ProjectStore.shared.project(String(id.dropFirst(5))).map(projectItem) }
         if id.hasPrefix("app:") {
             let path = String(id.dropFirst(4))
             guard FileManager.default.fileExists(atPath: path) else { return nil }
@@ -254,7 +257,7 @@ final class LauncherModel {
         let apps = Prefs.bool(Prefs.launcherApps) ? AppIndex.shared.apps.map { appItem($0, running: running[$0.path]) } : []
 
         // ":heart", ":kalp": emoji.
-        if query.hasPrefix(":") {
+        if query.hasPrefix(":"), Ports.query(query) == nil {
             let found = EmojiIndex.search(String(query.dropFirst())).prefix(60).map(emojiItem)
             return [LauncherSection(id: "emoji", title: "Emoji", items: Array(found))].filter { !$0.items.isEmpty }
         }
@@ -292,7 +295,7 @@ final class LauncherModel {
         }
 
         if query.isEmpty {
-            let all = commands + apps + LauncherStore.shared.quicklinks.map { searchItem($0, "") }
+            let all = commands + apps + LauncherStore.shared.quicklinks.map { searchItem($0, "") } + ProjectStore.shared.projects.map(projectItem)
             let favorites = Favorites.ids.compactMap { id in all.first { $0.id == id } }
             sections.append(LauncherSection(id: "favorites", title: L("Favoriler", "Favourites"), items: favorites))
             if Prefs.bool(Prefs.aiAsk), let selectedText {
@@ -320,6 +323,12 @@ final class LauncherModel {
             aliased = hit.id
             sections.append(LauncherSection(id: "alias", title: L("Takma ad", "Alias"), items: [hit]))
         }
+
+        // ":3000", "jwt eyJ…", "1732636800", "sha256 text": developer answers.
+        let dev = devSections(query)
+        sections += dev
+        // A port, token, time or colour answered: asking AI or the web about it is noise.
+        let devAnswered = dev.contains { $0.id != "projects" }
 
         // Maths, money, units, time zones and dates first.
         let results = Calculator.evaluateAll(query)
@@ -379,6 +388,7 @@ final class LauncherModel {
                                             if item.id.hasPrefix("audio:") { return "ses çıkış output sound speaker hoparlör kulaklık headphones" }
                                             if item.id.hasPrefix("bt:") { return "bluetooth bt bağlan connect disconnect kes kulaklık" }
                                             if item.id.hasPrefix("script:") { return "script betik" }
+                                            if item.id.hasPrefix("cmd:port-") { return "port dev server sunucu durdur stop kill \(item.subtitle ?? "")" }
                                             return Self.keywords[item.id] ?? item.id.split(separator: ":").last.map(String.init) ?? ""
                                         }, limit: 8)))
 
@@ -406,7 +416,9 @@ final class LauncherModel {
 
         // Asking AI comes before the web. A question ("…?", or a sentence of four words or more) or a query nothing
         // else matched puts it first, so ↩ asks.
-        if Prefs.bool(Prefs.aiAsk) && query.count >= 3 {
+        // A token or key typed here is never sent to AI or a search engine.
+        let secret = devAnswered || SecretText.looksSecret(query)
+        if Prefs.bool(Prefs.aiAsk) && query.count >= 3 && !secret {
             let ask = LauncherSection(id: "ai", title: "AI", items: [askItem(query)])
             let words = query.split(whereSeparator: \.isWhitespace).count
             let question = query.hasSuffix("?") || words >= 4
@@ -414,7 +426,7 @@ final class LauncherModel {
         }
         // Nothing else fits: search the web for it.
         // Not when a quicklink search ("gh nabiz") is already there: both rows would share the id "search".
-        if let web = LauncherStore.shared.quicklinks.first, !sections.contains(where: { $0.id == "search" }) {
+        if !secret, let web = LauncherStore.shared.quicklinks.first, !sections.contains(where: { $0.id == "search" }) {
             sections.append(LauncherSection(id: "web", title: L("Web", "Web"), items: [searchItem(web, query)]))
         }
         if let aliased {
@@ -705,6 +717,7 @@ final class LauncherModel {
         "cmd:download": "download indir video youtube yt mp3 ses", "cmd:qr": "qr kod code", "cmd:mic": "mic mikrofon mute sessiz",
         "cmd:sleep-15": "sleep uyut uyku timer", "cmd:sleep-30": "sleep uyut uyku", "cmd:sleep-60": "sleep uyut uyku",
         "cmd:sleep-90": "sleep uyut uyku", "cmd:sleep-off": "sleep uyku iptal",
+        "cmd:menubar-hider": "menü çubuğu menu bar gizle hide simge icon sadeleştir tidy bartender ice",
     ]
 
     private func command(_ id: String, _ symbol: String, _ title: String, subtitle: String? = nil, accessory: String? = nil,
@@ -746,6 +759,22 @@ final class LauncherModel {
         }
         if CountdownTimer.shared.isRunning {
             items.append(command("timer-off", "timer", L("Zamanlayıcıyı durdur", "Stop the timer")) { CountdownTimer.shared.stop() })
+        }
+        items.append(command("menubar-hider", "menubar.arrow.up.rectangle",
+                             Prefs.bool(Prefs.menuBarHider) ? (MenuBarHider.shared.folded ? L("Gizli simgeleri göster", "Show hidden menu bar icons")
+                                                                                          : L("Menü çubuğu simgelerini gizle", "Hide menu bar icons"))
+                                                            : L("Menü çubuğunu sadeleştir", "Tidy the menu bar")) {
+            if Prefs.bool(Prefs.menuBarHider) { MenuBarHider.shared.toggle() } else { UserDefaults.standard.set(true, forKey: Prefs.menuBarHider) }
+        })
+        // Each dev server, by project and port: typing "port", "3000" or the project's name finds it.
+        for server in PortCache.shared.servers {
+            let pid = server.pid
+            items.append(command("port-\(pid)", "stop.circle", L("Sunucuyu durdur: \(server.projectName)", "Stop server: \(server.projectName)"),
+                                 subtitle: "\(server.tool) · port \(server.ports.map(String.init).joined(separator: ", "))",
+                                 accessory: L("Dev sunucusu", "Dev server"), remember: false) {
+                PortCache.shared.forget(pid: pid)
+                Task.detached(priority: .userInitiated) { DevServers.stop(pid) }
+            })
         }
         let pomodoro = Pomodoro.shared
         if pomodoro.isActive {
@@ -1125,6 +1154,7 @@ extension LauncherModel {
             self?.close()
             Monitor.panelActions.flash(message)
         }
+        list += devActions(for: item, group: main)
 
         if item.id.hasPrefix("app:") {
             let path = String(item.id.dropFirst(4))
@@ -1328,7 +1358,7 @@ extension LauncherModel {
 
         if item.remember && (item.id.hasPrefix("app:") || item.id.hasPrefix("cmd:") || item.id.hasPrefix("sys:") || item.id.hasPrefix("win:") || item.id.hasPrefix("layout") || item.id.hasPrefix("aicmd:")
                              || item.id.hasPrefix("tool:") || item.id.hasPrefix("link:") || item.id.hasPrefix("script:")
-                             || item.id.hasPrefix("shortcut:") || item.id.hasPrefix("audio:") || item.id.hasPrefix("bt:")) {
+                             || item.id.hasPrefix("shortcut:") || item.id.hasPrefix("audio:") || item.id.hasPrefix("bt:") || item.id.hasPrefix("proj:")) {
             let launcher = L("Başlatıcı", "Launcher")
             let binding = ItemBindings.shared.binding(item.id)
             let title = item.title

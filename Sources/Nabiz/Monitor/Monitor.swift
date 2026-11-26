@@ -35,12 +35,14 @@ enum Fix {
     case openSettings(URL?)
     case quitDocker
     case cleanRust
+    case openDeveloper
+    case push(String)
 
     /// Quitting and shutting down end something the user may still want, so the button says so in red.
     var isDestructive: Bool {
         switch self {
         case .shutdownSimulators, .quit, .quitDocker, .cleanRust: true
-        case .openClaude, .openStorage, .openSettings: false
+        case .openClaude, .openStorage, .openSettings, .openDeveloper, .push: false
         }
     }
 
@@ -51,7 +53,8 @@ enum Fix {
         case .quit(let group): L("\(group.name) kapatıldı", "Quit \(group.name)")
         case .quitDocker: L("Docker kapatılıyor", "Quitting Docker")
         case .cleanRust: nil
-        case .openClaude, .openStorage, .openSettings: nil
+        case .push: L("Terminal'de gönderiliyor", "Pushing in Terminal")
+        case .openClaude, .openStorage, .openSettings, .openDeveloper: nil
         }
     }
 
@@ -64,6 +67,8 @@ enum Fix {
         case .openStorage: L("Yönet", "Manage")
         case .openSettings: L("Aç", "Open")
         case .cleanRust: L("Temizle", "Clean")
+        case .openDeveloper: L("Göster", "Show")
+        case .push: L("Gönder", "Push")
         }
     }
 }
@@ -78,6 +83,8 @@ final class Monitor {
     private(set) var system: SystemSnapshot?
     private(set) var groups: [ProcessGroup] = []
     private(set) var simulators: [Simulator] = []
+    /// Dev servers listening on local ports, refreshed while the panel is open.
+    private(set) var devServers: [DevServer] = []
     private(set) var network: NetworkRate?
     private(set) var battery: BatteryState?
     private(set) var batteryHealth: BatteryHealth?
@@ -113,6 +120,8 @@ final class Monitor {
     @ObservationIgnored static var panelActions = PanelActions()
 
     init(autostart: Bool = true) {
+        // The login shell's PATH (for git, docker, brew), read once off the main thread.
+        Task.detached(priority: .utility) { _ = Shell.path }
         if autostart { start() }
     }
 
@@ -166,11 +175,27 @@ final class Monitor {
         if forceSimulators || (panelVisible && ticks % 3 == 0) || (!simulatorsRunning && !simulators.isEmpty) {
             await refreshSimulators()
         }
+        // Listening ports: a few milliseconds through libproc, so every tick while the panel is open.
+        if panelVisible || forceSimulators { await refreshDevServers() }
+        // Projects (git status) every 5 minutes in the background, for the "not pushed" suggestion; at most once a
+        // minute while the panel is open.
+        if ticks % 60 == 0 || panelVisible { ProjectStore.shared.refresh() }
+        if panelVisible && ticks % 5 == 0 { DockerStore.shared.refresh() }
+        if ticks % 3 == 0 { NotaryWatch.shared.check() }
+        // The developer leftovers' size, for the suggestion: in the background twice a day.
+        if ticks % 120 == 0 && AdviceKind.devCleanup.isOn { DevCleanupStore.shared.scanIfStale() }
         onUpdate?()
+    }
+
+    func refreshDevServers() async {
+        devServers = await Task.detached(priority: .utility) { DevServers.running() }.value
     }
 
     /// Two quick samples so per-app CPU has a delta right away.
     func refreshForPanel() async {
+        Brightness.shared.refresh()
+        ProjectStore.shared.refresh()
+        DockerStore.shared.refresh()
         await tick(forceSimulators: true)
         try? await Task.sleep(for: .milliseconds(600))
         await tick()
@@ -302,6 +327,38 @@ final class Monitor {
                                level: .info, fix: .openClaude))
         }
 
+        // Developer: commits sitting unpushed for a day, leftovers past 20 GB, a crowd of simulators, notarization.
+        if AdviceKind.unpushed.isOn {
+            let stale = ProjectStore.shared.projects.filter { $0.ahead > 0 && $0.upstream != nil
+                && ($0.lastActivity.map { Date().timeIntervalSince($0) > 86_400 } ?? false) }.sorted { $0.ahead > $1.ahead }
+            if let first = stale.first {
+                list.append(Advice(.unpushed, id: "unpushed:" + stale.map(\.name).joined(separator: ","),
+                                   title: stale.count == 1 ? L("\(first.displayName): \(first.ahead) commit gönderilmedi", "\(first.displayName): \(first.ahead) commits not pushed")
+                                                           : L("\(stale.count) projede gönderilmemiş commit", "Unpushed commits in \(stale.count) projects"),
+                                   detail: stale.count == 1 ? L("\(first.branch ?? "") · bu Mac'e bir şey olursa kaybolur", "\(first.branch ?? "") · lost if something happens to this Mac")
+                                                            : stale.prefix(3).map { "\($0.displayName) ↑\($0.ahead)" }.joined(separator: ", "),
+                                   level: .info, fix: stale.count == 1 ? .push(first.path) : nil))
+            }
+        }
+        let leftovers = DevCleanupStore.shared.lastTotal
+        if leftovers >= 20 << 30 {
+            list.append(Advice(.devCleanup, title: L("\(Format.bytes(leftovers)) geliştirici artığı", "\(Format.bytes(leftovers)) of developer leftovers"),
+                               detail: L("Worktree, simülatör, build ve paket önbellekleri", "Worktrees, simulators, builds and package caches"),
+                               level: .info, fix: .openDeveloper))
+        }
+        if simulators.count >= 3, !list.contains(where: { $0.kind == .memory }) {
+            let memory = groups.first { $0.kind == .simulators }?.memory ?? 0
+            list.append(Advice(.simulators, title: L("\(simulators.count) simülatör açık", "\(simulators.count) simulators running"),
+                               detail: memory > 0 ? L("\(Format.bytes(memory)) bellek · kullanmadıklarını kapat", "\(Format.bytes(memory)) of memory · shut the idle ones")
+                                                  : L("Kullanmadıklarını kapat", "Shut the idle ones"),
+                               level: .info, fix: .shutdownSimulators))
+        }
+        if let notary = NotaryWatch.shared.running {
+            list.append(Advice(.notarize, title: L("Apple notarize ediyor", "Apple is notarizing"),
+                               detail: L("\(Format.duration(Date().timeIntervalSince(notary.started))) · bitince bildirim gelir", "\(Format.duration(Date().timeIntervalSince(notary.started))) · you'll be notified"),
+                               level: .info))
+        }
+
         let rust = Toolbox.shared.rustSize
         if rust >= 10 << 30 {
             list.append(Advice(.rust, title: L("Rust önbelleği \(Format.bytes(rust))", "Rust caches: \(Format.bytes(rust))"),
@@ -349,6 +406,26 @@ final class Monitor {
             await Task.detached(priority: .userInitiated) { Simulators.shutdown(simulator.id) }.value
             stopping.remove(simulator.id)
             await tick(forceSimulators: true)
+        }
+    }
+
+    func stop(_ server: DevServer) {
+        let key = "port:\(server.pid)"
+        stopping.insert(key)
+        Task {
+            _ = await Task.detached(priority: .userInitiated) { DevServers.stop(server.pid) }.value
+            stopping.remove(key)
+            await refreshDevServers()
+        }
+    }
+
+    func stopAllDevServers() {
+        stopping.insert("ports")
+        let pids = devServers.map(\.pid)
+        Task {
+            await Task.detached(priority: .userInitiated) { for pid in pids { DevServers.stop(pid) } }.value
+            stopping.remove("ports")
+            await refreshDevServers()
         }
     }
 
@@ -433,6 +510,11 @@ final class Monitor {
             if let url { NSWorkspace.shared.open(url) }
         case .cleanRust:
             Toolbox.shared.cleanRust(actions: Monitor.panelActions)
+        case .openDeveloper:
+            Monitor.panelActions.close()
+            SettingsWindow.show(.developer)
+        case .push(let path):
+            TerminalLauncher.open(path, run: "git push", title: (path as NSString).lastPathComponent + " · push")
         case .quitDocker:
             NSRunningApplication.runningApplications(withBundleIdentifier: "com.docker.docker").forEach { $0.terminate() }
             Task {

@@ -17,6 +17,8 @@ struct AIMessage: Identifiable, Codable, Equatable, Sendable {
     var attachment: String?
     /// What the chip says ("notes.txt", "Pasted text"); the text's first line when nil.
     var attachmentName: String?
+    /// Attached images (file names in `AIImages.folder`).
+    var images: [String]?
     var thinking = ""
     /// Who answered and with which model ("claude-opus-5-5"); nil while unknown.
     var engine: AIEngine?
@@ -28,6 +30,8 @@ struct AIMessage: Identifiable, Codable, Equatable, Sendable {
     var duration: Double?
     /// Still coming in; never saved as true.
     var streaming = false
+    /// How full the chat was after this answer.
+    var usage: AIUsage?
 }
 
 /// A chat with one AI (you can switch it midway): its messages, the answer being written, and how it was asked.
@@ -51,6 +55,17 @@ final class AIConversation: Identifiable {
     var unread = false
     /// You named it yourself, so it isn't titled automatically.
     var titleEdited = false
+    /// Claude's own copy of this chat, and how many of its messages it holds; while they match, only the new
+    /// message goes to Claude (faster, cheaper, its cache reused).
+    var claudeSession: String?
+    var claudeCovered = 0
+    /// A long chat squeezed: what was said up to `summarizedID`, sent in place of those messages.
+    var summary: String?
+    var summarizedID: UUID?
+    private(set) var compacting = false
+    /// A side chat: the main chat it looks at (sent as background, never shown in the list or saved).
+    var sideContext: String?
+    var isSide: Bool { sideContext != nil }
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var target: (id: UUID, text: String)?
     @ObservationIgnored private var revealing: Task<Void, Never>?
@@ -77,6 +92,10 @@ final class AIConversation: Identifiable {
         var titleEdited: Bool?
         var folder: UUID?
         var unread: Bool?
+        var claudeSession: String?
+        var claudeCovered: Int?
+        var summary: String?
+        var summarizedID: UUID?
     }
 
     init(record: Record) {
@@ -91,6 +110,10 @@ final class AIConversation: Identifiable {
         titleEdited = record.titleEdited ?? false
         folder = record.folder
         unread = record.unread ?? false
+        claudeSession = record.claudeSession
+        claudeCovered = record.claudeCovered ?? 0
+        summary = record.summary
+        summarizedID = record.summarizedID
         messages = record.messages.map { message in
             var message = message
             if message.streaming {
@@ -103,19 +126,22 @@ final class AIConversation: Identifiable {
 
     var record: Record {
         Record(id: id, title: title, messages: messages, engine: engine, model: model, created: created, updated: updated,
-               pinned: pinned, archived: archived, titleEdited: titleEdited, folder: folder, unread: unread)
+               pinned: pinned, archived: archived, titleEdited: titleEdited, folder: folder, unread: unread,
+               claudeSession: claudeSession, claudeCovered: claudeCovered, summary: summary, summarizedID: summarizedID)
     }
 
     var lastAnswer: AIMessage? { messages.last { $0.role == .assistant } }
 
     // MARK: Asking
 
-    func send(_ text: String, attachment: String? = nil, prompt: String? = nil, attachmentName: String? = nil) {
+    func send(_ text: String, attachment: String? = nil, prompt: String? = nil, attachmentName: String? = nil, images: [String] = []) {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !isRunning, !text.isEmpty || attachment != nil else { return }
         if messages.isEmpty && !titleEdited { title = Self.title(text.isEmpty ? (attachmentName ?? "") : text, attachment: attachmentName == nil ? attachment : nil) }
-        messages.append(AIMessage(role: .user, text: text, prompt: prompt, attachment: attachment, attachmentName: attachmentName))
+        messages.append(AIMessage(role: .user, text: text, prompt: prompt, attachment: attachment, attachmentName: attachmentName,
+                                  images: images.isEmpty ? nil : images))
         answer()
+        AIChatStore.shared.scheduleSave()
     }
 
     /// Writes the last answer again, with the engine and model chosen now.
@@ -138,13 +164,48 @@ final class AIConversation: Identifiable {
         AIChatStore.shared.scheduleSave()
     }
 
-    /// Takes a message of yours back to edit it, like the apps: it and everything after it go, and its text is returned.
-    func takeBack(_ id: UUID) -> AIMessage? {
+    /// Takes a message of yours back to edit it, like the apps: it and everything after it leave the chat (returned, so
+    /// they can be put back if you change your mind).
+    func takeBack(_ id: UUID) -> [AIMessage]? {
         guard !isRunning, let index = messages.firstIndex(where: { $0.id == id }), messages[index].role == .user else { return nil }
-        let message = messages[index]
+        let removed = Array(messages[index...])
         messages.removeSubrange(index...)
+        return removed
+    }
+
+    /// A new chat with everything up to (and including) this message, to go another way from there.
+    func fork(at messageID: UUID) -> AIConversation? {
+        guard let index = messages.firstIndex(where: { $0.id == messageID }) else { return nil }
+        let keepsSummary = summarizedID.flatMap { id in messages.firstIndex { $0.id == id } }.map { $0 <= index } ?? false
+        let copied = messages[...index].map { message in
+            var message = message
+            message.id = UUID()
+            message.streaming = false
+            return message
+        }
+        let record = Record(id: UUID(), title: L("\(title) (dal)", "\(title) (branch)"), messages: Array(copied), engine: engine,
+                            model: model, created: Date(), updated: Date(), pinned: false, archived: false, titleEdited: true,
+                            folder: folder, unread: false)
+        let branch = AIConversation(record: record)
+        if keepsSummary, let id = summarizedID, let at = messages.firstIndex(where: { $0.id == id }) {
+            branch.summary = summary
+            branch.summarizedID = branch.messages[at].id
+        }
+        // Images are shared files; the branch gets its own copies so deleting one chat never breaks the other.
+        branch.messages = branch.messages.map { message in
+            var message = message
+            message.images = message.images?.compactMap { AIImages.copy($0) }
+            return message
+        }
+        AIChatStore.shared.touch(branch)
         AIChatStore.shared.scheduleSave()
-        return message
+        return branch
+    }
+
+    /// Puts back what `takeBack` took, when the edit is cancelled.
+    func putBack(_ removed: [AIMessage]) {
+        guard !isRunning else { return }
+        messages.append(contentsOf: removed)
     }
 
     /// The newest words in the chat, for a tooltip in the sidebar.
@@ -175,27 +236,115 @@ final class AIConversation: Identifiable {
         self.model = model
     }
 
+    /// What goes to the AI: after a summary, only the messages since.
+    var promptMessages: [AIMessage] {
+        guard let id = summarizedID, let index = messages.firstIndex(where: { $0.id == id }) else { return messages }
+        return Array(messages[(index + 1)...])
+    }
+
+    /// Background sent before the chat: the summary of its earlier part, or the main chat a side chat looks at.
+    var preface: String? {
+        if let sideContext {
+            return """
+                This is a side conversation next to a main chat. The main chat below is reference only: don't continue                 its task, answer the questions asked here (explanations, checks, alternatives).
+
+                \(sideContext)
+                """
+        }
+        return summary.map { "A summary of the earlier part of our conversation:\n\n\($0)" }
+    }
+
+    /// Squeezes a long chat: the AI writes a summary of everything so far, which then goes in place of those
+    /// messages (they stay on screen). Faster answers and more room in the model.
+    func compact() async {
+        guard !isRunning, !compacting, let last = messages.last, promptMessages.count >= 2 else { return }
+        compacting = true
+        defer { compacting = false }
+        let text = promptMessages.filter { $0.error == nil && !(AIAssistant.content(of: $0).isEmpty) }.map { message in
+            "<\(message.role == .user ? "user" : "assistant")>\n\(AIAssistant.content(of: message))\n</\(message.role == .user ? "user" : "assistant")>"
+        }.joined(separator: "\n\n")
+        let earlier = summary.map { "Summary of what came before:\n\($0)\n\n" } ?? ""
+        let levels = AIEngines.shared.efforts(for: engine, model: model)
+        let request = AIRequest(
+            engine: engine, model: model, effort: levels.contains { $0.id == "low" } ? "low" : "",
+            system: "You write faithful summaries of conversations so they can continue later without the full text.",
+            prompt: """
+                \(earlier)Summarize the conversation below so we can continue it in a new session. Keep every fact, decision,                 name, number, preference and open question, and any code or text we're still working on (quote it). Write in                 the conversation's language, as compact notes, under 500 words. Reply with the summary only.
+
+                <conversation>
+                \(String(text.suffix(150_000)))
+                </conversation>
+                """)
+        var written = ""
+        do {
+            for try await progress in AIRunner.stream(request) { written = progress.text }
+        } catch {
+            Monitor.panelActions.flash((error as? AIError)?.message ?? L("Özetlenemedi", "Couldn't summarize"))
+            return
+        }
+        let result = written.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !result.isEmpty else { return }
+        withAnimation(.easeOut(duration: 0.25)) {
+            summary = result
+            summarizedID = last.id
+        }
+        // Claude's own copy still holds everything; start a fresh one from the summary.
+        claudeSession = nil
+        claudeCovered = 0
+        AIChatStore.shared.scheduleSave()
+    }
+
+    /// How full the chat is now (the newest answer that says), for the meter by the model picker.
+    var usage: AIUsage? { messages.last { $0.role == .assistant && $0.usage != nil }?.usage }
+
     private func answer() {
         let answered = messages.filter { $0.role == .assistant && $0.error == nil && !$0.text.isEmpty }.count
-        let request = AIRequest(engine: engine, model: model, effort: AIEngines.shared.effectiveEffort(for: engine, model: model),
-                                system: AIAssistant.system(for: engine), prompt: AIAssistant.prompt(for: messages, engine: engine),
-                                chatID: id, latest: messages.last.map(AIAssistant.content(of:)) ?? "", answered: answered)
+        var request = AIRequest(engine: engine, model: model, effort: AIEngines.shared.effectiveEffort(for: engine, model: model),
+                                system: AIAssistant.system(for: engine),
+                                prompt: AIAssistant.prompt(for: promptMessages, engine: engine, preface: preface),
+                                chatID: id, latest: messages.last.map(AIAssistant.content(of:)) ?? "", answered: answered,
+                                images: engine.seesImages ? (messages.last?.images ?? []).map(AIImages.url) : [])
+        // Claude keeps the chat itself while it has exactly what's here; otherwise a new copy starts with the whole chat.
+        var sessionID: String?
+        if engine == .claude && AIChatStore.nativeSessions {
+            if let session = claudeSession, claudeCovered > 0, claudeCovered == messages.count - 1 {
+                request.session = session
+                request.resume = true
+                request.fallback = request.prompt
+                request.prompt = messages.last.map(AIAssistant.content(of:)) ?? request.prompt
+            } else {
+                request.session = UUID().uuidString.lowercased()
+            }
+            sessionID = request.session
+        }
+        claudeSession = nil
         let reply = AIMessage(role: .assistant, text: "", engine: engine, model: model.isEmpty ? nil : model, streaming: true)
         messages.append(reply)
         let id = reply.id
         isRunning = true
         updated = Date()
-        AIChatStore.shared.touch(self)
+        if !isSide { AIChatStore.shared.touch(self) }
         let started = Date()
         task = Task { [weak self] in
             var failure: String?
+            var saved = Date()
             do {
                 for try await progress in AIRunner.stream(request) {
                     guard let self else { return }
+                    // A long answer is saved as it comes, so quitting halfway keeps what was written.
+                    if Date().timeIntervalSince(saved) > 5 {
+                        saved = Date()
+                        AIChatStore.shared.scheduleSave()
+                    }
                     self.edit(id) { message in
                         message.thinking = progress.thinking
                         if let model = progress.model { message.model = model }
+                        if var usage = progress.usage {
+                            if usage.window == nil, request.engine == .codex { usage.window = AIEngines.codexWindow(request.model) }
+                            message.usage = usage
+                        }
                     }
+                    if let limit = progress.limit { AIChatStore.shared.liveLimits[request.engine] = limit }
                     if let actual = progress.model { AIEngines.shared.remember(actual, for: request.model, engine: request.engine) }
                     self.reveal(id, to: progress.text)
                 }
@@ -228,7 +377,17 @@ final class AIConversation: Identifiable {
             self.target = nil
             self.isRunning = false
             self.updated = Date()
-            if !cancelled, !AIChatStore.shared.isShowing(self.id) { self.unread = true }
+            // Claude now holds everything here, its answer included; a stopped or failed turn starts a new copy next time.
+            if let sessionID, !cancelled, failure == nil {
+                self.claudeSession = sessionID
+                self.claudeCovered = self.messages.count
+            }
+            if !cancelled, !self.isSide, !AIChatStore.shared.isShowing(self.id) {
+                self.unread = true
+                AINotifications.answered(self)
+            }
+            NotificationCenter.default.post(name: .aiAnswerFinished, object: self.id,
+                                            userInfo: ["stopped": cancelled, "failed": failure != nil])
             AIChatStore.shared.scheduleSave()
             if !cancelled, failure == nil { self.nameIfNeeded() }
         }
@@ -236,7 +395,7 @@ final class AIConversation: Identifiable {
 
     /// After the first answer, a short title like the apps give, written by Apple's on-device model (free, private).
     private func nameIfNeeded() {
-        guard !titleEdited, messages.filter({ $0.role == .assistant }).count == 1,
+        guard !titleEdited, messages.filter({ $0.role == .assistant && $0.error == nil && !$0.text.isEmpty }).count == 1,
               let question = messages.first(where: { $0.role == .user }), let answer = lastAnswer?.text else { return }
         let source = AIAssistant.content(of: question).prefix(600) + "\n\n" + answer.prefix(400)
         Task { [weak self] in
@@ -316,11 +475,12 @@ enum AIAssistant {
     }
 
     /// The CLIs keep no memory between runs, so the chat so far goes along (newest turns first, within a budget).
-    static func prompt(for messages: [AIMessage], engine: AIEngine) -> String {
+    static func prompt(for messages: [AIMessage], engine: AIEngine, preface: String? = nil) -> String {
         let turns = messages.filter { $0.role == .user || ($0.error == nil && !$0.text.isEmpty) }
         guard let last = turns.last, last.role == .user else { return "" }
         let earlier = turns.dropLast()
-        if earlier.isEmpty { return content(of: last) }
+        let background = preface.map { "<context>\n\($0)\n</context>\n\n" } ?? ""
+        if earlier.isEmpty { return background.isEmpty ? content(of: last) : background + "My message:\n\n" + content(of: last) }
         let budget = engine == .onDevice ? 5_000 : 80_000
         var blocks: [String] = []
         var used = 0
@@ -331,7 +491,7 @@ enum AIAssistant {
             blocks.insert(block, at: 0)
             used += block.count
         }
-        return """
+        return background + """
             Our conversation so far:
 
             \(blocks.joined(separator: "\n\n"))
@@ -393,6 +553,12 @@ final class AIChatStore {
     @ObservationIgnored private var loaded = false
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     static let limit = 200
+    /// What each AI last said about the plan's limit, for the warning over the message box.
+    var liveLimits: [AIEngine: AILiveLimit] = [:]
+    /// Claude keeps its own copy of each chat so only new messages go out (Settings → AI → Chat).
+    static var nativeSessions: Bool {
+        (persists || CommandLine.arguments.contains("--sessions")) && Prefs.bool(Prefs.aiClaudeSessions)
+    }
     /// Off for command-line checks, which shouldn't touch your saved chats.
     static var persists = true
 
@@ -404,13 +570,21 @@ final class AIChatStore {
     func loadIfNeeded() {
         guard !loaded else { return }
         loaded = true
-        guard Self.persists, Prefs.bool(Prefs.aiHistory), let sealed = try? Data(contentsOf: Self.file), let data = ClipVault.open(sealed) else { return }
-        if let saved = try? JSONDecoder().decode(Saved.self, from: data) {
-            folders = saved.folders + folders
-            conversations = saved.chats.map(AIConversation.init(record:)) + conversations
-        } else if let records = try? JSONDecoder().decode([AIConversation.Record].self, from: data) {
-            conversations = records.map(AIConversation.init(record:)) + conversations
+        guard Self.persists, Prefs.bool(Prefs.aiHistory), let sealed = try? Data(contentsOf: Self.file) else { return }
+        if let data = ClipVault.open(sealed) {
+            if let saved = try? JSONDecoder().decode(Saved.self, from: data) {
+                folders = saved.folders + folders
+                conversations = saved.chats.map(AIConversation.init(record:)) + conversations
+                return
+            } else if let records = try? JSONDecoder().decode([AIConversation.Record].self, from: data) {
+                conversations = records.map(AIConversation.init(record:)) + conversations
+                return
+            }
         }
+        // Couldn't open it (key unavailable, damaged): keep a copy aside so the next save never wipes your chats.
+        let backup = Self.file.appendingPathExtension("bak")
+        try? FileManager.default.removeItem(at: backup)
+        try? FileManager.default.moveItem(at: Self.file, to: backup)
     }
 
     func conversation(_ id: UUID?) -> AIConversation? {
@@ -423,7 +597,13 @@ final class AIChatStore {
         loadIfNeeded()
         conversations.removeAll { $0 === conversation }
         conversations.insert(conversation, at: 0)
-        if conversations.count > Self.limit { conversations.removeLast(conversations.count - Self.limit) }
+        // Over the limit, the oldest plain chats go first: never a pinned one, one in a folder, or one still writing.
+        while conversations.count > Self.limit,
+              let oldest = conversations.lastIndex(where: { $0.archived && !$0.pinned && !$0.isRunning })
+                ?? conversations.lastIndex(where: { !$0.pinned && $0.folder == nil && !$0.isRunning }) {
+            AIImages.remove(conversations[oldest].messages.flatMap { $0.images ?? [] })
+            conversations.remove(at: oldest)
+        }
     }
 
     /// Pinned first, then by last use; archived ones apart.
@@ -444,6 +624,7 @@ final class AIChatStore {
 
     func delete(_ conversation: AIConversation) {
         conversation.stop()
+        AIImages.remove(conversation.messages.flatMap { $0.images ?? [] })
         conversations.removeAll { $0 === conversation }
         scheduleSave()
     }
@@ -490,6 +671,7 @@ final class AIChatStore {
         conversations.removeAll()
         folders.removeAll()
         try? FileManager.default.removeItem(at: Self.file)
+        AIImages.removeAll()
     }
 
     func scheduleSave() {
@@ -501,19 +683,34 @@ final class AIChatStore {
         }
     }
 
-    private func save() {
+    /// On quit: stops answers (their programs end with Nabız) and writes now, without waiting.
+    func saveNow() {
+        conversations.filter(\.isRunning).forEach { $0.stop() }
+        saveTask?.cancel()
+        save(waiting: true)
+    }
+
+    private func save(waiting: Bool = false) {
         guard Self.persists else { return }
         guard Prefs.bool(Prefs.aiHistory) else {
             try? FileManager.default.removeItem(at: Self.file)
             return
         }
+        // Never write before the saved chats were read, or they'd be replaced.
+        guard loaded else { return }
         let saved = Saved(folders: folders, chats: conversations.filter { !$0.messages.isEmpty }.map(\.record))
         guard let data = try? JSONEncoder().encode(saved), let sealed = ClipVault.seal(data) else { return }
         let file = Self.file
-        Task.detached(priority: .utility) {
-            try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try? sealed.write(to: file, options: [.atomic, .completeFileProtection])
+        if waiting {
+            Self.write(sealed, to: file)
+        } else {
+            Task.detached(priority: .utility) { Self.write(sealed, to: file) }
         }
+    }
+
+    nonisolated private static func write(_ sealed: Data, to file: URL) {
+        try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? sealed.write(to: file, options: [.atomic, .completeFileProtection])
     }
 
     /// "Today", "Yesterday", "Previous 7 days", "Previous 30 days", then the month ("October 2026"), for the sidebar.

@@ -2,6 +2,44 @@
 
 ## Unreleased
 
+- **Made for developers** (Settings → Developer):
+  - **Ports:** type `:3000` (or `port 3000`) in the launcher to see who holds it — your server with its project, Docker,
+    AirPlay Receiver explained — and stop it or open it; `port` lists every listening port. Typing a port number
+    finds the dev server that holds it.
+  - **Open a dev server on your phone:** the phone button on a dev server shows a QR code of its network address, and
+    says when the server only listens on this Mac (with the flag that opens it: `--host`, `-H 0.0.0.0`…).
+  - **Projects** in the panel and the launcher: every git repository in ~/Developer with its branch, changes and
+    unpushed commits. Open it in Cursor / VS Code / Xcode or Terminal, start Claude Code (or Codex) there, run its
+    package.json scripts (`dev` reuses a server that's already running), open GitHub or its pull requests. Projects
+    take shortcuts and aliases like any launcher row. A suggestion when commits sit unpushed for a day.
+  - **Docker** in the panel: one row per compose project with its ports; start, stop, restart, logs, a shell, and
+    projects started from a folder that no longer exists are marked.
+  - **Developer clean-up:** finished agent worktrees, Xcode build folders inside projects, extra iOS runtimes,
+    DerivedData, Xcode Previews, never-used simulators, node_modules of idle projects, the pnpm store, npm and
+    Homebrew caches, old Playwright browsers, unused Docker volumes, Claude history of deleted projects and merged
+    branches — each with its size, cleaned after asking. Worktrees with changes or in use, unmerged branches and
+    your code are never touched. The safe ones can run weekly from Schedules; a suggestion past 20 GB.
+  - **Simulators:** a menu on each booted simulator for a 9:41 status bar, dark/light mode, opening the copied link,
+    a screenshot into the markup editor, recording, and per app a test push, its data folder and resetting its
+    permissions. A suggestion when three or more run at once.
+  - **Launcher answers:** decode a JWT (never sent to AI or the web), Unix time ↔ date (`now`), `sha256 …` / `md5 …`,
+    `uuid` / `ulid` / `nanoid`, `case …` (camelCase, snake_case…), colours as HEX / RGB / HSL / SwiftUI / UIKit /
+    Compose, cron explained, `http 429`, `base64 …`, `url …`, `brew` (upgrade, outdated, cleanup in Terminal).
+    Copied JWTs, Unix times and names get matching changes in ⌘K.
+  - **Notarization:** while `notarytool submit` runs it shows in the panel, and Apple's answer arrives as a
+    notification — no polling of Apple in between.
+  - **MCP:** `port_info`, `projects` and `docker_containers`, so AI apps pick a free port and reuse what runs.
+- **Dev servers in the panel:** every server you started from a project (vite, next, wrangler, `python -m
+  http.server`…) shows with its project, ports and how long it has run; hover to open it in the browser, reveal its
+  folder or stop it (with the `pnpm dev` wrapper that only ran it). A project running two servers is marked, since
+  one is usually forgotten. The launcher can stop them by name, and AI apps get `dev_servers` and `stop_dev_server`
+  over MCP, so they can reuse a running server instead of starting a second one.
+- **Hide crowded menu bar icons** (Settings → Menu Bar, off until turned on): an arrow and a thin line sit left of
+  Nabız; ⌘-drag the icons you don't need left of the line and the arrow folds them away, bringing them back with a
+  click and hiding them again after a few seconds.
+- **External display brightness:** a Displays section in the panel with a slider for each display (DDC/CI for
+  other brands, the system's own for Apple displays), and optionally the keyboard's brightness keys work on the
+  external display under the pointer, with an on-screen level (Settings → Shortcuts).
 - **Screen recording, Screen Studio style** (⌃⌥R, Settings → Screenshots & Recording): a bar to record the whole
   screen, a window or an area, with the Mac's sound and (macOS 15) the microphone; 3-2-1 countdown, a red dot and the
   time in the menu bar to stop. The pointer is recorded apart from the picture, so the editor draws it smooth and
@@ -56,6 +94,19 @@
   that shows where it matched; one aligned top bar (also in Settings). A chat window like the apps (history, Markdown, code blocks with copy, tables, model and thinking
   pickers, write again with another AI), quick questions in the launcher (`?` or ⌃⌥A) and ready-made tasks for selected
   or copied text. Each AI keeps its own look while it thinks; chats are kept encrypted.
+  A question rail in place of the scroll bar (hover for the list, ⌥⌘↑/↓), find in chat (⌘F), images (Claude and
+  Codex see them; the others get the text read from them on this Mac), screenshots, PDFs, a draft per chat, edits
+  you can cancel, sending while it writes, ⇧⌘C copy the last answer, ⇧⌘⌫ delete the chat. Chats are saved while
+  answers come in and on quit; a cut-off answer says so.
+  Claude remembers each chat itself, so only your new message goes out (faster, lighter on your limit; it can be
+  turned off). A ring by the model shows how full the chat is; a banner warns when the plan's limit is close or used
+  up, with another AI one click away, and the model menu shows the plan's limits. Messages sent while it writes wait
+  in a queue (send now, edit, remove); "New chat from here" branches from any answer; a notification when an
+  answer arrives while you're elsewhere; a live timer while it works, times on messages, a mark on chats that
+  failed, ⌘1…9 to switch chats.
+  Side chats (⌥⌘S) ask on the side with the main chat as background and can add an answer back; quote what you
+  selected (⇧⌘' or the quote button); a grey next-message suggestion from Apple's on-device model (⇥ takes it);
+  "Summarize and continue" squeezes a long chat into a summary that goes in place of the old messages.
 - **Your own shortcut or alias for any app or command:** in the launcher press ⌘K on a row → "Set a shortcut…"
   (works from any app, e.g. ⌥S for Safari) or "Set an alias…" (type "ss" and that row comes first). Listed and
   removable in Settings → Launcher.

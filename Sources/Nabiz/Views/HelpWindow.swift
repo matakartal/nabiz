@@ -184,6 +184,8 @@ struct HelpView: View {
                                                  "Type a question in the launcher, or start with ?: AI answers. \(HotKey.label(.ai)) takes the selected text too."))
                     tip("mic", L("Dikte: kısayola bas, konuş, yine bas; söylediklerin imlecin olduğu yere yazılır (Ayarlar → AI).",
                                  "Dictation: press the shortcut, speak, press again; your words are typed at the cursor (Settings → AI)."))
+                    tip("text.magnifyingglass", L("AI sohbetinde: ⌘F sohbette ara, ⌥⌘↑/↓ sorular arasında gez, ⇧⌘C son cevabı kopyala, ⇧⌘⌫ sohbeti sil, ⌘1…9 sohbetler arasında geç. Cevap yazılırken yazdığın mesaj sıraya girer; bir cevabın altındaki dal simgesi oradan yeni sohbet açar. ⌥⌘S yan sohbet açar, ⇧⌘' seçtiğin kısmı alıntılar, ⇥ gri öneriyi alır; uzun sohbeti ⋯ → Özetle ve sürdür ile hafiflet. Görsel ve PDF de ekleyebilirsin.",
+                                                 "In AI chat: ⌘F find in chat, ⌥⌘↑/↓ move between questions, ⇧⌘C copy the last answer, ⇧⌘⌫ delete the chat, ⌘1…9 switch chats. What you send while it writes waits in a queue; the branch icon under an answer starts a new chat from there. ⌥⌘S opens a side chat, ⇧⌘' quotes what you selected, ⇥ takes the grey suggestion; lighten a long chat with ⋯ → Summarize and continue. Images and PDFs can be attached too."))
                     tip("calendar", L("Takvimi aç: bugünkü toplantılar panelde, tek tıkla katıl (Ayarlar → Takvim).",
                                       "Turn on the calendar: today's meetings in the panel, one click to join (Settings → Calendar)."))
                     tip("rectangle.split.2x1", L("Kendi pencere düzenlerini kur ve kısayol ver (Ayarlar → Pencereler).",
@@ -328,6 +330,8 @@ struct HelpView: View {
             example(commands, "kilitle", L("ekranı kilitle", "lock the screen")), example(commands, "pomodoro", L("odak bloğu", "focus block")),
             example(commands, "sol yarı", L("pencere yerleşimi", "window layout")), example(commands, "25 dk", L("zamanlayıcı", "timer")),
             example(commands, "30 dk sonra uyut", L("uyku zamanlayıcı", "sleep timer")), example(commands, "ekran görüntüsü", L("ekran al", "screenshot")),
+            example(commands, L("sunucuyu durdur", "stop server"), L("açık dev sunucusunu kapat", "stop a running dev server")),
+            example(commands, L("menü çubuğu", "menu bar"), L("kalabalık simgeleri gizle", "hide crowded icons")),
             example(find, "g nabız", L("Google", "Google")), example(find, "gh swift", "GitHub"), example(find, "/rapor", L("dosya", "files")),
             example(find, ":ateş", "emoji"), example(find, "safari", L("uygulama", "app")),
             example("AI", L("? bu hata ne demek", "? what does this error mean"), L("soru sor", "ask a question")),
@@ -351,6 +355,7 @@ struct HelpView: View {
             key(L("AI sohbetinde", "In an AI chat"), "esc", L("Cevabı durdur", "Stop the answer")),
             key(anywhere, "⌃⌥← → ↑ ↓", L("Pencereyi yarıya yerleştir (Ayarlar → Pencereler)", "Snap the window to a half (Settings → Windows)")),
             key(anywhere, "⌃⌥↩", L("Pencereyi ekranı kaplayacak kadar büyüt", "Maximize the window")),
+            key(anywhere, "🔅 🔆", L("Fare hangi harici ekrandaysa onun parlaklığı (Ayarlar → Kısayollar)", "The brightness of the external display under the pointer (Settings → Shortcuts)")),
             key(inLauncher, "↑ ↓", L("Seç", "Pick")), key(inLauncher, "↩", L("Çalıştır, aç ya da yapıştır", "Run, open or paste")),
             key(inLauncher, "⌘↩", L("İkinci eylem (kopyala, Finder'da göster…)", "Second action (copy, show in Finder…)")),
             key(inLauncher, "⌘K", L("Satırın tüm eylemleri", "Every action for the row")), key(inLauncher, "⇧⌘F", L("Favorilere ekle", "Add to favourites")),

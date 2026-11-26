@@ -67,6 +67,10 @@ struct PanelContent: View {
     @AppStorage(Prefs.showSystem) private var showSystem = true
     @AppStorage(Prefs.showAdvice) private var showAdvice = true
     @AppStorage(Prefs.showSimulators) private var showSimulators = true
+    @AppStorage(Prefs.showPorts) private var showPorts = true
+    @AppStorage(Prefs.showProjects) private var showProjects = true
+    @AppStorage(Prefs.showDocker) private var showDocker = true
+    @AppStorage(Prefs.showDisplays) private var showDisplays = true
     @AppStorage(Prefs.showApps) private var showMemory = true
     @AppStorage(Prefs.showCPUApps) private var showCPU = true
     @AppStorage(Prefs.showCurrency) private var showCurrency = true
@@ -127,6 +131,29 @@ struct PanelContent: View {
                 CollapsibleSection(.simulators, summary: L("\(monitor.simulators.count) açık", "\(monitor.simulators.count) running")) {
                     SimulatorSection(monitor: monitor)
                 }
+            }
+        case .ports:
+            if showPorts && !monitor.devServers.isEmpty {
+                let servers = monitor.devServers
+                CollapsibleSection(.ports, summary: servers.count == 1 ? servers[0].portsText : L("\(servers.count) açık", "\(servers.count) running"),
+                                   summaryColor: DevServers.duplicateProjects(servers).isEmpty ? Theme.textMuted : Theme.warning.mark) {
+                    DevServerSection(monitor: monitor)
+                }
+            }
+        case .projects:
+            if showProjects && !ProjectStore.shared.projects.isEmpty {
+                CollapsibleSection(.projects, summary: ProjectSection.summary,
+                                   summaryColor: ProjectStore.shared.projects.contains { $0.ahead > 0 } ? Theme.warning.mark : Theme.textMuted) {
+                    ProjectSection()
+                }
+            }
+        case .docker:
+            if showDocker && !DockerStore.shared.containers.isEmpty {
+                CollapsibleSection(.docker, summary: DockerStore.shared.summary) { DockerSection() }
+            }
+        case .displays:
+            if showDisplays && !Brightness.shared.displays.isEmpty {
+                CollapsibleSection(.displays, summary: Brightness.shared.summary) { DisplaySection() }
             }
         case .ai:
             if showAI {
@@ -330,15 +357,120 @@ private struct SimulatorSection: View {
                 if busy {
                     ProgressView().controlSize(.mini)
                 } else {
-                    Value(L("Kapat", "Shut down"), color: hovering ? Theme.text : Theme.textMuted)
+                    HStack(spacing: Theme.Spacing.m) {
+                        if hovering && simulator.runtime != "Android" { SimulatorMenu(simulator: simulator) }
+                        if SimTools.shared.recording?.udid == simulator.id {
+                            Image(systemName: "record.circle").foregroundStyle(Theme.danger)
+                        }
+                        Value(L("Kapat", "Shut down"), color: hovering ? Theme.text : Theme.textMuted)
+                    }
                 }
             }
+            .task { if simulator.runtime != "Android" { SimTools.shared.loadApps(simulator.id) } }
         }
         PanelRow(icon: .symbol("xmark.circle"), title: L("Hepsini kapat", "Shut down all"),
                  action: monitor.stopping.contains("all") ? nil : {
                      monitor.shutdownAllSimulators()
                      flash(L("Simülatörler kapatılıyor", "Shutting down simulators"))
                  }) { _ in EmptyView() }
+    }
+}
+
+/// Dev servers: the project and its ports normally; open, reveal and stop while hovered.
+private struct DevServerSection: View {
+    let monitor: Monitor
+    @Environment(\.flash) private var flash
+
+    var body: some View {
+        let servers = monitor.devServers
+        let duplicates = DevServers.duplicateProjects(servers)
+        ForEach(servers) { server in
+            let busy = monitor.stopping.contains("port:\(server.pid)") || monitor.stopping.contains("ports")
+            let twice = duplicates.contains(server.project)
+            PanelRow(icon: .symbol("chevron.left.forwardslash.chevron.right"), title: server.projectName,
+                     titleColor: twice ? Theme.warning.mark : nil, hoverable: !busy) { hovering in
+                if busy {
+                    ProgressView().controlSize(.mini)
+                } else if hovering {
+                    HStack(spacing: Theme.Spacing.m) {
+                        if let url = server.url {
+                            InlineButton(L("Aç", "Open")) { NSWorkspace.shared.open(url) }
+                        }
+                        Button { PhoneQR.show(server) } label: {
+                            Image(systemName: "iphone").font(Theme.body).foregroundStyle(Palette.green.mark)
+                        }
+                        .buttonStyle(.plain)
+                        .help(L("Telefonda aç (QR)", "Open on a phone (QR)"))
+                        InlineButton(L("Göster", "Reveal")) {
+                            NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: server.folder)])
+                        }
+                        InlineButton(L("Durdur", "Stop"), role: .destructive) {
+                            monitor.stop(server)
+                            flash(L("\(server.projectName) durduruldu", "Stopped \(server.projectName)"))
+                        }
+                    }
+                } else {
+                    Value(server.portsText)
+                }
+            }
+            .help(twice ? L("Bu projede birden fazla sunucu açık; biri büyük ihtimalle unutulmuş.",
+                            "More than one server is running in this project; one is probably forgotten.") + "\n" + subtitle(server)
+                  : subtitle(server))
+        }
+        if servers.count > 1 {
+            PanelRow(icon: .symbol("xmark.circle"), title: L("Hepsini durdur", "Stop all"),
+                     action: monitor.stopping.contains("ports") ? nil : {
+                         monitor.stopAllDevServers()
+                         flash(L("Sunucular durduruluyor", "Stopping servers"))
+                     }) { _ in EmptyView() }
+        }
+    }
+
+    /// The tooltip: "vite · apps/web · 2 sa 5 dk"; one line in the panel, like every other row.
+    private func subtitle(_ server: DevServer) -> String {
+        var parts = [server.tool]
+        if let sub = server.subfolder { parts.append(sub) }
+        if let started = server.started { parts.append(Format.duration(Date().timeIntervalSince(started))) }
+        return parts.joined(separator: " · ")
+    }
+}
+
+/// External displays' brightness, one slider each, on the menu grid.
+private struct DisplaySection: View {
+    var body: some View {
+        ForEach(Brightness.shared.displays) { display in
+            BrightnessRow(display: display)
+        }
+    }
+}
+
+private struct BrightnessRow: View {
+    let display: Brightness.Display
+    @State private var value: Double = 0
+    @State private var editing = false
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Image(systemName: "sun.max").font(Theme.body).foregroundStyle(Theme.textMuted)
+                .frame(width: Theme.menuIcon, height: Theme.menuIcon)
+                .frame(width: Theme.menuTextInset - Theme.menuInset, alignment: .leading)
+            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                HStack {
+                    Text(verbatim: display.name).font(Theme.body).foregroundStyle(Theme.text).lineLimit(1)
+                    Spacer(minLength: Theme.Spacing.s)
+                    Value(Format.percent(value))
+                }
+                Slider(value: $value, in: 0...1) { editing = $0 }
+                    .controlSize(.mini)
+                    .onChange(of: value) { if editing { Brightness.shared.set(value, on: display.id) } }
+            }
+        }
+        .padding(.horizontal, Theme.menuInset)
+        .padding(.vertical, Theme.Spacing.xs)
+        .onAppear { value = display.brightness }
+        .onChange(of: display.brightness) { if !editing { value = display.brightness } }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(L("\(display.name) parlaklığı", "\(display.name) brightness"))
     }
 }
 
@@ -944,17 +1076,20 @@ struct PanelRow<Trailing: View>: View {
                     .frame(width: Theme.menuIcon, height: Theme.menuIcon)
                     .frame(width: Theme.menuTextInset - Theme.menuInset, alignment: .leading)
             }
-            VStack(alignment: .leading, spacing: 0) {
+            // One line for every row: the subtitle follows the title, muted, and truncates first.
+            HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.s) {
                 Text(verbatim: title).font(Theme.body).foregroundStyle(titleColor ?? Theme.text).lineLimit(1)
-                if let subtitle {
-                    Text(verbatim: subtitle).font(Theme.small).foregroundStyle(Theme.textMuted).lineLimit(1)
+                    .layoutPriority(1)
+                if let subtitle, !subtitle.isEmpty {
+                    Text(verbatim: subtitle).font(Theme.small).foregroundStyle(Theme.textMuted)
+                        .lineLimit(1).truncationMode(.tail)
+                        .help(subtitle)
                 }
             }
             Spacer(minLength: Theme.Spacing.s)
             trailing(hovering && interactive)
         }
         .padding(.horizontal, Theme.menuInset - Theme.menuHighlightInset)
-        .padding(.vertical, subtitle == nil ? 0 : Theme.Spacing.xs)
         .frame(minHeight: Theme.menuRow)
         .background(hovering && interactive ? Theme.hover : .clear,
                     in: RoundedRectangle(cornerRadius: Theme.fieldRadius, style: .continuous))

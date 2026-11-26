@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import PDFKit
 import UniformTypeIdentifiers
 
 // MARK: - Window
@@ -58,16 +59,236 @@ struct AIAttachment: Identifiable, Equatable {
     var name: String
     var text: String
     var symbol = "doc.plaintext"
+    /// An image's file name in `AIImages.folder`; `text` is then what was read from it.
+    var image: String?
 }
 
 @MainActor
 @Observable
 final class AIChatState {
     var selection: UUID? {
-        didSet { if let chat = conversation, chat.unread { chat.unread = false; AIChatStore.shared.scheduleSave() } }
+        didSet {
+            guard selection != oldValue else { return }
+            // Leaving a chat mid-edit puts its messages back; each chat keeps its own half-written message.
+            cancelEdit()
+            finding = false
+            sideDraft = ""
+            drafts[oldValue] = Draft(text: draft, attachments: attachments)
+            let next = drafts.removeValue(forKey: selection) ?? Draft()
+            draft = next.text
+            attachments = next.attachments
+            if let chat = conversation, chat.unread { chat.unread = false; AIChatStore.shared.scheduleSave() }
+            if let selection { AINotifications.clear(selection) }
+        }
+    }
+    /// Messages written while an answer was still coming, sent one by one as each answer finishes.
+    var queued: [UUID: [Queued]] = [:]
+    @ObservationIgnored private var finished: NSObjectProtocol?
+
+    struct Queued: Identifiable, Equatable {
+        let id = UUID()
+        var text: String
+        var attachment: String?
+        var attachmentName: String?
+        var images: [String] = []
+    }
+
+    init() {
+        finished = NotificationCenter.default.addObserver(forName: .aiAnswerFinished, object: nil, queue: .main) { [weak self] note in
+            guard let id = note.object as? UUID else { return }
+            let paused = (note.userInfo?["stopped"] as? Bool ?? false) || (note.userInfo?["failed"] as? Bool ?? false)
+            MainActor.assumeIsolated {
+                guard !paused, let self else { return }
+                if self.queued[id]?.isEmpty ?? true { self.suggestNext(for: id) }
+                self.sendQueued(in: id)
+            }
+        }
+    }
+
+    /// The next waiting message goes out (after a stop or an error the queue waits for you).
+    func sendQueued(in chat: UUID) {
+        guard var list = queued[chat], !list.isEmpty, let conversation = AIChatStore.shared.conversation(chat),
+              !conversation.isRunning else { return }
+        let next = list.removeFirst()
+        queued[chat] = list.isEmpty ? nil : list
+        conversation.send(next.text, attachment: next.attachment, attachmentName: next.attachmentName, images: next.images)
+    }
+
+    /// Stops the answer being written and sends this waiting message now.
+    func sendNow(_ item: Queued) {
+        guard let conversation, var list = queued[conversation.id], let index = list.firstIndex(of: item) else { return }
+        list.remove(at: index)
+        list.insert(item, at: 0)
+        queued[conversation.id] = list
+        if conversation.isRunning { conversation.stop() } else { sendQueued(in: conversation.id) }
+        // A stop pauses the queue, so this one goes out by hand once the answer has ended.
+        Task { @MainActor in
+            for _ in 0..<100 where conversation.isRunning { try? await Task.sleep(for: .milliseconds(30)) }
+            sendQueued(in: conversation.id)
+        }
+    }
+
+    /// Back into the box to change it.
+    func editQueued(_ item: Queued) {
+        guard let conversation else { return }
+        queued[conversation.id]?.removeAll { $0 == item }
+        if queued[conversation.id]?.isEmpty == true { queued[conversation.id] = nil }
+        draft = item.text
+        focusComposer += 1
+    }
+
+    func removeQueued(_ item: Queued) {
+        guard let conversation else { return }
+        queued[conversation.id]?.removeAll { $0 == item }
+        if queued[conversation.id]?.isEmpty == true { queued[conversation.id] = nil }
+        AIImages.remove(item.images)
+    }
+
+    /// The grey "what you might say next" in the empty box, by chat (Apple's on-device model writes it; Tab takes it).
+    var suggestions: [UUID: String] = [:]
+
+    func suggestNext(for chat: UUID) {
+        guard Prefs.bool(Prefs.aiSuggest), let conversation = AIChatStore.shared.conversation(chat),
+              let answer = conversation.lastAnswer, answer.error == nil, !answer.text.isEmpty,
+              let question = conversation.lastQuestion else { return }
+        Task { @MainActor in
+            guard let next = await OnDeviceAI.suggestion(question: AIAssistant.content(of: question), answer: answer.text),
+                  conversation.lastAnswer?.id == answer.id else { return }
+            suggestions[chat] = next
+        }
+    }
+
+    /// Side chats, one per main chat: questions on the side that see the main chat but don't go in it.
+    var sideChats: [UUID: AIConversation] = [:]
+    var sideOpen = false
+    var sideDraft = ""
+
+    var side: AIConversation? { selection.flatMap { sideChats[$0] } }
+
+    func toggleSide() {
+        guard conversation != nil else { return }
+        withAnimation(.easeOut(duration: 0.2)) { sideOpen.toggle() }
+    }
+
+    func sendSide() {
+        let text = sideDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, let main = conversation else { return }
+        let chat: AIConversation
+        if let existing = sideChats[main.id] {
+            guard !existing.isRunning else { return }
+            chat = existing
+        } else {
+            chat = AIConversation(engine: main.engine, model: main.model)
+            sideChats[main.id] = chat
+        }
+        // The main chat as it is now, each time (it may have moved on).
+        chat.sideContext = Self.background(of: main)
+        sideDraft = ""
+        chat.send(text)
+    }
+
+    func resetSide() {
+        guard let id = selection else { return }
+        sideChats[id]?.stop()
+        sideChats[id] = nil
+    }
+
+    /// The main chat for a side chat: its summary and its newest messages, within a budget.
+    static func background(of chat: AIConversation) -> String {
+        var blocks: [String] = []
+        var used = 0
+        for message in chat.promptMessages.reversed() where message.error == nil && !message.text.isEmpty {
+            let tag = message.role == .user ? "user" : "assistant"
+            let block = "<\(tag)>\n\(AIAssistant.content(of: message))\n</\(tag)>"
+            if used + block.count > 40_000 { break }
+            blocks.insert(block, at: 0)
+            used += block.count
+        }
+        let summary = chat.summary.map { "<summary_of_earlier_part>\n\($0)\n</summary_of_earlier_part>\n\n" } ?? ""
+        return "<main_chat title=\"\(chat.title)\">\n\(summary)\(blocks.joined(separator: "\n\n"))\n</main_chat>"
+    }
+
+    /// Quotes text into the box (as a Markdown quote), to ask about it.
+    func quote(_ text: String) {
+        let quoted = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(separator: "\n", omittingEmptySubsequences: false).map { "> " + $0 }.joined(separator: "\n")
+        guard !quoted.isEmpty else { return }
+        draft = (draft.isEmpty ? "" : draft.trimmingCharacters(in: .newlines) + "\n\n") + quoted + "\n\n"
+        focusComposer += 1
+    }
+
+    /// ⇧⌘' or the quote button: what you selected in the chat; the whole answer when nothing is selected.
+    func quoteSelection(fallback: String? = nil) {
+        if let selected = TranscriptSelection.read(), !selected.isEmpty { quote(selected) } else if let fallback { quote(fallback) }
+    }
+
+    /// ⌘1…⌘9: the chats in the sidebar's order (pinned first).
+    func jump(to number: Int) {
+        let store = AIChatStore.shared
+        let list = store.active.filter(\.pinned) + store.active.filter { !$0.pinned }
+        guard list.indices.contains(number - 1) else { return }
+        select(list[number - 1])
+    }
+
+    /// A new chat from this point of the open one.
+    func fork(at message: AIMessage) {
+        guard let conversation, let branch = conversation.fork(at: message.id) else { return }
+        select(branch)
     }
     var draft = ""
     var attachments: [AIAttachment] = []
+    /// What you'd written in other chats (nil: the new chat).
+    private var drafts: [UUID?: Draft] = [:]
+    /// A message of yours being edited: what left the chat, to put back if you cancel.
+    var editing: (chat: UUID, removed: [AIMessage], draft: Draft)?
+    /// Shows the drop outline while a file is dragged over the window.
+    var dropping = false
+    /// Find in the open chat (⌘F): the words, the messages that have them, and the one shown.
+    var finding = false {
+        didSet { if !finding { findQuery = ""; findMatches = []; findIndex = 0 } }
+    }
+    var findQuery = ""
+    var findMatches: [UUID] = []
+    var findIndex = 0
+    /// Bumped to put the cursor in the find field.
+    var focusFind = 0
+
+    var findTarget: UUID? { finding && findMatches.indices.contains(findIndex) ? findMatches[findIndex] : nil }
+
+    func startFind() {
+        finding = true
+        focusFind += 1
+    }
+
+    /// Looks again (new words, or new messages); starts at the newest match, since you're usually at the bottom.
+    func updateFind() {
+        let query = findQuery.trimmingCharacters(in: .whitespaces)
+        guard let conversation, !query.isEmpty else { findMatches = []; findIndex = 0; return }
+        let options: String.CompareOptions = [.caseInsensitive, .diacriticInsensitive]
+        findMatches = conversation.messages.filter { message in
+            message.text.range(of: query, options: options) != nil || message.attachment?.range(of: query, options: options) != nil
+        }.map(\.id)
+        findIndex = max(0, findMatches.count - 1)
+    }
+
+    /// -1: the match above, 1: the one below (wrapping around).
+    func findStep(_ by: Int) {
+        guard !findMatches.isEmpty else { return }
+        findIndex = (findIndex + by + findMatches.count) % findMatches.count
+    }
+
+    /// ⌘⇧C: the newest answer to the clipboard.
+    func copyLastAnswer() {
+        guard let text = conversation?.lastAnswer?.text, !text.isEmpty else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        Monitor.panelActions.flash(L("Son cevap kopyalandı", "Last answer copied"))
+    }
+
+    struct Draft {
+        var text = ""
+        var attachments: [AIAttachment] = []
+    }
     var query = ""
     /// For a chat not started yet.
     var engine: AIEngine = .onDevice
@@ -86,8 +307,6 @@ final class AIChatState {
 
     func newChat(in folder: UUID? = nil) {
         selection = nil
-        draft = ""
-        attachments = []
         newChatFolder = folder
         engine = AIEngines.shared.resolve(AIEngine.chosen) ?? .onDevice
         model = engine.chosenModel
@@ -110,15 +329,21 @@ final class AIChatState {
         let text = text ?? draft
         var attachment = attachment
         var attachmentName = attachmentName
+        let images = fromBox ? attachments.compactMap(\.image) : []
         if fromBox, !attachments.isEmpty {
             attachment = attachments.count == 1 ? attachments[0].text
                 : attachments.map { "<\($0.name)>\n\($0.text)\n</\($0.name)>" }.joined(separator: "\n\n")
             attachmentName = attachments.map(\.name).joined(separator: ", ")
         }
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || attachment != nil else { return }
+        if fromBox {
+            draft = ""
+            attachments = []
+        }
+        editing = nil
+        if let selection { suggestions[selection] = nil }
         let conversation: AIConversation
         if let current = self.conversation {
-            guard !current.isRunning else { return }
             conversation = current
         } else {
             conversation = AIConversation(engine: engine, model: model)
@@ -126,29 +351,96 @@ final class AIChatState {
             AIChatStore.shared.touch(conversation)
             selection = conversation.id
         }
-        conversation.send(text, attachment: attachment, prompt: prompt, attachmentName: attachmentName)
-        if fromBox {
-            draft = ""
-            attachments = []
+        guard conversation.isRunning else {
+            conversation.send(text, attachment: attachment, prompt: prompt, attachmentName: attachmentName, images: images)
+            return
         }
+        // Sent while it writes: it waits its turn, and goes out when this answer is done ("Send now" stops it instead).
+        queued[conversation.id, default: []].append(Queued(text: text, attachment: attachment, attachmentName: attachmentName, images: images))
     }
 
     /// Puts a message of yours back in the box to change and send again.
+    /// Until you send, the edit can be cancelled (esc, or "Cancel" over the box) and the chat comes back as it was.
     func edit(_ message: AIMessage) {
-        guard let conversation, let taken = conversation.takeBack(message.id) else { return }
+        cancelEdit()
+        guard let conversation, let removed = conversation.takeBack(message.id), let taken = removed.first else { return }
+        editing = (conversation.id, removed, Draft(text: draft, attachments: attachments))
         draft = taken.text
-        if let text = taken.attachment { attachments = [AIAttachment(name: taken.attachmentName ?? L("Ek", "Attachment"), text: text)] }
+        if let images = taken.images, !images.isEmpty {
+            // Images come back as images; their text goes along again when sent.
+            let names = taken.attachmentName?.components(separatedBy: ", ") ?? []
+            attachments = images.enumerated().map { index, image in
+                AIAttachment(name: names.indices.contains(index) ? names[index] : L("Görsel", "Image"),
+                             text: index == 0 ? (taken.attachment ?? "") : "", symbol: "photo", image: image)
+            }
+        } else {
+            attachments = taken.attachment.map { [AIAttachment(name: taken.attachmentName ?? L("Ek", "Attachment"), text: $0)] } ?? []
+        }
         focusComposer += 1
     }
 
+    func escape() {
+        if finding { finding = false } else if let conversation, conversation.isRunning { conversation.stop() } else { cancelEdit() }
+    }
+
+    func cancelEdit() {
+        guard let editing else { return }
+        self.editing = nil
+        AIChatStore.shared.conversation(editing.chat)?.putBack(editing.removed)
+        if selection == editing.chat {
+            draft = editing.draft.text
+            attachments = editing.draft.attachments
+        }
+    }
+
+    /// Everything attached together stays under this, so a question never gets too big for the AI.
+    static let attachmentLimit = 400_000
+
     func attach(file url: URL) {
-        guard let data = try? Data(contentsOf: url), data.count < 400_000,
-              let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1),
-              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            Monitor.panelActions.flash(L("Bu dosya metin olarak okunamadı", "This file couldn't be read as text"))
+        let name = url.lastPathComponent
+        if AIImages.isImage(url) {
+            attach(image: NSImage(contentsOf: url), name: name)
             return
         }
-        attachments.append(AIAttachment(name: url.lastPathComponent, text: text))
+        let used = attachments.reduce(0) { $0 + $1.text.utf8.count }
+        guard let text = Self.readText(url) else {
+            Monitor.panelActions.flash(L("\(name) eklenemiyor; metin, kod, PDF ve görsel eklenebilir",
+                                         "\(name) can't be attached; text, code, PDF and image files can"))
+            return
+        }
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            Monitor.panelActions.flash(L("\(name) boş", "\(name) is empty"))
+            return
+        }
+        guard used + text.utf8.count <= Self.attachmentLimit else {
+            Monitor.panelActions.flash(L("\(name) çok büyük (en fazla 400 KB metin)", "\(name) is too big (400 KB of text at most)"))
+            return
+        }
+        attachments.append(AIAttachment(name: name, text: text, symbol: url.pathExtension.lowercased() == "pdf" ? "doc.richtext" : "doc.plaintext"))
+    }
+
+    /// An image goes in at once; the text in it is read on this Mac meanwhile (for the AIs that can't see images).
+    func attach(image: NSImage?, name: String) {
+        guard let image, let stored = AIImages.store(image) else {
+            Monitor.panelActions.flash(L("\(name) açılamadı", "Couldn't open \(name)"))
+            return
+        }
+        let attachment = AIAttachment(name: name, text: AIImages.describe(""), symbol: "photo", image: stored)
+        attachments.append(attachment)
+        Task { @MainActor in
+            let text = await AIImages.text(in: stored)
+            if let index = attachments.firstIndex(where: { $0.id == attachment.id }) { attachments[index].text = AIImages.describe(text) }
+        }
+    }
+
+    /// A file's text: a PDF's words, or a text file in UTF-8 (or Latin-1 when it has no zero bytes). Nil for anything else.
+    static func readText(_ url: URL) -> String? {
+        if url.pathExtension.lowercased() == "pdf" {
+            return PDFDocument(url: url)?.string
+        }
+        guard let data = try? Data(contentsOf: url, options: .mappedIfSafe), data.count <= 4_000_000 else { return nil }
+        if data.contains(0) { return nil }
+        return String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1)
     }
 
     func archive(_ conversation: AIConversation) {
@@ -207,6 +499,17 @@ struct AIChatView: View {
                 Button("") { state.newChat() }.keyboardShortcut("n", modifiers: .command)
                 Button("") { toggleSidebar() }.keyboardShortcut("s", modifiers: [.command, .control])
                 Button("") { state.newFolder() }.keyboardShortcut("n", modifiers: [.command, .shift])
+                Button("") { if state.conversation != nil { state.startFind() } }.keyboardShortcut("f", modifiers: .command)
+                Button("") { state.findStep(1) }.keyboardShortcut("g", modifiers: .command)
+                Button("") { state.findStep(-1) }.keyboardShortcut("g", modifiers: [.command, .shift])
+                Button("") { state.copyLastAnswer() }.keyboardShortcut("c", modifiers: [.command, .shift])
+                Button("") { state.toggleSide() }.keyboardShortcut("s", modifiers: [.command, .option])
+                Button("") { state.quoteSelection() }.keyboardShortcut("'", modifiers: [.command, .shift])
+                ForEach(1..<10) { number in
+                    Button("") { state.jump(to: number) }.keyboardShortcut(KeyEquivalent(Character("\(number)")), modifiers: .command)
+                }
+                Button("") { if let chat = state.conversation { state.pendingDelete = chat } }
+                    .keyboardShortcut(.delete, modifiers: [.command, .shift])
             }
             .hidden()
         }
@@ -286,6 +589,8 @@ private struct AIChatTitleBar: View {
                             .frame(width: BarButton.size.width, height: BarButton.size.height)
                             .help(L("\(conversation.engine.shortName) yazıyor", "\(conversation.engine.shortName) is writing"))
                     }
+                    BarButton(symbol: "bubble.left.and.text.bubble.right", help: L("Yan sohbet (⌥⌘S)", "Side chat (⌥⌘S)"),
+                              active: state.sideOpen) { state.toggleSide() }
                     BarMenu(symbol: "square.and.arrow.up", help: L("Paylaş", "Share")) { ShareActions(conversation: conversation) }
                     BarButton(symbol: conversation.pinned ? "pin.fill" : "pin",
                               help: conversation.pinned ? L("Sabitlemeyi kaldır", "Unpin") : L("Sabitle", "Pin"), active: conversation.pinned) {
@@ -675,6 +980,12 @@ private struct AIChatActions: View {
             state.selection = conversation.id
             state.renaming = conversation.id
         }
+        if conversation.promptMessages.count >= 2 {
+            Button(L("Özetle ve sürdür", "Summarize and continue"), systemImage: "rectangle.compress.vertical") {
+                Task { await conversation.compact() }
+            }
+            .disabled(conversation.isRunning || conversation.compacting)
+        }
         Menu {
             ForEach(store.folders) { folder in
                 Toggle(isOn: Binding(get: { conversation.folder == folder.id }, set: { _ in
@@ -758,6 +1069,10 @@ private struct AIChatRow: View {
                     .help(L("Daha fazla", "More"))
                 }
                 .transition(.opacity)
+            } else if !conversation.isRunning, conversation.lastAnswer?.error != nil, conversation.messages.last?.role == .assistant {
+                Image(systemName: "exclamationmark.circle.fill").font(.system(size: 10)).foregroundStyle(Theme.warning.fill)
+                    .frame(width: SidebarGrid.trailing)
+                    .help(conversation.lastAnswer?.error ?? "")
             } else if conversation.unread {
                 Circle().fill(conversation.engine.brand.multicolor ? AnyShapeStyle(conversation.engine.brand.gradient) : AnyShapeStyle(Theme.accent))
                     .frame(width: 7, height: 7)
@@ -811,8 +1126,22 @@ private struct AIChatDetail: View {
     var body: some View {
         let conversation = state.conversation
         let engine = conversation?.engine ?? state.engine
+        // The side chat sits beside the chat (never over it), which narrows to make room, down to a readable width.
+        GeometryReader { geometry in
+        let sideWidth = max(260, min(360, geometry.size.width - 440))
+        HStack(spacing: 0) {
         VStack(spacing: 0) {
             if let conversation, !conversation.messages.isEmpty {
+                if state.finding {
+                    // Above the chat, not over it, so the match it shows is never hidden behind it.
+                    HStack {
+                        Spacer(minLength: 0)
+                        FindBar(state: state)
+                    }
+                    .padding(.top, Theme.Spacing.s)
+                    .padding(.trailing, Theme.Spacing.l)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
                 AITranscriptView(conversation: conversation, state: state)
             } else {
                 AIWelcome(engine: engine, state: state)
@@ -823,7 +1152,36 @@ private struct AIChatDetail: View {
                 .padding(.bottom, Theme.Spacing.m)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+            if state.sideOpen, conversation != nil {
+                SideChatPanel(state: state, width: sideWidth)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
+        }
+        }
+        .animation(.easeOut(duration: 0.15), value: state.finding)
+        .overlay {
+            if state.dropping {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(Theme.accent.opacity(0.7), style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
+                    .background(Theme.accent.opacity(0.05), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay {
+                        Label(L("Eklemek için bırak", "Drop to attach"), systemImage: "paperclip")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(Theme.text)
+                            .padding(.horizontal, Theme.Spacing.l)
+                            .frame(height: 36)
+                            .background(.regularMaterial, in: Capsule())
+                    }
+                    .padding(Theme.Spacing.m)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.12), value: state.dropping)
+
+        // esc while reading (not only in the box): stop the answer, or cancel an edit.
+        .onExitCommand { state.escape() }
+        .onDrop(of: [.fileURL], isTargeted: $state.dropping) { providers in
             for provider in providers {
                 _ = provider.loadObject(ofClass: URL.self) { url, _ in
                     guard let url else { return }
@@ -832,6 +1190,66 @@ private struct AIChatDetail: View {
             }
             return true
         }
+    }
+}
+
+/// ⌘F: find words in the open chat. ↩ the match above, ⇧↩ below, esc closes.
+private struct FindBar: View {
+    @Bindable var state: AIChatState
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: Theme.Spacing.xs) {
+            Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(Theme.textMuted)
+                .frame(width: 16)
+            TextField(L("Sohbette ara", "Find in chat"), text: $state.findQuery)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .frame(width: 170)
+                .focused($focused)
+                .onSubmit { state.findStep(NSEvent.modifierFlags.contains(.shift) ? 1 : -1) }
+                .onExitCommand { state.finding = false }
+            Text(verbatim: count)
+                .font(.system(size: 11.5)).monospacedDigit()
+                .foregroundStyle(Theme.textMuted)
+                .fixedSize()
+            Rectangle().fill(Theme.hairline).frame(width: 1, height: 16).padding(.horizontal, 2)
+            step("chevron.up", L("Önceki (↩)", "Previous (↩)"), -1)
+            step("chevron.down", L("Sonraki (⇧↩)", "Next (⇧↩)"), 1)
+            Button { state.finding = false } label: {
+                Image(systemName: "xmark").font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.textMuted)
+                    .frame(width: 22, height: 22).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(L("Kapat (esc)", "Close (esc)"))
+        }
+        .padding(.leading, Theme.Spacing.s + 2)
+        .padding(.trailing, Theme.Spacing.xs)
+        .frame(height: 34)
+        .background(.regularMaterial, in: Capsule())
+        .overlay { Capsule().strokeBorder(Theme.hairline) }
+        .shadow(color: .black.opacity(0.12), radius: 10, y: 3)
+        .onAppear { focused = true; state.updateFind() }
+        .onChange(of: state.focusFind) { _, _ in focused = true }
+        .onChange(of: state.findQuery) { _, _ in state.updateFind() }
+        .onChange(of: state.conversation?.messages.count) { _, _ in state.updateFind() }
+    }
+
+    private var count: String {
+        if state.findQuery.trimmingCharacters(in: .whitespaces).isEmpty { return "" }
+        if state.findMatches.isEmpty { return L("Sonuç yok", "No results") }
+        return "\(state.findIndex + 1)/\(state.findMatches.count)"
+    }
+
+    private func step(_ symbol: String, _ help: String, _ by: Int) -> some View {
+        Button { state.findStep(by) } label: {
+            Image(systemName: symbol).font(.system(size: 11, weight: .medium))
+                .foregroundStyle(state.findMatches.isEmpty ? Theme.textMuted.opacity(0.5) : Theme.text)
+                .frame(width: 22, height: 22).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(state.findMatches.isEmpty)
+        .help(help)
     }
 }
 
@@ -957,13 +1375,35 @@ struct AIComposer: View {
         let running = conversation?.isRunning == true
         let shape = RoundedRectangle(cornerRadius: 22, style: .continuous)
         VStack(spacing: Theme.Spacing.s) {
+            if let limit = AIChatStore.shared.liveLimits[engine], limit.status != .allowed,
+               limit.status == .warning || (limit.resetsAt ?? .distantFuture) > Date() {
+                LimitBanner(engine: engine, limit: limit, state: state)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
             VStack(alignment: .leading, spacing: Theme.Spacing.s) {
+                if let editing = state.editing, editing.chat == conversation?.id {
+                    HStack(spacing: Theme.Spacing.s) {
+                        Image(systemName: "pencil").font(.system(size: 11, weight: .semibold))
+                        Text(L("Mesajını düzenliyorsun; gönderince bu noktadan devam eder",
+                               "Editing your message; sending continues from here"))
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                        Button(L("Vazgeç", "Cancel")) { withAnimation(.easeOut(duration: 0.15)) { state.cancelEdit() } }
+                            .buttonStyle(TextButtonStyle(font: .system(size: 12, weight: .medium), color: Theme.accent))
+                            .help("esc")
+                    }
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.textMuted)
+                    .padding(.horizontal, 2)
+                    .transition(.opacity)
+                }
                 if !state.attachments.isEmpty {
                     ScrollView(.horizontal) {
                         HStack(spacing: Theme.Spacing.s) {
                             ForEach(state.attachments) { attachment in
                                 AttachmentCard(attachment: attachment) {
                                     withAnimation(.easeOut(duration: 0.15)) { state.attachments.removeAll { $0.id == attachment.id } }
+                                    if let image = attachment.image, state.editing == nil { AIImages.remove([image]) }
                                 }
                             }
                         }
@@ -973,8 +1413,13 @@ struct AIComposer: View {
                     .scrollIndicators(.never)
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
-                TextField(running ? L("\(engine.shortName) yazıyor…", "\(engine.shortName) is writing…")
-                                  : L("\(engine.shortName)'a yaz…", "Message \(engine.shortName)…"),
+                if let conversation, let waiting = state.queued[conversation.id], !waiting.isEmpty {
+                    QueuedList(items: waiting, state: state, running: running)
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                }
+                let suggestion = conversation.flatMap { state.suggestions[$0.id] }
+                TextField(running ? L("\(engine.shortName) yazıyor… ↩ sıraya ekler", "\(engine.shortName) is writing… ↩ queues it")
+                          : suggestion.map { "\($0.count > 90 ? $0.prefix(88) + "…" : $0)   ⇥" } ?? L("\(engine.shortName)'a yaz…", "Message \(engine.shortName)…"),
                           text: $state.draft, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(.system(size: 15))
@@ -983,7 +1428,14 @@ struct AIComposer: View {
                     .tint(brand.multicolor ? brand.colors[1] : brand.tint)
                     .focused($focused)
                     .onSubmit { state.send() }
-                    .onExitCommand { conversation?.stop() }
+                    .onExitCommand { state.escape() }
+                    .onKeyPress(.tab) {
+                        // Tab takes the suggestion into the box, to send as it is or change.
+                        guard state.draft.isEmpty, let conversation, let next = state.suggestions[conversation.id] else { return .ignored }
+                        state.draft = next
+                        state.suggestions[conversation.id] = nil
+                        return .handled
+                    }
                     .onKeyPress(.upArrow) {
                         guard state.draft.isEmpty, let conversation, let last = conversation.lastQuestion, !conversation.isRunning else { return .ignored }
                         state.edit(last)
@@ -1000,12 +1452,16 @@ struct AIComposer: View {
                     }), model: Binding(get: { conversation?.model ?? state.model }, set: { model in
                         if let conversation { conversation.use(conversation.engine, model: model) } else { state.model = model }
                     }), pill: true)
+                    if let conversation, let usage = conversation.usage, usage.fraction != nil {
+                        ContextMeter(usage: usage, engine: engine, conversation: conversation)
+                    }
                     Spacer(minLength: 0)
                     if state.draft.count > 1_000 {
                         Text(verbatim: state.draft.count.formatted()).font(Theme.small).monospacedDigit().foregroundStyle(Theme.textMuted)
                     }
-                    AISendButton(engine: engine, running: running, enabled: state.canSend) {
-                        if running { conversation?.stop() } else { state.send() }
+                    AISendButton(engine: engine, running: running && !state.canSend, enabled: state.canSend) {
+                        // While it writes: the stop button, or ↑ to queue what you've typed.
+                        if running && !state.canSend { conversation?.stop() } else { state.send() }
                     }
                 }
             }
@@ -1066,14 +1522,23 @@ private struct AttachmentCard: View {
 
     var body: some View {
         HStack(spacing: Theme.Spacing.s) {
-            Image(systemName: attachment.symbol)
-                .font(.system(size: 14))
-                .foregroundStyle(Theme.textMuted)
-                .frame(width: 30, height: 30)
-                .background(Theme.track, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            if let image = attachment.image, let picture = NSImage(contentsOf: AIImages.url(image)) {
+                Image(nsImage: picture)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: 30, height: 30)
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            } else {
+                Image(systemName: attachment.symbol)
+                    .font(.system(size: 14))
+                    .foregroundStyle(Theme.textMuted)
+                    .frame(width: 30, height: 30)
+                    .background(Theme.track, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            }
             VStack(alignment: .leading, spacing: 1) {
                 Text(verbatim: attachment.name).font(Theme.small.weight(.medium)).foregroundStyle(Theme.text).lineLimit(1)
-                Text(L("\(attachment.text.split(whereSeparator: \.isNewline).count) satır", "\(attachment.text.split(whereSeparator: \.isNewline).count) lines"))
+                Text(attachment.image != nil ? L("Görsel", "Image")
+                     : L("\(attachment.text.split(whereSeparator: \.isNewline).count) satır", "\(attachment.text.split(whereSeparator: \.isNewline).count) lines"))
                     .font(.system(size: 10)).foregroundStyle(Theme.textMuted)
             }
             .frame(maxWidth: 160, alignment: .leading)
@@ -1094,7 +1559,290 @@ private struct AttachmentCard: View {
             }
         }
         .onHover { hovering = $0 }
-        .help(String(attachment.text.prefix(300)))
+        .help(attachment.image != nil ? attachment.name : String(attachment.text.prefix(300)))
+    }
+}
+
+/// Where a long chat was summarized: from here on the AI gets the summary instead of the messages above.
+private struct SummaryDivider: View {
+    let summary: String
+    let size: CGFloat
+    @State private var open = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.s) {
+            HStack(spacing: Theme.Spacing.s) {
+                Rectangle().fill(Theme.hairline).frame(height: 1)
+                Button { withAnimation(.easeOut(duration: 0.2)) { open.toggle() } } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "rectangle.compress.vertical")
+                        Text(L("Buraya kadarı özetlendi", "Summarized up to here"))
+                        Image(systemName: open ? "chevron.up" : "chevron.down").font(.system(size: size * 0.6))
+                    }
+                    .font(.system(size: size * 0.78))
+                    .foregroundStyle(Theme.textMuted)
+                    .fixedSize()
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(L("AI bundan sonra yukarıdaki mesajlar yerine bu özeti görür", "From here the AI sees this summary instead of the messages above"))
+                Rectangle().fill(Theme.hairline).frame(height: 1)
+            }
+            if open {
+                MarkdownView(text: summary, size: size * 0.88, tint: Theme.accent)
+                    .padding(size * 0.8)
+                    .background(Theme.track, in: RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
+                    .transition(.opacity)
+            }
+        }
+    }
+}
+
+/// Questions on the side (⌥⌘S): sees the main chat, answers apart, never goes in it. "Add to chat" quotes an answer
+/// into the main box.
+private struct SideChatPanel: View {
+    @Bindable var state: AIChatState
+    let width: CGFloat
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        let side = state.side
+        let main = state.conversation
+        let engine = side?.engine ?? main?.engine ?? .onDevice
+        HStack(spacing: 0) {
+            Rectangle().fill(Theme.hairline).frame(width: 1)
+            VStack(spacing: 0) {
+                HStack(spacing: Theme.Spacing.s) {
+                    Image(systemName: "bubble.left.and.text.bubble.right").foregroundStyle(Theme.textMuted)
+                    Text(L("Yan sohbet", "Side chat")).font(Theme.bodyStrong)
+                    Spacer(minLength: 0)
+                    if side != nil {
+                        RowButton(symbol: "arrow.counterclockwise", help: L("Baştan başla", "Start over")) { state.resetSide() }
+                    }
+                    RowButton(symbol: "xmark", help: L("Kapat (⌥⌘S)", "Close (⌥⌘S)")) { state.toggleSide() }
+                }
+                .padding(.horizontal, Theme.Spacing.m)
+                .frame(height: 40)
+                Rectangle().fill(Theme.hairline).frame(height: 1)
+                if let side, !side.messages.isEmpty {
+                    AITranscriptView(conversation: side, compact: true)
+                    if let answer = side.lastAnswer, !answer.text.isEmpty, !side.isRunning {
+                        Button {
+                            state.quote(answer.text)
+                        } label: {
+                            Label(L("Ana sohbete ekle", "Add to the main chat"), systemImage: "arrow.uturn.left")
+                        }
+                        .buttonStyle(TextButtonStyle(font: .system(size: 12, weight: .medium), color: Theme.accent))
+                        .help(L("Son cevabı ana sohbetin mesaj kutusuna alıntılar", "Quotes the last answer into the main chat's box"))
+                        .padding(.vertical, Theme.Spacing.xs)
+                    }
+                } else {
+                    VStack(spacing: Theme.Spacing.s) {
+                        Spacer()
+                        Image(systemName: "bubble.left.and.text.bubble.right").font(.system(size: 26)).foregroundStyle(Theme.textMuted.opacity(0.6))
+                        Text(L("Ana sohbeti bozmadan bir şey sor: bir terimi açıklat, bir cevabı kontrol ettir, başka bir yol iste. Yan sohbet ana sohbeti görür ama ona eklenmez.",
+                               "Ask something without derailing the main chat: explain a term, check an answer, try another way. The side chat sees the main chat but isn't added to it."))
+                            .font(Theme.small).foregroundStyle(Theme.textMuted).multilineTextAlignment(.center)
+                            .padding(.horizontal, Theme.Spacing.l)
+                        Spacer()
+                    }
+                }
+                HStack(alignment: .bottom, spacing: Theme.Spacing.s) {
+                    TextField(L("Yan soru…", "Side question…"), text: $state.sideDraft, axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13))
+                        .lineLimit(1...6)
+                        .focused($focused)
+                        .onSubmit { state.sendSide() }
+                        .onExitCommand { if side?.isRunning == true { side?.stop() } else { state.toggleSide() } }
+                    AISendButton(engine: engine, running: side?.isRunning == true,
+                                 enabled: !state.sideDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
+                        if side?.isRunning == true { side?.stop() } else { state.sendSide() }
+                    }
+                }
+                .padding(Theme.Spacing.s + 2)
+                .background(Theme.field.opacity(0.7), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay { RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Theme.hairline) }
+                .padding(Theme.Spacing.s)
+            }
+            .frame(width: width)
+        }
+        .onAppear { focused = true }
+    }
+}
+
+/// Text you selected in the chat, read from the view holding it; or, failing that, copied and the clipboard put back.
+@MainActor
+enum TranscriptSelection {
+    static func read() -> String? {
+        guard let window = NSApp.keyWindow else { return nil }
+        if let view = window.firstResponder as? NSTextView {
+            // The message box: its selection isn't a quote.
+            if view.isFieldEditor { return nil }
+            let range = view.selectedRange()
+            return range.length > 0 ? (view.string as NSString).substring(with: range) : nil
+        }
+        let pasteboard = NSPasteboard.general
+        let saved = (pasteboard.pasteboardItems ?? []).map { item -> NSPasteboardItem in
+            let copy = NSPasteboardItem()
+            for type in item.types { if let data = item.data(forType: type) { copy.setData(data, forType: type) } }
+            return copy
+        }
+        let before = pasteboard.changeCount
+        guard NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: nil), pasteboard.changeCount != before,
+              let text = pasteboard.string(forType: .string) else { return nil }
+        // Put back what was there, marked as a scratch copy so clipboard histories (Nabız's too) skip it.
+        pasteboard.clearContents()
+        if let first = saved.first { first.setData(Data(), forType: NSPasteboard.PasteboardType("org.nspasteboard.TransientType")) }
+        pasteboard.writeObjects(saved)
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+/// Messages waiting for the answer being written; each goes out in turn. Send now stops the answer for it.
+private struct QueuedList: View {
+    let items: [AIChatState.Queued]
+    let state: AIChatState
+    let running: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(items) { item in
+                HStack(spacing: Theme.Spacing.s) {
+                    Image(systemName: "clock").font(.system(size: 11)).foregroundStyle(Theme.textMuted).frame(width: 16)
+                    Text(verbatim: item.text.isEmpty ? (item.attachmentName ?? L("Ek", "Attachment")) : item.text)
+                        .font(.system(size: 12.5)).foregroundStyle(Theme.text).lineLimit(1).truncationMode(.tail)
+                    Spacer(minLength: Theme.Spacing.s)
+                    Button(L("Şimdi gönder", "Send now")) { state.sendNow(item) }
+                        .buttonStyle(TextButtonStyle(font: .system(size: 11.5, weight: .medium), color: Theme.accent))
+                        .help(running ? L("Yazılan cevabı durdurup bunu gönderir", "Stops the answer being written and sends this")
+                                      : L("Bunu şimdi gönderir", "Sends this now"))
+                    RowButton(symbol: "pencil", help: L("Düzenle", "Edit")) { state.editQueued(item) }
+                    RowButton(symbol: "xmark", help: L("Sıradan çıkar", "Remove")) { state.removeQueued(item) }
+                }
+                .frame(height: 26)
+            }
+            if !running {
+                // After a stop or an error the queue waits for you.
+                Button(L("Sıradakileri gönder", "Send the queued messages")) {
+                    if let id = state.conversation?.id { state.sendQueued(in: id) }
+                }
+                .buttonStyle(TextButtonStyle(font: .system(size: 11.5, weight: .medium), color: Theme.accent))
+                .padding(.leading, 24)
+            }
+        }
+        .padding(.horizontal, 2)
+    }
+}
+
+/// How full the chat is for the model: a small ring; click for the numbers.
+private struct ContextMeter: View {
+    let usage: AIUsage
+    let engine: AIEngine
+    let conversation: AIConversation
+    @State private var open = false
+
+    var body: some View {
+        let fraction = usage.fraction ?? 0
+        let color: Color = fraction >= 0.9 ? Theme.danger : fraction >= 0.8 ? Theme.warning.fill : Theme.textMuted
+        Button { open.toggle() } label: {
+            ZStack {
+                Circle().stroke(Theme.hairline, lineWidth: 2.5)
+                Circle().trim(from: 0, to: max(0.02, fraction))
+                    .stroke(color, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+            }
+            .frame(width: 15, height: 15)
+            .frame(width: 26, height: 26)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(L("Sohbetin \(Int((fraction * 100).rounded()))%'i dolu", "Chat is \(Int((fraction * 100).rounded()))% full"))
+        .popover(isPresented: $open, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: Theme.Spacing.s) {
+                Text(L("Sohbetin boyutu", "Chat size")).font(Theme.bodyStrong)
+                Text(verbatim: "\(Self.short(usage.tokens)) / \(Self.short(usage.window ?? 0)) token · %\(Int((fraction * 100).rounded()))")
+                    .font(Theme.body).monospacedDigit()
+                ProgressView(value: fraction).tint(color).frame(width: 220)
+                if let cost = usage.cost, cost > 0 {
+                    Text(L("Bu cevap API fiyatıyla yaklaşık \(cost.formatted(.currency(code: "USD"))); aboneliğinden düşer, ayrıca ödenmez.",
+                           "This answer is about \(cost.formatted(.currency(code: "USD"))) at API prices; it comes out of your plan, not billed."))
+                        .font(Theme.small).foregroundStyle(Theme.textMuted).fixedSize(horizontal: false, vertical: true)
+                }
+                Text(fraction >= 0.8
+                     ? L("Doluyor: yeni bir sohbet açmak ya da \"Buradan yeni sohbet\" ile dallanmak daha iyi cevap verir.",
+                         "Filling up: a new chat, or branching with \"New chat from here\", will answer better.")
+                     : L("Uzun sohbetler her mesajda daha çok limit harcar.", "Long chats use more of your limit with every message."))
+                    .font(Theme.small).foregroundStyle(Theme.textMuted).fixedSize(horizontal: false, vertical: true)
+                if conversation.promptMessages.count >= 2 {
+                    Button {
+                        open = false
+                        Task { await conversation.compact() }
+                    } label: {
+                        Label(L("Özetle ve sürdür", "Summarize and continue"), systemImage: "rectangle.compress.vertical")
+                    }
+                    .disabled(conversation.isRunning || conversation.compacting)
+                    .help(L("AI şimdiye kadarkini özetler; sonraki mesajlarda tüm sohbet yerine bu özet gider. Mesajlar ekranda kalır.",
+                            "The AI summarizes everything so far; from then on the summary goes instead of the whole chat. Messages stay on screen."))
+                }
+            }
+            .padding(Theme.Spacing.m)
+            .frame(width: 250, alignment: .leading)
+        }
+    }
+
+    static func short(_ tokens: Int) -> String {
+        tokens >= 1_000_000 ? String(format: "%.1fM", Double(tokens) / 1_000_000).replacingOccurrences(of: ".0M", with: "M")
+            : tokens >= 1_000 ? "\(Int((Double(tokens) / 1_000).rounded()))K" : "\(tokens)"
+    }
+}
+
+/// Over the box when the AI says your plan's limit is close or used up: when it frees up, and another AI to ask meanwhile.
+private struct LimitBanner: View {
+    let engine: AIEngine
+    let limit: AILiveLimit
+    let state: AIChatState
+
+    var body: some View {
+        let blocked = limit.status == .rejected
+        HStack(spacing: Theme.Spacing.s) {
+            Image(systemName: blocked ? "hourglass" : "gauge.with.dots.needle.67percent")
+                .foregroundStyle(blocked ? Theme.danger : Theme.warning.fill)
+            Text(verbatim: text(blocked)).font(.system(size: 12)).foregroundStyle(Theme.text).lineLimit(2)
+            Spacer(minLength: Theme.Spacing.s)
+            let others = AIEngine.order.filter { $0 != engine && AIEngines.shared.isAvailable($0) }
+            if blocked && !others.isEmpty {
+                Menu(L("Başka AI ile", "Use another AI")) {
+                    ForEach(others) { other in
+                        Button(other.title) {
+                            if let conversation = state.conversation { conversation.use(other, model: other.chosenModel) }
+                            else { state.engine = other; state.model = other.chosenModel }
+                        }
+                    }
+                }
+                .menuStyle(.borderlessButton)
+                .tint(Theme.accent)
+                .fixedSize()
+            }
+        }
+        .padding(.horizontal, Theme.Spacing.m)
+        .padding(.vertical, Theme.Spacing.s)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Theme.hairline) }
+    }
+
+    private func text(_ blocked: Bool) -> String {
+        let reset = limit.resetsAt.map { date in
+            Calendar.current.isDateInToday(date) ? date.formatted(date: .omitted, time: .shortened)
+                : date.formatted(.dateTime.weekday(.abbreviated).hour().minute())
+        }
+        if blocked {
+            return L("\(engine.shortName) \(limit.label.lowercased()) doldu", "\(engine.shortName) \(limit.label.lowercased()) used up")
+                + (reset.map { L(" · \($0)'de yenilenir", " · resets \($0)") } ?? "")
+        }
+        let used = limit.used.map { L(" (%\(Int(($0 * 100).rounded())) kullanıldı)", " (\(Int(($0 * 100).rounded()))% used)") } ?? ""
+        return L("\(engine.shortName) \(limit.label.lowercased()) dolmak üzere", "\(engine.shortName) \(limit.label.lowercased()) almost used") + used
+            + (reset.map { L(" · \($0)'de yenilenir", " · resets \($0)") } ?? "")
     }
 }
 
@@ -1105,6 +1853,14 @@ private struct AddMenu: View {
     var body: some View {
         Menu {
             Button(L("Dosya ekle…", "Add a file…"), systemImage: "doc.badge.plus") { pickFile() }
+            Button(L("Ekran görüntüsü ekle", "Add a screenshot"), systemImage: "camera.viewfinder") { screenshot() }
+            if NSPasteboard.general.availableType(from: [.fileURL]) == nil,
+               NSPasteboard.general.canReadObject(forClasses: [NSImage.self], options: nil) {
+                Button(L("Panodaki görseli ekle", "Add the copied image"), systemImage: "photo.on.rectangle") {
+                    state.attach(image: NSImage(pasteboard: .general), name: L("Kopyalanan görsel", "Copied image"))
+                    state.focusComposer += 1
+                }
+            }
             if let copied = NSPasteboard.general.string(forType: .string), !copied.isEmpty, !SecretText.looksSecret(copied) {
                 Button(L("Panodakini ekle", "Add what I copied"), systemImage: "doc.on.clipboard") {
                     state.attachments.append(AIAttachment(name: L("Kopyalanan metin", "Copied text"), text: copied, symbol: "doc.on.clipboard"))
@@ -1124,11 +1880,29 @@ private struct AddMenu: View {
         .help(L("Dosya ya da metin ekle (bırakabilirsin de)", "Add a file or text (or drop one here)"))
     }
 
+    /// Like ⌘⇧4: pick an area or a window (space), and it's attached.
+    private func screenshot() {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("nabiz-ai-\(UUID().uuidString).png")
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+        process.arguments = ["-i", "-x", file.path]
+        process.terminationHandler = { _ in
+            Task { @MainActor in
+                defer { try? FileManager.default.removeItem(at: file) }
+                guard FileManager.default.fileExists(atPath: file.path) else { return }
+                state.attach(image: NSImage(contentsOf: file), name: L("Ekran görüntüsü", "Screenshot"))
+                NSApp.activate(ignoringOtherApps: true)
+                state.focusComposer += 1
+            }
+        }
+        try? process.run()
+    }
+
     private func pickFile() {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
-        panel.allowedContentTypes = [.text, .plainText, .sourceCode, .json, .xml, .commaSeparatedText, .html, .yaml]
+        panel.allowedContentTypes = [.text, .plainText, .sourceCode, .json, .xml, .commaSeparatedText, .html, .yaml, .pdf, .image]
         guard panel.runModal() == .OK else { return }
         panel.urls.forEach(state.attach(file:))
         state.focusComposer += 1
@@ -1272,6 +2046,15 @@ struct AIModelMenu: View {
                     Divider()
                     AIEffortMenu(engine: engine, model: model, pill: false).id(engine)
                 }
+                if let provider = AIProvider(rawValue: engine.rawValue),
+                   let status = AILimitsStore.shared.statuses.first(where: { $0.provider == provider }), !status.limits.isEmpty {
+                    Section(status.plan.map { "\(engine.shortName) \($0)" } ?? L("\(engine.shortName) limitleri", "\(engine.shortName) limits")) {
+                        ForEach(status.limits) { limit in
+                            Text(verbatim: L("\(limit.label): %\(Int((limit.used * 100).rounded())) kullanıldı", "\(limit.label): \(Int((limit.used * 100).rounded()))% used")
+                                 + (limit.resetsAt.map { L(" · \(Format.countdown(until: $0)) sonra yenilenir", " · resets in \(Format.countdown(until: $0))") } ?? ""))
+                        }
+                    }
+                }
                 Divider()
                 Button(L("AI ayarları…", "AI settings…")) { SettingsWindow.show(.ai) }
             } label: {
@@ -1288,7 +2071,10 @@ struct AIModelMenu: View {
         .frame(height: pill ? 28 : nil)
         .background(pill ? Theme.track : .clear, in: Capsule())
         .overlay { if pill { Capsule().strokeBorder(Theme.hairline) } }
-        .onAppear { engines.refreshIfNeeded() }
+        .onAppear {
+            engines.refreshIfNeeded()
+            AILimitsStore.shared.refreshIfNeeded(maxAge: 600)
+        }
     }
 
     /// "Claude · Opus 5.5 · Medium", like Claude's own model button; how hard it thinks is picked inside.
@@ -1333,13 +2119,24 @@ struct AITranscriptView: View {
                                     Color.clear.preference(key: MessageOffsets.self,
                                                            value: [message.id: geometry.frame(in: .named("transcript")).minY])
                                 })
+                                .background { findMark(message.id) }
                                 .id(message.id)
                                 .transition(.opacity.combined(with: .move(edge: .bottom)))
                         } else {
                             AIAnswer(message: message, conversation: conversation, size: size, compact: compact,
-                                     isLast: message.id == conversation.messages.last?.id)
+                                     isLast: message.id == conversation.messages.last?.id,
+                                     fork: state.map { state in { state.fork(at: message) } },
+                                     quote: state.map { state in { state.quoteSelection(fallback: message.text) } })
+                                .background { findMark(message.id) }
+                                .id(message.id)
                                 .transition(.opacity)
                         }
+                        if message.id == conversation.summarizedID, let summary = conversation.summary {
+                            SummaryDivider(summary: summary, size: size)
+                        }
+                    }
+                    if conversation.compacting {
+                        AIThinkingLabel(engine: conversation.engine, text: L("Sohbet özetleniyor…", "Summarizing the chat…"), size: size * 0.9)
                     }
                     Color.clear.frame(height: 1).id("bottom")
                         .background(GeometryReader { geometry in
@@ -1377,6 +2174,10 @@ struct AITranscriptView: View {
             }
             .onAppear { proxy.scrollTo("bottom", anchor: .bottom) }
             .onChange(of: conversation.id) { _, _ in proxy.scrollTo("bottom", anchor: .bottom) }
+            .onChange(of: state?.findTarget) { _, target in
+                guard let target else { return }
+                withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(target, anchor: .center) }
+            }
             .onChange(of: conversation.messages.count) { _, _ in
                 withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("bottom", anchor: .bottom) }
             }
@@ -1421,6 +2222,18 @@ struct AITranscriptView: View {
                 }
             }
             .animation(.easeOut(duration: 0.18), value: atBottom)
+        }
+    }
+
+    /// A soft highlight behind the message find is showing.
+    @ViewBuilder private func findMark(_ id: UUID) -> some View {
+        if let state, state.findTarget == id {
+            // Find's own yellow, as in Safari and Notes.
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.yellow.opacity(0.16))
+                .overlay { RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.yellow.opacity(0.55)) }
+                .padding(-Theme.Spacing.s)
+                .transition(.opacity)
         }
     }
 
@@ -1583,7 +2396,15 @@ private struct UserBubble: View {
                 .transition(.opacity)
             }
             VStack(alignment: .trailing, spacing: Theme.Spacing.xs) {
-                if let attachment = message.attachment { AttachmentChip(text: attachment, name: message.attachmentName, size: size) }
+                if let images = message.images, !images.isEmpty {
+                    HStack(spacing: Theme.Spacing.xs) {
+                        ForEach(images, id: \.self) { MessageImage(name: $0, size: size) }
+                    }
+                }
+                // Text read from images stays out of sight; other attached text shows as a card.
+                if let attachment = message.attachment, message.images?.isEmpty ?? true {
+                    AttachmentChip(text: attachment, name: message.attachmentName, size: size)
+                }
                 if !message.text.isEmpty {
                     Text(verbatim: message.text)
                         .font(.system(size: size))
@@ -1594,10 +2415,40 @@ private struct UserBubble: View {
                         .padding(.horizontal, size)
                         .padding(.vertical, size * 0.62)
                         .background(Theme.field, in: RoundedRectangle(cornerRadius: size * 1.25, style: .continuous))
+                        .help(message.date.formatted(date: .abbreviated, time: .shortened))
                 }
             }
         }
         .onHover { over in withAnimation(.easeOut(duration: 0.12)) { hovering = over } }
+    }
+}
+
+/// An image you sent, small; click to open it in Preview.
+private struct MessageImage: View {
+    let name: String
+    let size: CGFloat
+    @State private var picture: NSImage?
+
+    var body: some View {
+        Group {
+            if let picture {
+                Button { NSWorkspace.shared.open(AIImages.url(name)) } label: {
+                    Image(nsImage: picture)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: picture.size.width >= picture.size.height ? size * 10 : size * 6.5, height: size * 7.5)
+                        .clipShape(RoundedRectangle(cornerRadius: size * 0.8, style: .continuous))
+                        .overlay { RoundedRectangle(cornerRadius: size * 0.8, style: .continuous).strokeBorder(Theme.hairline) }
+                }
+                .buttonStyle(.plain)
+                .help(L("Önizleme'de aç", "Open in Preview"))
+            } else {
+                RoundedRectangle(cornerRadius: size * 0.8, style: .continuous).fill(Theme.track)
+                    .frame(width: size * 7.5, height: size * 7.5)
+                    .overlay { Image(systemName: "photo").foregroundStyle(Theme.textMuted) }
+            }
+        }
+        .task(id: name) { picture = NSImage(contentsOf: AIImages.url(name)) }
     }
 }
 
@@ -1645,6 +2496,8 @@ private struct AIAnswer: View {
     let size: CGFloat
     let compact: Bool
     let isLast: Bool
+    var fork: (() -> Void)?
+    var quote: (() -> Void)?
     @State private var hovering = false
 
     private var engine: AIEngine { message.engine ?? conversation.engine }
@@ -1660,8 +2513,19 @@ private struct AIAnswer: View {
             } else if !message.text.isEmpty {
                 MarkdownView(text: message.text, size: size, tint: engine.brand.multicolor ? engine.brand.colors[1] : engine.brand.tint)
             }
-            if message.streaming && !message.text.isEmpty {
-                AIBrandMark(engine: engine, size: size, animating: true)
+            if message.streaming {
+                // How long it has been at it, like the apps' "Working for 12s".
+                HStack(spacing: Theme.Spacing.s) {
+                    if !message.text.isEmpty { AIBrandMark(engine: engine, size: size, animating: true) }
+                    TimelineView(.periodic(from: message.date, by: 1)) { context in
+                        let seconds = max(0, Int(context.date.timeIntervalSince(message.date)))
+                        if seconds >= 3 {
+                            Text(verbatim: seconds < 60 ? L("\(seconds) sn", "\(seconds)s") : L("\(seconds / 60) dk \(seconds % 60) sn", "\(seconds / 60)m \(seconds % 60)s"))
+                                .font(.system(size: size * 0.78)).monospacedDigit()
+                                .foregroundStyle(Theme.textMuted.opacity(0.8))
+                        }
+                    }
+                }
             }
             if let error = message.error {
                 HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.s) {
@@ -1692,7 +2556,25 @@ private struct AIAnswer: View {
         HStack(spacing: Theme.Spacing.m) {
             AIBrandMark(engine: engine, size: size)
             Text(verbatim: details).font(.system(size: size * 0.8)).foregroundStyle(Theme.textMuted).lineLimit(1)
+                .help(message.date.formatted(date: .complete, time: .shortened))
             AICopyButton(text: message.text, size: size * 0.85, label: false)
+            if let quote {
+                Button(action: quote) {
+                    Image(systemName: "text.quote").font(.system(size: size * 0.85)).foregroundStyle(Theme.textMuted)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(L("Alıntıla: seçtiğin kısmı (yoksa tüm cevabı) mesaj kutusuna koyar (⇧⌘')",
+                        "Quote: puts what you selected (or the whole answer) in the message box (⇧⌘')"))
+            }
+            if let fork, !conversation.isRunning {
+                Button(action: fork) {
+                    Image(systemName: "arrow.triangle.branch").font(.system(size: size * 0.85)).foregroundStyle(Theme.textMuted)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(L("Buradan yeni sohbet aç (bu noktaya kadarki konuşmayla)", "New chat from here (with the conversation so far)"))
+            }
             if isLast && !conversation.isRunning {
                 Menu {
                     Button(L("Yeniden yaz", "Write again"), systemImage: "arrow.clockwise") { conversation.regenerate() }
@@ -1732,6 +2614,8 @@ private struct AIAnswer: View {
 
     private var details: String {
         var parts = [AIEngines.shared.displayName(message.model ?? "", engine: engine)]
+        parts.append(Calendar.current.isDateInToday(message.date) ? message.date.formatted(date: .omitted, time: .shortened)
+                                                                  : message.date.formatted(.dateTime.day().month(.abbreviated).hour().minute()))
         if let duration = message.duration {
             parts.append(duration < 60 ? L("\(max(1, Int(duration.rounded()))) sn", "\(max(1, Int(duration.rounded())))s")
                                        : L("\(Int(duration / 60)) dk", "\(Int(duration / 60))m"))

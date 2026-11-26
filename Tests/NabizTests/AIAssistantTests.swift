@@ -79,6 +79,89 @@ struct AIAssistantTests {
         #expect(AIRunner.explain("Error: model 'x' not found", engine: .claude).contains("model"))
     }
 
+    @Test func imagesGoToTheAIsThatSeeThem() throws {
+        let image = URL(fileURLWithPath: "/tmp/x.jpg")
+        let claude = AIRunner.arguments(AIRequest(engine: .claude, system: "s", prompt: "p", images: [image]), compatible: false)
+        #expect(claude.contains("--input-format"))
+        let codex = AIRunner.arguments(AIRequest(engine: .codex, system: "s", prompt: "p", images: [image]), compatible: false)
+        #expect(Array(codex.prefix(3)) == ["exec", "-i", "/tmp/x.jpg"])
+        #expect(codex.last == "-")
+        let plain = AIRunner.arguments(AIRequest(engine: .claude, system: "s", prompt: "p"), compatible: false)
+        #expect(!plain.contains("--input-format"))
+        #expect(AIEngine.claude.seesImages && AIEngine.codex.seesImages && !AIEngine.onDevice.seesImages)
+    }
+
+    @Test func claudeImageMessageIsOneJSONLine() throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("nabiz-test.jpg")
+        try Data([0xFF, 0xD8, 0xFF]).write(to: file)
+        let line = AIImages.claudeMessage(prompt: "what is it", images: [file])
+        #expect(line.hasSuffix("\n"))
+        let object = try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any]
+        let content = ((object?["message"] as? [String: Any])?["content"] as? [[String: Any]]) ?? []
+        #expect(content.count == 2)
+        #expect(content.first?["type"] as? String == "image")
+        #expect(content.last?["text"] as? String == "what is it")
+    }
+
+    @Test func claudeKeepsItsOwnSession() {
+        var request = AIRequest(engine: .claude, system: "s", prompt: "p", session: "abc")
+        var list = AIRunner.arguments(request, compatible: false)
+        #expect(list.contains("--session-id") && !list.contains("--no-session-persistence"))
+        request.resume = true
+        list = AIRunner.arguments(request, compatible: false)
+        #expect(list.contains("--resume") && list.contains("abc"))
+        list = AIRunner.arguments(AIRequest(engine: .claude, system: "s", prompt: "p"), compatible: false)
+        #expect(list.contains("--no-session-persistence"))
+        #expect(AIError("No conversation found with session ID: abc").sessionLost)
+    }
+
+    @Test func claudeReportsUsageAndLimits() {
+        let parser = StreamParser(engine: .claude)
+        parser.feed(line(["type": "rate_limit_event", "rate_limit_info": [
+            "status": "allowed_warning", "rateLimitType": "five_hour", "resetsAt": 1_796_256_000,
+            "unifiedWindows": ["five_hour": ["utilization": 0.91]]]]))
+        parser.feed(line(["type": "result", "result": "Hi", "is_error": false, "total_cost_usd": 0.02,
+                          "usage": ["input_tokens": 2, "cache_creation_input_tokens": 1000, "cache_read_input_tokens": 500, "output_tokens": 8],
+                          "modelUsage": ["claude-opus-5-5": ["contextWindow": 1_000_000]]]))
+        let progress = parser.progress
+        #expect(progress.limit?.status == .warning)
+        #expect(progress.limit?.used == 0.91)
+        #expect(progress.usage?.tokens == 1510)
+        #expect(progress.usage?.window == 1_000_000)
+        #expect(progress.usage?.cost == 0.02)
+    }
+
+    @Test func codexReportsUsage() {
+        let parser = StreamParser(engine: .codex)
+        parser.feed(line(["type": "turn.completed", "usage": ["input_tokens": 18794, "output_tokens": 6]]))
+        #expect(parser.progress.usage?.tokens == 18800)
+    }
+
+    @Test func backgroundGoesBeforeTheChat() {
+        let messages = [AIMessage(role: .user, text: "hi")]
+        let plain = AIAssistant.prompt(for: messages, engine: .claude)
+        #expect(plain == "hi")
+        let withSummary = AIAssistant.prompt(for: messages, engine: .claude, preface: "We talked about cats.")
+        #expect(withSummary.hasPrefix("<context>\nWe talked about cats."))
+        #expect(withSummary.hasSuffix("hi"))
+    }
+
+    @MainActor @Test func summaryReplacesTheMessagesBeforeIt() {
+        let first = AIMessage(role: .user, text: "one"), answer = AIMessage(role: .assistant, text: "1")
+        let record = AIConversation.Record(id: UUID(), title: "t", messages: [first, answer, AIMessage(role: .user, text: "two")],
+                                           engine: .claude, model: "", created: Date(), updated: Date(),
+                                           summary: "counted to one", summarizedID: answer.id)
+        let chat = AIConversation(record: record)
+        #expect(chat.promptMessages.map(\.text) == ["two"])
+        #expect(chat.preface?.contains("counted to one") == true)
+    }
+
+    @Test func statusCodesMatchOnlyWholeNumbers() {
+        #expect(AIRunner.hasStatus("http 429 too many", 429))
+        #expect(!AIRunner.hasStatus("took 14290 ms", 429))
+        #expect(!AIRunner.explain("finished in 4010 ms then crashed", engine: .claude).contains("signed in"))
+    }
+
     @Test func claudeAsksAsAChatWithTheChosenModel() {
         let request = AIRequest(engine: .claude, model: "opus", effort: "high", system: "SYS", prompt: "Hi")
         let arguments = AIRunner.arguments(request, compatible: false)

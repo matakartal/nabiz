@@ -11,6 +11,13 @@ enum Entry {
         // `Nabiz --mcp`: started by an AI app (Claude Code, Claude Desktop…), it connects them to the running Nabız.
         if args.contains("--mcp") { MCPBridge.run() }
         // `Nabiz --calc "100 usd"` prints what the quick calculator would show.
+        if args.contains("--dev-scan") {
+            // `--dev-scan`: what the developer clean-up would offer, without cleaning anything.
+            for item in DevCleanup.scan() {
+                print("\(item.kind.rawValue)\t\(Format.bytes(item.size))\t\(item.targets.count)\t\(item.detail)")
+            }
+            exit(0)
+        }
         if let index = args.firstIndex(of: "--calc"), index + 1 < args.count {
             print(Calculator.evaluate(args[index + 1])?.text ?? "—")
             return
@@ -151,6 +158,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.button?.target = self
         statusItem.button?.action = #selector(statusItemClicked)
         statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        // After Nabız's own item, so the hider's arrow and divider land to its left.
+        MenuBarHider.shared.update()
+        Brightness.shared.start()
         let actions = PanelActions(
             copy: { [weak self] in self?.copy($0) },
             flash: { [weak self] in self?.flash($0) },
@@ -194,6 +204,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.updateHotKeys()
+                MenuBarHider.shared.update()
+                BrightnessKeys.shared.update()
                 MCPServer.shared.update()
                 CalendarAgenda.shared.update()
                 AppearanceMode.apply()
@@ -226,6 +238,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         UsageHistory.shared.save()
         NoteStore.shared.saveNow()
         ClipboardHistory.shared.saveNow()
+        AIChatStore.shared.saveNow()
         FocusMode.shared.stop()
     }
 
@@ -468,11 +481,14 @@ enum Snapshot {
         let monitor = Monitor(autostart: false)
         RateStore.shared.refreshIfNeeded()
         MarketStore.shared.refreshWatched(maxAge: 0)
+        ProjectStore.shared.refresh(force: true)
+        DockerStore.shared.refresh()
         await monitor.tick(forceSimulators: true)
         for _ in 0..<6 {
             try? await Task.sleep(for: .milliseconds(400))
             await monitor.tick()
         }
+        for _ in 0..<40 where !ProjectStore.shared.loaded { try? await Task.sleep(for: .milliseconds(100)) }
         let appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         NSApp.appearance = appearance
         let args = CommandLine.arguments
@@ -481,6 +497,12 @@ enum Snapshot {
         }
         // `--page markets` opens that Settings page; it loads the market catalog first.
         let page = value(after: "--page").flatMap(SettingsPage.init(rawValue:))
+        if page == .developer {
+            DevCleanupStore.shared.scan()
+            for _ in 0..<1200 where DevCleanupStore.shared.scanning || DevCleanupStore.shared.scannedAt == nil {
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+        }
         if page == .markets {
             MarketStore.shared.refreshCatalog()
             try? await Task.sleep(for: .seconds(4))
@@ -536,8 +558,12 @@ enum Snapshot {
                 state.engine = engine
                 state.model = engine.chosenModel
             }
+            // `--image file`: attached to the first question.
+            if let image = value(after: "--image") { state.attach(file: URL(fileURLWithPath: image)) }
             if !text.isEmpty {
-                state.send(text)
+                // Through the box, like typing it, so attachments go along.
+                state.draft = text
+                state.send()
                 for _ in 0..<900 where state.conversation?.isRunning == true && !args.contains("--thinking") {
                     try? await Task.sleep(for: .milliseconds(100))
                 }
@@ -549,11 +575,29 @@ enum Snapshot {
                 }
                 try? await Task.sleep(for: .milliseconds(400))
             }
+            // `--compact`: the chat summarized; `--side "q"`: a side question; `--suggest`: wait for the suggestion.
+            if args.contains("--compact") { await state.conversation?.compact() }
+            if let question = value(after: "--side") {
+                state.sideOpen = true
+                state.sideDraft = question
+                state.sendSide()
+                for _ in 0..<900 where state.side?.isRunning == true { try? await Task.sleep(for: .milliseconds(100)) }
+            }
+            if args.contains("--suggest") { try? await Task.sleep(for: .seconds(4)) }
+            // `--find "words"`: the find bar open on them.
+            if let words = value(after: "--find") {
+                state.startFind()
+                state.findQuery = words
+                state.updateFind()
+            }
             root = AnyView(AIChatView(state: state).frame(width: 920, height: 660))
         } else if let text = value(after: "--launcher") {
             AppIndex.shared.refreshIfNeeded()
             try? await Task.sleep(for: .milliseconds(600))
             LauncherPanel.shared.model.reset(mode: args.contains("--clipboard") ? .clipboard : .all, text: text)
+            // Ports and projects are read in the background.
+            for _ in 0..<60 where !ProjectStore.shared.loaded { try? await Task.sleep(for: .milliseconds(100)) }
+            try? await Task.sleep(for: .milliseconds(200))
             // `--ai`: asks the text and waits for the answer.
             if args.contains("--ai") {
                 AIChatStore.persists = false
@@ -567,6 +611,11 @@ enum Snapshot {
             }
             if args.contains("--palette") { LauncherPanel.shared.model.paletteOpen = true }
             root = AnyView(LauncherView(model: LauncherPanel.shared.model))
+        } else if args.contains("--phone-qr") {
+            // `--phone-qr [--local]`: the dev server QR window (`--local`: a server only this Mac can reach).
+            root = AnyView(PhoneQRView(url: "http://192.168.1.24:5173", title: "pt-takip",
+                                       problem: args.contains("--local") ? PhoneQR.address(for: DevServer(pid: 1, ports: [5173], folder: "/x", project: "/x", tool: "vite", started: nil)).problem : nil,
+                                       close: {}).background(MenuMaterial()))
         } else if args.contains("--rec-bar") {
             // `--rec-bar [--target window]`: the recording bar.
             let options = RecOptions()

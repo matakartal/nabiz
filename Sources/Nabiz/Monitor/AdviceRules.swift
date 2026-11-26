@@ -3,6 +3,7 @@ import Foundation
 /// Every kind of suggestion, each with its own switch in Settings → Suggestions.
 enum AdviceKind: String, CaseIterable, Identifiable {
     case memory, cpu, thermal, disk, battery, batteryHealth, aiBurn, docker, rust, claude, security, uptime
+    case unpushed, devCleanup, simulators, notarize
 
     var id: String { rawValue }
     var prefKey: String { "advice.\(rawValue)" }
@@ -22,6 +23,10 @@ enum AdviceKind: String, CaseIterable, Identifiable {
         case .claude: L("Çok fazla Claude Code işlemi", "Too many Claude Code processes")
         case .security: L("Güvenlik ayarı kapalıysa", "A security setting is off")
         case .uptime: L("Uzun süredir yeniden başlatılmadıysa", "Not restarted for long")
+        case .unpushed: L("Commit'ler gönderilmeden kaldıysa", "Commits left unpushed")
+        case .devCleanup: L("Geliştirici çöpü biriktiyse", "Developer leftovers piled up")
+        case .simulators: L("Birden çok simülatör açıksa", "Several simulators running")
+        case .notarize: L("Apple notarize ederken", "While Apple notarizes")
         }
     }
 
@@ -42,6 +47,10 @@ enum AdviceKind: String, CaseIterable, Identifiable {
         case .claude: L("20'den fazla işlem açık kalınca.", "With more than 20 processes open.")
         case .security: L("Aşağıda seçtiğin kontrollerden biri kapalıysa.", "When one of the checks you pick below is off.")
         case .uptime: L("7 günü geçip takas alanı dolunca, ya da 30 günü geçince.", "Past 7 days with swap in use, or past 30 days.")
+        case .unpushed: L("Bir projede 1 günden eski commit'ler gönderilmemişse.", "When a project has commits older than a day that aren't pushed.")
+        case .devCleanup: L("Simülatör, worktree, build ve paket artıkları 20 GB'ı geçince.", "When simulator, worktree, build and package leftovers pass 20 GB.")
+        case .simulators: L("3 ya da daha fazla simülatör aynı anda açıkken.", "With 3 or more simulators running at once.")
+        case .notarize: L("notarytool submit sürerken; bitince bildirim gelir.", "While notarytool submit runs; a notification comes when it's done.")
         }
     }
 

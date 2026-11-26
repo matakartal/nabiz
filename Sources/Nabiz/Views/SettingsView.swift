@@ -8,7 +8,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
     case general, appearance, shortcuts, maintenance
     case menuBar, panel, advice
     case ai, aiChat, dictation, aiLimits, mcp
-    case launcher, extensions, clipboard, snippets, windows, screenshot, focus, schedules
+    case launcher, extensions, developer, clipboard, snippets, windows, screenshot, focus, schedules
     case calendar, markets, currency
     case about
 
@@ -32,6 +32,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
         case .mcp: ("MCP", "MCP")
         case .launcher: ("Başlatıcı", "Launcher")
         case .extensions: ("Uzantılar", "Extensions")
+        case .developer: ("Geliştirici", "Developer")
         case .clipboard: ("Pano", "Clipboard")
         case .snippets: ("Parçacıklar", "Snippets")
         case .windows: ("Pencereler", "Windows")
@@ -61,6 +62,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
         case .mcp: L("Claude Code, Claude Desktop ve diğer AI uygulamaları Nabız'ı kullansın.", "Let Claude Code, Claude Desktop and other AI apps use Nabız.")
         case .launcher: L("Uygulama, komut, hesap ve web araması tek yerde.", "Apps, commands, maths and web search in one place.")
         case .extensions: L("Dosyalar, kestirmeler, betikler ve video indirme.", "Files, Shortcuts, scripts and video downloads.")
+        case .developer: L("Projeler, portlar, Docker, geliştirici temizliği ve notarize takibi.", "Projects, ports, Docker, developer clean-up and notarization.")
         case .clipboard: L("Kopyaladıklarının geçmişi ve yapıştırma.", "The history of what you copied, and pasting.")
         case .snippets: L("Kısa bir kelimeyle yapıştırılan hazır metinler.", "Saved text you paste with a short keyword.")
         case .windows: L("Öndeki pencereyi kısayolla yerleştir.", "Place the front window with a shortcut.")
@@ -90,6 +92,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
         case .mcp: "point.3.connected.trianglepath.dotted"
         case .launcher: "magnifyingglass"
         case .extensions: "puzzlepiece.extension.fill"
+        case .developer: "chevron.left.forwardslash.chevron.right"
         case .clipboard: "doc.on.clipboard.fill"
         case .snippets: "text.quote"
         case .windows: "rectangle.split.2x1.fill"
@@ -193,6 +196,7 @@ struct SettingsView: View {
                     case .mcp: MCPPage()
                     case .launcher: LauncherPage()
                     case .extensions: ExtensionsPage()
+                    case .developer: DeveloperPage()
                     case .clipboard: ClipboardPage()
                     case .snippets: SnippetsPage()
                     case .windows: WindowsPage()
@@ -328,7 +332,7 @@ enum SettingsGroup: String, CaseIterable, Identifiable {
         case .app: [.general, .appearance, .shortcuts, .maintenance]
         case .bar: [.menuBar, .panel, .advice]
         case .ai: [.ai, .aiChat, .dictation, .aiLimits, .mcp]
-        case .tools: [.launcher, .extensions, .clipboard, .snippets, .windows, .screenshot, .focus, .schedules]
+        case .tools: [.launcher, .extensions, .developer, .clipboard, .snippets, .windows, .screenshot, .focus, .schedules]
         case .tracking: [.calendar, .markets, .currency]
         case .about: [.about]
         }
@@ -435,13 +439,16 @@ struct SettingsSection<Content: View, Header: View, Footer: View>: View {
 
     var body: some View {
         Section {
-            // Grouped forms ignore row backgrounds on macOS, so the glow is drawn under each row, out to the card's edges.
-            content.background {
-                Theme.accent.opacity(flash == id ? 0.2 : 0)
-                    .padding(.horizontal, -Theme.Spacing.m)
-                    .padding(.vertical, -Theme.Spacing.s)
-                    .allowsHitTesting(false)
-            }
+            // Grouped forms ignore row backgrounds on macOS, so the glow is drawn under each row, out to the card's edges
+            // and to the separators, so the rows join into one block. While lit, short rows (a button) span the width.
+            content
+                .frame(maxWidth: flash == id ? .infinity : nil, alignment: .leading)
+                .background {
+                    Theme.accent.opacity(flash == id ? 0.2 : 0)
+                        .padding(.horizontal, -Theme.Spacing.l)
+                        .padding(.vertical, -10.5)
+                        .allowsHitTesting(false)
+                }
         } header: { header } footer: { footer }
             .id(id)
     }
@@ -552,6 +559,7 @@ private struct ShortcutsPage: View {
     @AppStorage(Prefs.recHotkey) private var recHotkey = true
     @AppStorage(Prefs.aiHotkey) private var aiHotkey = true
     @AppStorage(Prefs.aiChatHotkey) private var aiChatHotkey = true
+    @AppStorage(Prefs.brightnessKeys) private var brightnessKeys = false
 
     var body: some View {
         Form {
@@ -572,6 +580,23 @@ private struct ShortcutsPage: View {
             } footer: {
                 Footnote(L("Değiştirmek için kısayola tıkla ve yeni tuşlara bas (en az bir ⌘, ⌃ ya da ⌥ ile). ⎋ vazgeçer, ⌫ varsayılana döndürür. Pencere kısayolları Pencereler sayfasında; ekran görüntüsü ayarları kendi sayfasında. Dikte: kısayola bas, konuş, yeniden bas; söylediklerin imlecin olduğu yere yazılır.",
                            "Click a shortcut and press the new keys (with at least ⌘, ⌃ or ⌥). ⎋ cancels, ⌫ goes back to the default. Window shortcuts are on the Windows page; screenshot options have their own page. Dictation: press the shortcut, speak, press it again; your words land where the cursor is."))
+            }
+            SettingsSection("shortcuts.brightness") {
+                Toggle(L("Parlaklık tuşları harici ekranı da ayarlasın", "Brightness keys work on external displays"), isOn: $brightnessKeys)
+                    .onChange(of: brightnessKeys) { _, on in
+                        if on && !Paster.isTrusted { Paster.requestTrust() }
+                        Brightness.shared.refresh()
+                    }
+                if brightnessKeys { AccessibilityRow() }
+                LabeledContent(L("Bulunan harici ekran", "External displays found")) {
+                    let names = Brightness.shared.displays.filter { !$0.builtIn }.map(\.name)
+                    Text(verbatim: names.isEmpty ? L("Yok", "None") : names.joined(separator: ", ")).foregroundStyle(Theme.textMuted)
+                }
+            } header: {
+                Text(L("Ekran parlaklığı", "Display brightness"))
+            } footer: {
+                Footnote(L("Fare hangi ekrandaysa tuşlar onu ayarlar; yerleşik ekranda her zamanki gibi çalışır. ⇧⌥ ile daha ince adımlar. Harici ekranın kendi menüsünde DDC/CI açık olmalı. Panelde Ekranlar bölümü de her ekran için bir sürgü gösterir.",
+                           "The keys change the display the pointer is on; on the built-in display they work as always. ⇧⌥ gives finer steps. The display's own menu must have DDC/CI on. The panel's Displays section also shows a slider for each display."))
             }
         }
         .formStyle(.grouped)
@@ -690,6 +715,8 @@ private struct MenuBarPage: View {
     @AppStorage("ai.claude") private var claude = false
     @AppStorage("ai.codex") private var codex = false
     @AppStorage("ai.gemini") private var gemini = false
+    @AppStorage(Prefs.menuBarHider) private var hider = false
+    @AppStorage(Prefs.menuBarHiderDelay) private var hiderDelay = 10
 
     var body: some View {
         Form {
@@ -725,6 +752,24 @@ private struct MenuBarPage: View {
                         "AI limit shows the fullest window among the providers you turned on. Exchange rate shows the first watched rate.")
                     : L("AI limitini göstermek için önce AI limitleri sayfasından bir sağlayıcı aç.",
                         "To show an AI limit, first turn on a provider on the AI Limits page."))
+            }
+            SettingsSection("menuBar.hider") {
+                Toggle(L("Kalabalık simgeleri gizle", "Hide crowded icons"), isOn: $hider)
+                Picker(L("Kendiliğinden gizle", "Hide again"), selection: $hiderDelay) {
+                    Text(L("5 saniye sonra", "After 5 seconds")).tag(5)
+                    Text(L("10 saniye sonra", "After 10 seconds")).tag(10)
+                    Text(L("30 saniye sonra", "After 30 seconds")).tag(30)
+                    Text(L("1 dakika sonra", "After 1 minute")).tag(60)
+                    Text(L("Hiç", "Never")).tag(0)
+                }
+                .disabled(!hider)
+                Button(L("Nasıl kullanılır?", "How does it work?")) { MenuBarHider.shared.showHint() }
+                    .disabled(!hider)
+            } header: {
+                Text(L("Simgeleri gizle", "Hide icons"))
+            } footer: {
+                Footnote(L("Nabız'ın soluna bir ok ve ince bir çizgi gelir. ⌘ basılı tutup gizlemek istediğin simgeleri çizginin soluna sürükle; oka tıklayınca gizlenir ve geri gelir. Kapatınca her simge yerinde kalır.",
+                           "An arrow and a thin line appear left of Nabız. Hold ⌘ and drag the icons you want to hide to the left of the line; clicking the arrow hides them and brings them back. Turning it off leaves every icon where it was."))
             }
             SettingsSection("menuBar.icon") {
                 Toggle(L("Simge", "Icon"), isOn: $icon)
@@ -1265,6 +1310,9 @@ private struct AIPage: View {
 private struct AIChatPage: View {
     @AppStorage(Prefs.aiHistory) private var history = true
     @AppStorage(Prefs.aiChatHotkey) private var chatHotkey = true
+    @AppStorage(Prefs.aiClaudeSessions) private var claudeSessions = true
+    @AppStorage(Prefs.aiNotify) private var notify = true
+    @AppStorage(Prefs.aiSuggest) private var suggest = true
     @State private var confirmClear = false
     private let chats = AIChatStore.shared
 
@@ -1283,6 +1331,19 @@ private struct AIChatPage: View {
             } footer: {
                 Footnote(L("Panelde AI → Sohbet, araçlarda \"AI sohbet\", menü çubuğu simgesine sağ tık ya da başlatıcıda \"sohbet\" ile de açılır.",
                            "Also from the panel (AI → Chat), the \"AI chat\" tool, a right-click on the menu bar item, or \"chat\" in the launcher."))
+            }
+            SettingsSection("aiChat.answers") {
+                Toggle(L("Cevap gelince bildir", "Notify when an answer arrives"), isOn: $notify)
+                Toggle(L("Claude sohbeti kendisi hatırlasın", "Let Claude remember the chat itself"), isOn: $claudeSessions)
+                Toggle(L("Sonraki mesajı öner (⇥ ile al)", "Suggest the next message (⇥ to take it)"), isOn: $suggest)
+                    .disabled(OnDeviceAI.problem != nil)
+                    .help(OnDeviceAI.problem ?? L("Apple'ın cihaz içi modeli yazar; ücretsiz, metin bu Mac'ten çıkmaz.",
+                                                   "Apple's on-device model writes it; free, and the text stays on this Mac."))
+            } header: {
+                SectionTitle(L("Cevaplar", "Answers"))
+            } footer: {
+                Footnote(L("Bildirim yalnızca başka bir uygulamadayken ya da başka bir sohbete bakarken gelir; tıklayınca sohbet açılır. Claude sohbeti hatırlarsa her mesajda yalnızca yeni mesaj gider: daha hızlı ve limitten daha az yer. Bunun için Claude, sohbetin bir kopyasını kendi klasöründe (~/.claude) tutar; kapatırsan her mesajda tüm sohbet yeniden gönderilir.",
+                           "The notification comes only while you're in another app or another chat; clicking it opens the chat. When Claude remembers the chat, only your new message goes out each time: faster, and lighter on your limit. For that Claude keeps a copy of the chat in its own folder (~/.claude); turn it off to send the whole chat every time."))
             }
             SettingsSection("aiChat.history") {
                 Toggle(L("Sohbetleri sakla", "Keep chats"), isOn: Binding(get: { history }, set: { on in
@@ -1613,7 +1674,7 @@ private struct SectionTitle: View {
 }
 
 /// A form footer, left-aligned like System Settings.
-private struct Footnote: View {
+struct Footnote: View {
     let text: String
     init(_ text: String) { self.text = text }
 
@@ -1626,7 +1687,7 @@ private struct Footnote: View {
 }
 
 /// The page's title block: its icon tile, title and one line on what it is for. Lined up with the form's cards.
-private struct PageHeader: View {
+struct PageHeader: View {
     let page: SettingsPage
 
     var body: some View {

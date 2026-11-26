@@ -37,6 +37,32 @@ enum Prefs {
     static let accordion = "accordion"
     static let showAdvice = "showAdvice"
     static let showSimulators = "showSimulators"
+    /// The panel's dev servers (listening ports) section.
+    static let showPorts = "showPorts"
+    /// The panel's projects section (git repositories with work not committed or not pushed).
+    static let showProjects = "showProjects"
+    /// How many projects the panel lists.
+    static let projectCount = "projectCount"
+    /// The panel's Docker containers section.
+    static let showDocker = "showDocker"
+    /// Bundle id of the editor projects open in ("" = the first one installed).
+    static let devEditor = "devEditor"
+    /// "claude" or "codex": the coding agent a project's "Agent" button starts in Terminal.
+    static let devAgent = "devAgent"
+    /// Watches `notarytool` submissions and notifies when Apple answers.
+    static let notaryWatch = "notaryWatch"
+    /// The keychain profile `notarytool` uses (`xcrun notarytool store-credentials <profile>`).
+    static let notaryProfile = "notaryProfile"
+    /// node_modules in projects untouched this many days count as cleanable.
+    static let devStaleDays = "devStaleDays"
+    /// The panel's display brightness section (external displays over DDC).
+    static let showDisplays = "showDisplays"
+    /// The keyboard's brightness keys change the external display under the pointer.
+    static let brightnessKeys = "brightnessKeys"
+    /// A second menu bar item that hides the icons left of its divider.
+    static let menuBarHider = "menuBarHider"
+    /// Hidden icons fold away again this many seconds after they were shown (0 = stay).
+    static let menuBarHiderDelay = "menuBarHiderDelay"
     static let showApps = "showApps"
     static let showCurrency = "showCurrency"
     static let showTools = "showTools"
@@ -164,6 +190,12 @@ enum Prefs {
     static let aiHotkey = "aiHotkey"
     /// ⌃⌥I opens the AI chat window.
     static let aiChatHotkey = "aiChatHotkey"
+    /// Claude keeps its own copy of each chat (in ~/.claude), so only new messages are sent.
+    static let aiClaudeSessions = "aiClaudeSessions"
+    /// A notification when an answer arrives while you're elsewhere.
+    static let aiNotify = "aiNotify"
+    /// A grey "what you might say next" in the empty message box (Apple's on-device model).
+    static let aiSuggest = "aiSuggest"
     /// The app version whose "New" note in the panel was seen or closed.
     static let seenVersion = "seenVersion"
 
@@ -175,9 +207,12 @@ enum Prefs {
             showMarkets: true, hiddenTools: "", accentColor: "green", textSize: "normal", panelWidth: 320,
             panelStyle: "material", barColors: false, barAnimate: true, rustAutoClean: false, rustAutoCleanDays: 14, watchedMarkets: "BTC,ETH,SOL,xyz:XYZ100,xyz:TSLA,xyz:GOLD", "expanded.markets": true, barSwap: false, barDisk: false, barBattery: false, barAI: false, barCurrency: false,
             showSystem: true, showCPUApps: true, collapsible: true, accordion: false,
-            "expanded.system": true, "expanded.advice": true, "expanded.simulators": true, "expanded.ai": true,
+            "expanded.system": true, "expanded.advice": true, "expanded.simulators": true, "expanded.ports": true, "expanded.displays": true, "expanded.ai": true,
             "expanded.memory": true, "expanded.cpu": true, "expanded.currency": true, "expanded.tools": true,
-            showAdvice: true, showSimulators: true, showApps: true, showCurrency: true, showTools: true, showAI: true,
+            showAdvice: true, showSimulators: true, showPorts: true, showProjects: true, projectCount: 5, showDocker: true,
+            devEditor: "", devAgent: "claude", notaryWatch: true, notaryProfile: "", devStaleDays: 30,
+            "expanded.projects": true, "expanded.docker": true, showDisplays: true, brightnessKeys: false,
+            menuBarHider: false, menuBarHiderDelay: 10, showApps: true, showCurrency: true, showTools: true, showAI: true,
             "ai.claude": false, "ai.codex": false, "ai.gemini": false,
             memoryAppCount: 5, cpuAppCount: 3,
             baseCurrency: "TRY", watchedCurrencies: "USD,EUR,GBP",
@@ -190,7 +225,7 @@ enum Prefs {
             downloadQuality: "best", downloadFolder: "",
             appearanceMode: "system", fontDesign: "standard", density: "normal", meterStyle: "thin",
             barSymbol: "gauge.with.dots.needle.33percent", customAccent: "#1DB954", sectionOrder: "",
-            aiAsk: true, aiEngine: "onDevice", aiHistory: true, aiHotkey: true, aiChatHotkey: true, seenVersion: "",
+            aiAsk: true, aiEngine: "onDevice", aiHistory: true, aiHotkey: true, aiChatHotkey: true, aiClaudeSessions: true, aiNotify: true, aiSuggest: true, seenVersion: "",
         ])
         AdviceKind.registerDefaults()
     }
@@ -216,7 +251,7 @@ enum Prefs {
 
 /// The panel's foldable sections, in the order they appear.
 enum PanelSection: String, CaseIterable, Identifiable {
-    case system, advice, simulators, ai, calendar, memory, cpu, markets, currency, tools
+    case system, advice, simulators, ports, projects, docker, displays, ai, calendar, memory, cpu, markets, currency, tools
 
     var id: String { rawValue }
 
@@ -225,6 +260,10 @@ enum PanelSection: String, CaseIterable, Identifiable {
         case .system: L("Sistem", "System")
         case .advice: L("Öneriler", "Suggestions")
         case .simulators: L("Simülatörler", "Simulators")
+        case .ports: L("Dev sunucuları", "Dev servers")
+        case .projects: L("Projeler", "Projects")
+        case .docker: "Docker"
+        case .displays: L("Ekranlar", "Displays")
         case .ai: "AI"
         case .calendar: L("Takvim", "Calendar")
         case .memory: L("En çok bellek", "Top memory")
@@ -240,6 +279,10 @@ enum PanelSection: String, CaseIterable, Identifiable {
         case .system: Prefs.showSystem
         case .advice: Prefs.showAdvice
         case .simulators: Prefs.showSimulators
+        case .ports: Prefs.showPorts
+        case .projects: Prefs.showProjects
+        case .docker: Prefs.showDocker
+        case .displays: Prefs.showDisplays
         case .ai: Prefs.showAI
         case .calendar: Prefs.calendarEnabled
         case .memory: Prefs.showApps
@@ -255,6 +298,10 @@ enum PanelSection: String, CaseIterable, Identifiable {
         case .system: "gauge.with.dots.needle.50percent"
         case .advice: "lightbulb"
         case .simulators: "iphone"
+        case .ports: "network"
+        case .projects: "folder"
+        case .docker: "shippingbox"
+        case .displays: "sun.max"
         case .ai: "sparkles"
         case .calendar: "calendar"
         case .memory: "memorychip"

@@ -5,6 +5,7 @@ import Observation
 enum ScheduledAction: String, Codable, CaseIterable, Identifiable, Sendable {
     case darkModeOn, darkModeOff, keepAwakeOff, shutdownSimulators, quitDocker
     case cleanRust, cleanXcode, clearClipboard, displayOff, reminder
+    case devCleanup
 
     var id: String { rawValue }
 
@@ -20,6 +21,7 @@ enum ScheduledAction: String, Codable, CaseIterable, Identifiable, Sendable {
         case .clearClipboard: L("Panoyu temizle", "Clear the clipboard")
         case .displayOff: L("Ekranı kapat", "Turn the display off")
         case .reminder: L("Hatırlatma göster", "Show a reminder")
+        case .devCleanup: L("Geliştirici temizliği (güvenli olanlar)", "Developer clean-up (the safe ones)")
         }
     }
 
@@ -35,6 +37,7 @@ enum ScheduledAction: String, Codable, CaseIterable, Identifiable, Sendable {
         case .clearClipboard: "clipboard"
         case .displayOff: "moon.zzz"
         case .reminder: "bell"
+        case .devCleanup: "sparkles.rectangle.stack"
         }
     }
 }
@@ -91,6 +94,7 @@ final class Scheduler {
     static var presets: [ScheduledTask] {
         [
             ScheduledTask(action: .cleanRust, hour: 3, minute: 0),
+            ScheduledTask(action: .devCleanup, hour: 3, minute: 30, weekdays: [1]),
             ScheduledTask(action: .darkModeOn, hour: 19, minute: 0),
             ScheduledTask(action: .darkModeOff, hour: 8, minute: 0),
             ScheduledTask(action: .shutdownSimulators, hour: 18, minute: 30, weekdays: Set(2...6)),
@@ -153,6 +157,7 @@ final class Scheduler {
             NSRunningApplication.runningApplications(withBundleIdentifier: "com.docker.docker").forEach { $0.terminate() }
         case .cleanRust: toolbox.cleanRustUnattended()
         case .cleanXcode: toolbox.cleanDerivedDataUnattended()
+        case .devCleanup: DevCleanupStore.shared.cleanSafe(notify: true)
         case .clearClipboard: NSPasteboard.general.clearContents()
         case .displayOff: Task { _ = await Toolbox.run("/usr/bin/pmset", ["displaysleepnow"]) }
         case .reminder: break // the notification is the reminder

@@ -151,6 +151,7 @@ enum SettingsIndex {
         .init(.general, "general.notifications", "Bildirimler", "Notifications", "uyarı alert bellek cpu disk pil limit"),
         // Shortcuts
         .init(.shortcuts, "shortcuts.keys", "Başlatıcı kısayolu", "Launcher shortcut", "hotkey tuş ⌃⌥ boşluk space"),
+        .init(.shortcuts, "shortcuts.brightness", "Harici ekran parlaklığı", "External display brightness", "parlaklık brightness monitör monitor ddc ekran display tuş keys monitorcontrol"),
         .init(.shortcuts, "shortcuts.keys", "Pano geçmişi kısayolu", "Clipboard history shortcut", "hotkey tuş ⌃⌥v"),
         .init(.shortcuts, "shortcuts.keys", "Not kısayolu", "Notes shortcut", "hotkey tuş"),
         .init(.shortcuts, "shortcuts.keys", "AI sohbet kısayolu", "AI chat shortcut", "hotkey tuş"),
@@ -193,12 +194,16 @@ enum SettingsIndex {
         .init(.menuBar, "menuBar.other", "Menü çubuğunda AI limiti", "AI limit in the menu bar", "claude codex gemini"),
         .init(.menuBar, "menuBar.other", "Menü çubuğunda piyasa fiyatı", "Market price in the menu bar", "btc bitcoin kripto"),
         .init(.menuBar, "menuBar.other", "Menü çubuğunda döviz kuru", "Exchange rate in the menu bar", "usd eur kur"),
+        .init(.menuBar, "menuBar.hider", "Kalabalık simgeleri gizle", "Hide crowded icons", "gizle hide bartender ice hidden bar sadeleştir tidy çentik notch simgeler icons"),
+        .init(.menuBar, "menuBar.hider", "Simgeleri kendiliğinden gizle", "Hide icons again", "süre delay otomatik auto"),
         .init(.menuBar, "menuBar.icon", "Menü çubuğu simgesi", "Menu bar icon", "ikon icon"),
         .init(.menuBar, "menuBar.icon", "Etiketleri yaz (CPU, RAM…)", "Show labels (CPU, RAM…)", "label"),
         // Panel
         .init(.panel, "panel.folding", "Katlanabilir bölümler", "Collapsible sections", "katla fold"),
         .init(.panel, "panel.folding", "Akordeon: tek bölüm açık", "Accordion: one section open", "accordion"),
         .init(.panel, "panel.sections", "Panel bölümleri ve sırası", "Panel sections and order", "gizle göster hide show sırala reorder"),
+        .init(.panel, "panel.sections", "Dev sunucuları ve portlar", "Dev servers and ports", "port localhost sunucu server vite next npm kill durdur stop"),
+        .init(.panel, "panel.sections", "Ekran parlaklığı sürgüsü", "Display brightness slider", "parlaklık brightness monitör monitor ekran display"),
         .init(.panel, "panel.tools", "Panel araçları", "Panel tools", "tool"),
         .init(.panel, "panel.apps", "Çok kaynak kullanan uygulamalar", "Busiest apps list", "işlem process top bellek cpu"),
         // Suggestions
@@ -214,6 +219,9 @@ enum SettingsIndex {
         .init(.ai, "ai.commands", "Kendi AI komutların", "Your own AI commands", "istem prompt özetle çevir düzelt summarise translate"),
         // Chat
         .init(.aiChat, "aiChat.open", "Sohbet penceresini aç", "Open the chat window", "chat"),
+        .init(.aiChat, "aiChat.answers", "Cevap gelince bildir", "Notify when an answer arrives", "bildirim notification"),
+        .init(.aiChat, "aiChat.answers", "Sonraki mesajı öner", "Suggest the next message", "öneri suggestion tab"),
+        .init(.aiChat, "aiChat.answers", "Claude sohbeti kendisi hatırlasın", "Let Claude remember the chat itself", "oturum session hızlı faster limit"),
         .init(.aiChat, "aiChat.history", "Sohbetleri sakla", "Keep chats", "geçmiş history şifreli encrypted"),
         .init(.aiChat, "aiChat.history", "Tüm sohbetleri sil", "Delete all chats", "temizle clear"),
         // Dictation
@@ -240,6 +248,13 @@ enum SettingsIndex {
         .init(.launcher, "launcher.quicklinks", "Hızlı bağlantılar", "Quicklinks", "web arama google github url kısaltma keyword"),
         .init(.launcher, "launcher.bindings", "Kendi kısayolların ve takma adların", "Your shortcuts and aliases", "alias hotkey"),
         // Extensions
+        .init(.developer, "developer.projects", "Panelde projeleri göster", "Show projects in the panel", "git repo dal branch push commit"),
+        .init(.developer, "developer.projects", "Projeyi aç", "Open projects in", "editör editor cursor vs code zed"),
+        .init(.developer, "developer.projects", "Kodlama ajanı", "Coding agent", "claude code codex ai"),
+        .init(.developer, "developer.projects", "Docker konteynerleri", "Docker containers", "docker container compose supabase"),
+        .init(.developer, "developer.cleanup", "Geliştirici temizliği", "Developer clean-up", "disk yer space simülatör simulator worktree node_modules deriveddata pnpm npm brew playwright docker volume dal branch"),
+        .init(.developer, "developer.notary", "Notarize bitince haber ver", "Tell me when notarization finishes", "notarytool apple imza sign release"),
+        .init(.developer, "developer.launcher", "Launcher'da geliştirici araçları", "Developer tools in the launcher", "port jwt unix epoch zaman timestamp hash sha md5 uuid ulid case camel snake renk color hex cron http base64"),
         .init(.extensions, "extensions.files", "Aramada dosyaları göster", "Show files in searches", "spotlight dosya file"),
         .init(.extensions, "extensions.files", "Kestirmeler (Shortcuts)", "Shortcuts app", "kestirme otomasyon automation"),
         .init(.extensions, "extensions.files", "Betikler", "Scripts", "script sh python bash"),
@@ -301,6 +316,7 @@ extension SettingsPage {
         case .mcp: "mcp claude code desktop cursor ai yapay zeka bağla connect server sunucu araç tool"
         case .launcher: "arama search uygulama app hesap calculator maths web bağlantı link"
         case .extensions: "uzantı extension dosya file kestirme shortcuts betik script video indir download youtube"
+        case .developer: "geliştirici developer dev proje project git repo port docker konteyner container temizlik cleanup simülatör simulator worktree node_modules deriveddata xcode notarize jwt cron hash uuid"
         case .clipboard: "pano clipboard geçmiş history kopyala copy yapıştır paste şifreli encrypted"
         case .snippets: "parçacık snippet metin text kelime keyword"
         case .windows: "pencere window yerleştir place layout yarım half"

@@ -96,6 +96,75 @@ enum MCPTools {
                 Notifier.shared.post(id: "mcp-\(Date().timeIntervalSince1970)", title: title, body: args["message"] as? String ?? "")
                 return "Notification sent."
             },
+            MCPTool(name: "dev_servers", title: "Running dev servers",
+                    description: "Dev servers the user has running on this Mac (vite, next, wrangler, python http.server…): project, folder, ports, pid, how long it has run and its local URL. Check this before starting a server: if the project already has one, use it instead of starting a second on another port.",
+                    group: .basic) { _ in
+                let servers = await Task.detached(priority: .userInitiated) { DevServers.running() }.value
+                guard !servers.isEmpty else { return "No dev servers are running." }
+                return json(servers.map { server -> [String: Any] in
+                    var item: [String: Any] = ["project": server.projectName, "folder": server.folder, "tool": server.tool,
+                                               "ports": server.ports.map(Int.init), "pid": Int(server.pid)]
+                    if let url = server.url { item["url"] = url.absoluteString }
+                    if let started = server.started { item["running_minutes"] = Int(Date().timeIntervalSince(started) / 60) }
+                    return item
+                })
+            },
+
+            MCPTool(name: "port_info", title: "Who uses a port",
+                    description: "Which process listens on a TCP port of this Mac (any of the user's processes, plus Docker, AirPlay and other system ones), its project folder, whether it's open to the network, and the first free port from there. Without a port, every listening port. Use it before picking a port or when one is 'already in use'.",
+                    group: .basic,
+                    properties: ["port": ["type": "integer", "minimum": 1, "maximum": 65535]]) { args in
+                let port = int(args["port"]).flatMap { UInt16(exactly: $0) }
+                let uses = await Task.detached(priority: .userInitiated) { port.map(Ports.lookup) ?? Ports.all() }.value
+                var result: [String: Any] = ["listening": uses.map { use -> [String: Any] in
+                    var item: [String: Any] = ["port": Int(use.port), "process": use.name, "open_to_network": use.everyInterface,
+                                               "stoppable_by_stop_dev_server": use.stoppable && use.project != nil]
+                    if let pid = use.pid { item["pid"] = Int(pid) }
+                    if let folder = use.folder { item["folder"] = folder }
+                    if let note = use.note { item["note"] = note }
+                    return item
+                }]
+                if let port {
+                    result["first_free_port"] = await Task.detached(priority: .userInitiated) { Ports.firstFree(from: port).map(Int.init) }.value ?? NSNull()
+                }
+                return json(result)
+            },
+            MCPTool(name: "projects", title: "The user's projects",
+                    description: "Git repositories in the user's project folders (~/Developer…): path, branch, files changed, commits ahead/behind its upstream, last activity, stack (node, swift, xcode, rust…), package manager, package.json scripts, GitHub URL and the dev server running for it, if any. Most recently active first.",
+                    group: .basic) { _ in
+                let found = await Task.detached(priority: .userInitiated) { () -> ([Project], [DevServer]) in
+                    let projects = Projects.find().map(Projects.read)
+                    return (projects, DevServers.running())
+                }.value
+                let (projects, servers) = found
+                return json(projects.sorted { ($0.lastActivity ?? .distantPast) > ($1.lastActivity ?? .distantPast) }.map { project -> [String: Any] in
+                    var item: [String: Any] = ["name": project.displayName, "path": project.path, "changes": project.changes,
+                                               "ahead": project.ahead, "behind": project.behind, "stack": project.stack.map(\.rawValue),
+                                               "scripts": project.scripts]
+                    if let branch = project.branch { item["branch"] = branch }
+                    if let upstream = project.upstream { item["upstream"] = upstream }
+                    if let manager = project.packageManager { item["package_manager"] = manager }
+                    if let remote = project.remote { item["github"] = remote.absoluteString }
+                    if let last = project.lastActivity { item["last_activity"] = DevUtils.iso8601(last) }
+                    if project.isWorktree { item["worktree"] = true }
+                    if let server = servers.first(where: { $0.project == project.path }), let url = server.url { item["dev_server"] = url.absoluteString }
+                    return item
+                })
+            },
+            MCPTool(name: "docker_containers", title: "Docker containers",
+                    description: "Docker containers on this Mac (running and stopped): name, image, state, host ports and the compose project with its folder. Empty when Docker isn't running.",
+                    group: .basic) { _ in
+                guard let containers = await Task.detached(priority: .userInitiated) { Docker.containers() }.value else {
+                    return "Docker isn't running."
+                }
+                return json(containers.map { container -> [String: Any] in
+                    var item: [String: Any] = ["name": container.name, "image": container.image, "running": container.running,
+                                               "status": container.status, "ports": container.ports.map(Int.init)]
+                    if let project = container.project { item["project"] = project }
+                    if let folder = container.folder { item["folder"] = folder }
+                    return item
+                })
+            },
 
             // MARK: Acting on the Mac
             MCPTool(name: "list_commands", title: "List Mac commands",
@@ -129,6 +198,19 @@ enum MCPTools {
                 guard let level = int(args["level"]), (0...100).contains(level) else { throw MCPToolError("level must be 0 to 100") }
                 SoundOutput.setVolume(level)
                 return "Volume \(level)%."
+            },
+            MCPTool(name: "stop_dev_server", title: "Stop a dev server",
+                    description: "Stops one of the dev servers dev_servers lists, by its port or pid (and the npm/pnpm wrapper that only ran it). Nothing else can be stopped this way.",
+                    group: .commands, readOnly: false,
+                    properties: ["port": ["type": "integer", "minimum": 1, "maximum": 65535], "pid": ["type": "integer"]]) { args in
+                let port = int(args["port"]), pid = int(args["pid"])
+                guard port != nil || pid != nil else { throw MCPToolError("Give the server's port or pid.") }
+                let servers = await Task.detached(priority: .userInitiated) { DevServers.running() }.value
+                guard let server = servers.first(where: { s in pid.map { Int(s.pid) == $0 } ?? s.ports.contains { Int($0) == port } }) else {
+                    throw MCPToolError("No dev server there. Call dev_servers for the list.")
+                }
+                let stopped = await Task.detached(priority: .userInitiated) { DevServers.stop(server.pid) }.value
+                return stopped ? "Stopped \(server.tool) in \(server.projectName) (\(server.portsText))." : "It didn't stop; it may need the user."
             },
             MCPTool(name: "start_timer", title: "Start a timer",
                     description: "Starts a countdown in the menu bar that plays a sound and notifies when it ends.",

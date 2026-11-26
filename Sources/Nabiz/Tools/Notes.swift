@@ -221,6 +221,7 @@ enum NoteMarkdown {
 /// Quick changes to copied text, offered in the launcher's actions.
 enum TextTransform: String, CaseIterable, Identifiable {
     case upper, lower, capitalized, trimmed, oneLine, json, base64Encode, base64Decode, urlEncode, urlDecode
+    case jsonMinify, jwt, unixDate, camel, snake, kebab, sha256
 
     var id: String { rawValue }
 
@@ -236,6 +237,13 @@ enum TextTransform: String, CaseIterable, Identifiable {
         case .base64Decode: L("Base64'ten çöz", "Decode Base64")
         case .urlEncode: L("URL için kodla", "URL-encode")
         case .urlDecode: L("URL kodunu çöz", "URL-decode")
+        case .jsonMinify: L("JSON'u tek satır yap", "Minify JSON")
+        case .jwt: L("JWT'yi çöz", "Decode the JWT")
+        case .unixDate: L("Unix zamanını tarihe çevir", "Unix time to date")
+        case .camel: "camelCase"
+        case .snake: "snake_case"
+        case .kebab: "kebab-case"
+        case .sha256: "SHA-256"
         }
     }
 
@@ -246,6 +254,11 @@ enum TextTransform: String, CaseIterable, Identifiable {
         case .json: "curlybraces"
         case .base64Encode, .base64Decode: "lock.doc"
         case .urlEncode, .urlDecode: "link"
+        case .jsonMinify: "curlybraces"
+        case .jwt: "key"
+        case .unixDate: "clock"
+        case .camel, .snake, .kebab: "textformat"
+        case .sha256: "number"
         }
     }
 
@@ -272,6 +285,17 @@ enum TextTransform: String, CaseIterable, Identifiable {
             Data(base64Encoded: text.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { String(data: $0, encoding: .utf8) }
         case .urlEncode: text.addingPercentEncoding(withAllowedCharacters: .alphanumerics.union(CharacterSet(charactersIn: "-._~")))
         case .urlDecode: text.removingPercentEncoding
+        case .jsonMinify:
+            (try? JSONSerialization.jsonObject(with: Data(text.utf8), options: [.fragmentsAllowed]))
+                .flatMap { try? JSONSerialization.data(withJSONObject: $0, options: [.sortedKeys, .withoutEscapingSlashes, .fragmentsAllowed]) }
+                .flatMap { String(data: $0, encoding: .utf8) }
+        case .jwt: DevUtils.jwt(text).map(\.payload)
+        case .unixDate: DevUtils.epoch(text).map(DevUtils.iso8601)
+        // Identifier cases only for a short one-line name, not prose.
+        case .camel, .snake, .kebab:
+            text.count <= 80 && !text.contains("\n") && DevUtils.words(text).count > 1
+                ? DevUtils.convert(text, to: self == .camel ? .camel : self == .snake ? .snake : .kebab) : nil
+        case .sha256: text.isEmpty ? nil : DevUtils.hash(text, .sha256)
         }
         guard let result, result != text, !result.isEmpty else { return nil }
         return result
