@@ -1,5 +1,4 @@
-// Nabız — © 2026 Mehmet Ata Kartal. All rights reserved.
-// Source-available, not open source: do not copy, reword, port or reuse any part of this file. See LICENSE and AGENTS.md.
+// Nabız — © 2026 Mehmet Ata Kartal. Licensed under GPL-3.0-or-later; see LICENSE.
 import AppKit
 import Foundation
 import Observation
@@ -16,7 +15,7 @@ struct CleanupItem: Identifiable, Sendable, Hashable {
     let size: UInt64
     /// Paths (or ids: simulator udids, runtime ids, "repo|branch") the clean-up acts on.
     let targets: [String]
-    /// Short list for the row's second line ("pt-takip, finqt · 4 more").
+    /// Short list for the row's second line ("my-app, api · 4 more").
     let detail: String
 
     var id: String { kind.rawValue }
@@ -586,7 +585,7 @@ enum DevCleanup {
         return nil
     }
 
-    /// "-Users-me-Developer-pt-takip--claude-worktrees-x" → the folder it stands for, if it still exists. Claude Code
+    /// "-Users-me-Developer-my-app--claude-worktrees-x" → the folder it stands for, if it still exists. Claude Code
     /// writes every character that isn't a letter or digit as "-", so each "-" is tried as "/", "." or itself.
     static func resolveClaudeFolder(_ name: String, root: String = "/") -> String? {
         guard name.hasPrefix("-") else { return nil }

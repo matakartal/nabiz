@@ -6,7 +6,7 @@
 
 **Her geliştiricinin Mac'inde olması gereken menü çubuğu uygulaması — vibecoder'lar için de en kullanışlısı.**
 
-macOS için küçük, yerel ve ücretsiz bir menü çubuğu uygulaması; kaynak kodu okunmaya açık: tek tuşla çözüm sunan sistem izleyici, kendi
+macOS için küçük, yerel ve açık kaynak bir menü çubuğu uygulaması: tek tuşla çözüm sunan sistem izleyici, kendi
 aboneliklerinle ya da Apple'ın ücretsiz cihaz içi modeliyle AI sohbeti, başlatıcı, ekran görüntüsü ve ekran kaydı, hava
 durumu, geliştirici araçları.
 
@@ -85,9 +85,8 @@ Nabız ücretsiz. Kripto alım satımı yapıyorsan [Bybit'e referans bağlantı
 
 ## Lisans
 
-Nabız **kaynağı görülebilir, ama açık kaynak değildir.** Kodu okuyabilir ve resmi sürümleri ücretsiz kullanabilirsin;
-yazılı izin olmadan kodu ya da bir parçasını kopyalayamaz, değiştiremez, başka projede kullanamaz, derleyemez ve
-dağıtamazsın. Bkz. [LICENSE](LICENSE).
+Nabız [GNU GPL v3 veya sonrası](LICENSE) lisanslı özgür yazılımdır: kullan, incele, değiştir, paylaş — ondan türeyip
+dağıtılan her şey de GPL ile açık kalır. Ad ve simge lisansa dahil değildir; fork'lar kendi adını ve simgesini kullanır
+([TRADEMARK.md](TRADEMARK.md)).
 
-© 2026 Mehmet Ata Kartal. Tüm hakları saklıdır. Kodu farklı kelimelerle yeniden yazmak ya da başka dile çevirmek de
-kopyalama sayılır; AI ajanları için kurallar [AGENTS.md](AGENTS.md) dosyasında.
+© 2026 Mehmet Ata Kartal.

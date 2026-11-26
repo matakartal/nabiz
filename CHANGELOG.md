@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **Open source:** Nabız is now free software under the GPL v3. The name and icon stay with the author; forks use their
+  own (see TRADEMARK.md).
+
 ## 1.10.0
 
 - **Weather** (Settings → Weather): your city's weather in the panel — now with how it feels, rain on the way, the

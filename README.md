@@ -6,7 +6,7 @@
 
 **The menu bar app every developer should have — and the friendliest one for vibecoders.**
 
-Your Mac's pulse in the menu bar. A small, native app for macOS — free to use, with its source open to read: a system
+Your Mac's pulse in the menu bar. A small, native, open-source app for macOS: a system
 monitor with one-tap fixes, AI chat with your own
 subscriptions or Apple's free on-device model, a launcher, screenshots and Screen Studio–style recordings, the weather,
 and tools made for developers.
@@ -17,7 +17,7 @@ and tools made for developers.
 <img src="https://img.shields.io/badge/Apple%20silicon%20%2B%20Intel-universal-111" alt="Universal">
 <img src="https://img.shields.io/badge/Swift%206-SwiftUI%20%2B%20AppKit-F05138?logo=swift&logoColor=white" alt="Swift 6">
 <img src="https://img.shields.io/badge/notarized-Developer%20ID-1DB954" alt="Notarized">
-<img src="https://img.shields.io/badge/license-source--available-blue" alt="Source-available">
+<img src="https://img.shields.io/badge/license-GPLv3-blue" alt="GPLv3">
 <a href="https://x.com/mehmetatakartal"><img src="https://img.shields.io/badge/follow-%40mehmetatakartal-000?logo=x&logoColor=white" alt="Follow @mehmetatakartal on X"></a>
 
 [Features](#features) · [Shortcuts](#shortcuts) · [Privacy](#privacy) · [Build](#build) · [Türkçe](README.tr.md)
@@ -37,7 +37,7 @@ and tools made for developers.
 <td width="25%" valign="top"><b>Native and light</b><br>SwiftUI + AppKit, the system's own menu material and grid. Idle at 0–1% CPU.</td>
 <td width="25%" valign="top"><b>Fixes, not just numbers</b><br>When memory runs out it says why and offers the one step that frees the most.</td>
 <td width="25%" valign="top"><b>AI that can stay on your Mac</b><br>Apple's on-device model is free, private and works offline — or bring Claude, Codex, Grok or Gemini.</td>
-<td width="25%" valign="top"><b>Private and readable</b><br>No analytics, no account. The source is public, so you can see exactly what it does.</td>
+<td width="25%" valign="top"><b>Open and private</b><br>No analytics, no account. Open source, so you can see exactly what it does.</td>
 </tr>
 </table>
 
@@ -266,9 +266,8 @@ Nabız is free. If you trade crypto, signing up on [Bybit with my referral link]
 
 ## License
 
-Nabız is **source-available, not open source.** You may read the code and use the official releases for free, but
-you may not copy, modify, reuse, build or redistribute the code or any part of it without written permission. See
-[LICENSE](LICENSE).
+Nabız is free software under the [GNU GPL v3 or later](LICENSE): use it, study it, change it and share it — and
+anything you distribute that is based on it stays open under the GPL too. The name and icon are not part of the
+licence; forks use their own (see [TRADEMARK.md](TRADEMARK.md)).
 
-© 2026 Mehmet Ata Kartal. All rights reserved. AI agents: read [AGENTS.md](AGENTS.md) — rewording or porting
-the code counts as copying.
+© 2026 Mehmet Ata Kartal.

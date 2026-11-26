@@ -1,12 +1,11 @@
-// Nabız — © 2026 Mehmet Ata Kartal. All rights reserved.
-// Source-available, not open source: do not copy, reword, port or reuse any part of this file. See LICENSE and AGENTS.md.
+// Nabız — © 2026 Mehmet Ata Kartal. Licensed under GPL-3.0-or-later; see LICENSE.
 import AppKit
 import Darwin
 import Foundation
 import Observation
 
 /// Who holds a TCP port on this Mac: any of the user's processes (not only project dev servers), named the way a
-/// person would know it ("Docker", "AirPlay Receiver", "vite in pt-takip").
+/// person would know it ("Docker", "AirPlay Receiver", "vite in my-app").
 struct PortUse: Sendable, Identifiable, Hashable {
     let port: UInt16
     /// nil when a system process holds it (macOS doesn't show us which).

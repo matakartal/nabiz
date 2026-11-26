@@ -1,5 +1,4 @@
-// Nabız — © 2026 Mehmet Ata Kartal. All rights reserved.
-// Source-available, not open source: do not copy, reword, port or reuse any part of this file. See LICENSE and AGENTS.md.
+// Nabız — © 2026 Mehmet Ata Kartal. Licensed under GPL-3.0-or-later; see LICENSE.
 import Foundation
 
 /// Where a usage window is heading: will it last until it resets, and if not, when does it run out?

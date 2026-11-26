@@ -1,5 +1,4 @@
-// Nabız — © 2026 Mehmet Ata Kartal. All rights reserved.
-// Source-available, not open source: do not copy, reword, port or reuse any part of this file. See LICENSE and AGENTS.md.
+// Nabız — © 2026 Mehmet Ata Kartal. Licensed under GPL-3.0-or-later; see LICENSE.
 import AppKit
 import Observation
 import ServiceManagement
@@ -1715,8 +1714,8 @@ private struct AboutPage: View {
             Text(verbatim: L("Sürüm", "Version") + " " + (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"))
                 .font(Theme.small).foregroundStyle(Theme.textMuted)
             UpdateRow()
-            Text(L("Mac'inin nabzını menü çubuğunda tutar. Kaynağı görülebilir; tüm hakları saklıdır.",
-                   "Keeps your Mac's pulse in the menu bar. Source-available; all rights reserved."))
+            Text(L("Mac'inin nabzını menü çubuğunda tutar. Açık kaynak, GPLv3 lisansı.",
+                   "Keeps your Mac's pulse in the menu bar. Open source, GPLv3 license."))
                 .font(Theme.body).foregroundStyle(Theme.text).multilineTextAlignment(.center)
             Text(L("Ölçümler Mac'inde yapılır. Döviz kurları Avrupa Merkez Bankası'ndan (frankfurter.dev) gelir; AI limitleri yalnızca açtığın sağlayıcıların kendi sunucularından okunur.",
                    "Everything is measured on your Mac. Rates come from the European Central Bank (frankfurter.dev); AI limits are read only from the providers you turn on, from their own servers."))

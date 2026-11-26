@@ -1,5 +1,4 @@
-// Nabız — © 2026 Mehmet Ata Kartal. All rights reserved.
-// Source-available, not open source: do not copy, reword, port or reuse any part of this file. See LICENSE and AGENTS.md.
+// Nabız — © 2026 Mehmet Ata Kartal. Licensed under GPL-3.0-or-later; see LICENSE.
 import Foundation
 import Testing
 @testable import Nabiz
@@ -114,19 +113,19 @@ struct DevToolsTests {
     // MARK: Docker
 
     @Test func readsDockerContainers() throws {
-        let line = #"{"ID":"628533881b43abcdef","Image":"postgres:17","Names":"supabase_db_kadans","State":"running","Status":"Up 5 hours","Ports":"0.0.0.0:54322->5432/tcp, [::]:54322->5432/tcp","Labels":"com.supabase.cli.project=kadans,com.supabase.cli.workdir=/Users/a/pt-takip,a=b=c"}"#
+        let line = #"{"ID":"628533881b43abcdef","Image":"postgres:17","Names":"supabase_db_shop","State":"running","Status":"Up 5 hours","Ports":"0.0.0.0:54322->5432/tcp, [::]:54322->5432/tcp","Labels":"com.supabase.cli.project=shop,com.supabase.cli.workdir=/Users/a/my-app,a=b=c"}"#
         let container = try #require(Docker.parse(line))
         #expect(container.id == "628533881b43")
         #expect(container.running)
         #expect(container.ports == [54322])
-        #expect(container.project == "kadans")
-        #expect(container.folder == "/Users/a/pt-takip")
+        #expect(container.project == "shop")
+        #expect(container.folder == "/Users/a/my-app")
         #expect(Docker.labels("a=b=c,d=e") == ["a": "b=c", "d": "e"])
         #expect(Docker.hostPorts("127.0.0.1:5432->5432/tcp, 6379/tcp, 0.0.0.0:8000-8002->8000-8002/tcp") == [5432, 8000])
 
         let lone = DockerContainer(id: "1", name: "redis", image: "redis", running: false, status: "Exited", ports: [], project: nil, folder: nil)
         let groups = Docker.groups([container, lone])
-        #expect(groups.map(\.name) == ["kadans", "redis"])
+        #expect(groups.map(\.name) == ["shop", "redis"])
         let gone = DockerGroup(name: "x", containers: [lone], folder: "/nowhere/\(UUID())")
         #expect(gone.orphaned)
     }
@@ -180,10 +179,10 @@ struct DevToolsTests {
     @Test func findsTheFolderAClaudeProjectStandsFor() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("nabiz-claude-\(UUID())").path
         defer { try? FileManager.default.removeItem(atPath: root) }
-        try FileManager.default.createDirectory(atPath: root + "/Developer/pt-takip/.claude/worktrees/x", withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(atPath: root + "/Developer/my-app/.claude/worktrees/x", withIntermediateDirectories: true)
         try FileManager.default.createDirectory(atPath: root + "/my.app", withIntermediateDirectories: true)
-        #expect(DevCleanup.resolveClaudeFolder("-Developer-pt-takip", root: root) == root + "/Developer/pt-takip")
-        #expect(DevCleanup.resolveClaudeFolder("-Developer-pt-takip--claude-worktrees-x", root: root) == root + "/Developer/pt-takip/.claude/worktrees/x")
+        #expect(DevCleanup.resolveClaudeFolder("-Developer-my-app", root: root) == root + "/Developer/my-app")
+        #expect(DevCleanup.resolveClaudeFolder("-Developer-my-app--claude-worktrees-x", root: root) == root + "/Developer/my-app/.claude/worktrees/x")
         #expect(DevCleanup.resolveClaudeFolder("-my-app", root: root) == root + "/my.app")
         #expect(DevCleanup.resolveClaudeFolder("-Developer-gone", root: root) == nil)
     }
@@ -280,11 +279,11 @@ struct DevToolsTests {
 
     @Test func listsOnlyTheUsersOwnSimulatorApps() {
         let apps = SimTools.parseApps([
-            "net.ortakbul.app": ["ApplicationType": "User", "CFBundleDisplayName": "OrtakBul"],
+            "com.example.beta": ["ApplicationType": "User", "CFBundleDisplayName": "Beta"],
             "com.apple.mobilesafari": ["ApplicationType": "System", "CFBundleDisplayName": "Safari"],
             "com.me.a": ["ApplicationType": "User", "CFBundleName": "Alpha"],
         ])
-        #expect(apps.map(\.name) == ["Alpha", "OrtakBul"])
+        #expect(apps.map(\.name) == ["Alpha", "Beta"])
     }
 
     @Test func cleanUpLeavesWhatCannotComeBack() throws {

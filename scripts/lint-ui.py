@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-# Nabız — © 2026 Mehmet Ata Kartal. All rights reserved.
-# Source-available, not open source: do not copy, reword, port or reuse any part of this file. See LICENSE and AGENTS.md.
+# Nabız — © 2026 Mehmet Ata Kartal. Licensed under GPL-3.0-or-later; see LICENSE.
 """Nabız UI token linter: flags SwiftUI code that bypasses the design tokens.
 
 usage: python3 lint.py <dir-or-file>... [--l10n] [--quiet]

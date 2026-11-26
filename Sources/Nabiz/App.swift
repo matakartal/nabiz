@@ -1,5 +1,4 @@
-// Nabız — © 2026 Mehmet Ata Kartal. All rights reserved.
-// Source-available, not open source: do not copy, reword, port or reuse any part of this file. See LICENSE and AGENTS.md.
+// Nabız — © 2026 Mehmet Ata Kartal. Licensed under GPL-3.0-or-later; see LICENSE.
 import AppKit
 import AVFoundation
 import Carbon.HIToolbox
@@ -691,7 +690,7 @@ enum Snapshot {
             root = AnyView(LauncherView(model: LauncherPanel.shared.model))
         } else if args.contains("--phone-qr") {
             // `--phone-qr [--local]`: the dev server QR window (`--local`: a server only this Mac can reach).
-            root = AnyView(PhoneQRView(url: "http://192.168.1.24:5173", title: "pt-takip",
+            root = AnyView(PhoneQRView(url: "http://192.168.1.24:5173", title: "my-app",
                                        problem: args.contains("--local") ? PhoneQR.address(for: DevServer(pid: 1, ports: [5173], folder: "/x", project: "/x", tool: "vite", started: nil)).problem : nil,
                                        close: {}).background(MenuMaterial()))
         } else if args.contains("--rec-bar") {

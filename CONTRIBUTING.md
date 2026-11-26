@@ -1,16 +1,15 @@
 # Contributing
 
-Thanks for helping. Nabız is **source-available, not open source**: the code is public so you can see what the app
-does, but it may not be copied, reworded, ported, reused or redistributed (see [LICENSE](LICENSE) and
-[AGENTS.md](AGENTS.md)).
+Thanks for helping. Nabız is open source under the [GPL v3 or later](LICENSE); the name and icon are kept apart
+([TRADEMARK.md](TRADEMARK.md)).
 
 ## Ways to help
 
 - **Report a bug or ask for a feature** with an issue. Include your macOS version, the Nabız version
   (Settings → About) and what you expected. Crash reports can be sent from Settings → About.
 - **Report a security problem** privately, as [SECURITY.md](SECURITY.md) explains — never in a public issue.
-- **Propose a change** with a pull request. By sending one you agree to the Contributions section of the
-  [LICENSE](LICENSE): you keep no rights in Nabız, and the copyright holder may use your change in any way.
+- **Propose a change** with a pull request. By sending one you agree that it is your own work (or you may send it)
+  and that it is licensed under the GPL v3 or later, like the rest of Nabız.
 
 Open an issue before a large change, so we can agree on it before you spend time on it. Pull requests that don't
 follow these rules are closed or sent back; that's not personal.
@@ -46,7 +45,7 @@ screenshots in light and dark mode.
 - **No force unwraps or `try!`** on anything that comes from the system, a file, the network or a CLI. Parse
   defensively; a broken answer shows a message, never a crash.
 - **Comments** say *why*, in plain sentences, above the code they explain. No commented-out code.
-- **Copyright header:** every new source file starts with the same two-line header as the others.
+- **Copyright header:** every new source file starts with the same one-line header as the others.
 - **Settings:** a new preference gets a key in `Prefs`, a default in `registerDefaults`, a control on its Settings
   page and an entry in `SettingsSearch.swift`. Off by default if it sends anything over the network or touches
   something outside Nabız.

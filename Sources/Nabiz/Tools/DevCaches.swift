@@ -1,5 +1,4 @@
-// Nabız — © 2026 Mehmet Ata Kartal. All rights reserved.
-// Source-available, not open source: do not copy, reword, port or reuse any part of this file. See LICENSE and AGENTS.md.
+// Nabız — © 2026 Mehmet Ata Kartal. Licensed under GPL-3.0-or-later; see LICENSE.
 import Foundation
 
 /// A Rust build cache: a Cargo `target` folder. Cargo marks each one with a CACHEDIR.TAG file carrying a fixed
@@ -11,7 +10,7 @@ struct RustCache: Identifiable, Sendable, Equatable {
     let lastBuilt: Date
 
     var id: String { path }
-    /// The project folder's name ("humanproof", "rust").
+    /// The project folder's name ("my-api", "rust").
     var project: String { ((path as NSString).deletingLastPathComponent as NSString).lastPathComponent }
     /// Built in the last 10 minutes: a build may be running, so it is never deleted.
     var isActive: Bool { Date().timeIntervalSince(lastBuilt) < 600 }

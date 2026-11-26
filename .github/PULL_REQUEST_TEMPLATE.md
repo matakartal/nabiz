@@ -18,4 +18,4 @@
 - [ ] No new network request — or it's named here (what, where, what is sent) and in the README's Privacy table
 - [ ] Anything that deletes or stops something asks first and checks again right before acting
 - [ ] `CHANGELOG.md` has a line for users, if users will notice the change
-- [ ] I agree that this contribution is covered by the Contributions section of the [LICENSE](../LICENSE)
+- [ ] This is my own work and I license it under the GPL v3 or later, like the rest of Nabız

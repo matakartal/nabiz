@@ -1,5 +1,4 @@
-// Nabız — © 2026 Mehmet Ata Kartal. All rights reserved.
-// Source-available, not open source: do not copy, reword, port or reuse any part of this file. See LICENSE and AGENTS.md.
+// Nabız — © 2026 Mehmet Ata Kartal. Licensed under GPL-3.0-or-later; see LICENSE.
 // Builds docs/hero.jpg for the README: the Mac's own wallpaper with Nabız as it really looks — the menu bar item, the
 // frosted panel under it, the AI chat window and the launcher, each on blurred glass over the wallpaper.
 //

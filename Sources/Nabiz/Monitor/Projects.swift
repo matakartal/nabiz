@@ -1,5 +1,4 @@
-// Nabız — © 2026 Mehmet Ata Kartal. All rights reserved.
-// Source-available, not open source: do not copy, reword, port or reuse any part of this file. See LICENSE and AGENTS.md.
+// Nabız — © 2026 Mehmet Ata Kartal. Licensed under GPL-3.0-or-later; see LICENSE.
 import AppKit
 import Foundation
 import Observation
@@ -30,7 +29,7 @@ struct Project: Sendable, Identifiable, Hashable {
 
     var id: String { path }
     var name: String { (path as NSString).lastPathComponent }
-    /// "finqt-apps/pinpaw" for nested repos.
+    /// "work/my-app" for nested repos.
     var displayName: String {
         for root in DevCaches.roots where path.hasPrefix(root + "/") { return String(path.dropFirst(root.count + 1)) }
         return name
