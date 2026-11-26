@@ -125,7 +125,7 @@ final class KeyPanel: NSPanel {
 @MainActor
 enum HotKey {
     enum Shortcut: UInt32, CaseIterable {
-        case launcher = 1, panel = 2, clipboard = 3, note = 4, ai = 5, dictation = 6, screenshot = 7, aiChat = 8
+        case launcher = 1, panel = 2, clipboard = 3, note = 4, ai = 5, dictation = 6, screenshot = 7, aiChat = 8, record = 9
         case leftHalf = 10, rightHalf, topHalf, bottomHalf, maximize, center
 
         var key: Int {
@@ -138,6 +138,7 @@ enum HotKey {
             case .aiChat: kVK_ANSI_I
             case .dictation: kVK_ANSI_D
             case .screenshot: kVK_ANSI_S
+            case .record: kVK_ANSI_R
             case .leftHalf: kVK_LeftArrow
             case .rightHalf: kVK_RightArrow
             case .topHalf: kVK_UpArrow
@@ -179,7 +180,7 @@ enum HotKey {
     private(set) static var suspended = false
 
     /// The shortcuts a person can change in Settings.
-    static let customizable: [Shortcut] = [.launcher, .clipboard, .note, .panel, .ai, .aiChat, .dictation, .screenshot]
+    static let customizable: [Shortcut] = [.launcher, .clipboard, .note, .panel, .ai, .aiChat, .dictation, .screenshot, .record]
 
     static func combo(_ shortcut: Shortcut) -> Combo {
         if let data = UserDefaults.standard.data(forKey: "hotkey.\(shortcut.rawValue)"),
@@ -278,6 +279,7 @@ enum HotKey {
         case kVK_ANSI_A: "A"
         case kVK_ANSI_C: "C"
         case kVK_ANSI_S: "S"
+        case kVK_ANSI_R: "R"
         case kVK_ANSI_I: "I"
         default: (characters ?? "?").uppercased()
         }
@@ -318,6 +320,7 @@ enum HotKey {
                 case .aiChat: AIChatWindow.toggle()
                 case .dictation: Dictation.shared.toggle()
                 case .screenshot: Capture.run(.area)
+                case .record: RecControl.toggle()
                 default: shortcut.window?.run()
                 }
             }

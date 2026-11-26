@@ -656,9 +656,10 @@ private struct ToolsSection: View {
         }
         if chips == .screenshot {
             ChipRow(L("Ekran:", "Capture:")) {
-                ForEach([CaptureMode.area, .window, .screenFile, .toolbar]) { mode in
+                ForEach([CaptureMode.area, .window, .screenFile]) { mode in
                     Chip(mode.chip) { chips = nil; Capture.run(mode, actions: actions) }
                 }
+                Chip(L("Kaydet", "Record")) { chips = nil; actions.close(); RecControl.toggle() }
             }
         }
         if chips == .sleepTimer {

@@ -775,6 +775,10 @@ final class LauncherModel {
             items.append(command("shot-clipboard", "pencil.tip.crop.circle", L("Panodaki resmi düzenle", "Mark up the copied image")) { ShotEditor.showClipboard() })
         }
         items.append(command("shot-open", "photo.badge.plus", L("Resim dosyasını düzenle…", "Mark up an image file…")) { ShotEditor.choose() })
+        items.append(command("rec-start", RecRecorder.shared.isRecording ? "stop.circle" : "record.circle",
+                             RecRecorder.shared.isRecording ? L("Ekran kaydını durdur", "Stop the screen recording") : L("Ekranı kaydet", "Record the screen"),
+                             accessory: Prefs.bool(Prefs.recHotkey) ? HotKey.label(.record) : nil) { RecControl.toggle() })
+        items.append(command("rec-latest", "film", L("Son ekran kaydını aç", "Open the last screen recording")) { RecEditor.showLatest() })
         items.append(command("download", "arrow.down.circle", L("Video indir (panodaki bağlantı)", "Download video (copied link)"), keepOpen: true) { [weak self] in
             if let url = NSPasteboard.general.string(forType: .string).flatMap(Downloader.videoURL) {
                 self?.text = url.absoluteString

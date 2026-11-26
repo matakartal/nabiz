@@ -35,7 +35,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
         case .clipboard: ("Pano", "Clipboard")
         case .snippets: ("Parçacıklar", "Snippets")
         case .windows: ("Pencereler", "Windows")
-        case .screenshot: ("Ekran görüntüsü", "Screenshots")
+        case .screenshot: ("Görüntü ve kayıt", "Screenshots & Recording")
         case .focus: ("Odak", "Focus")
         case .schedules: ("Görevler", "Schedules")
         case .calendar: ("Takvim", "Calendar")
@@ -64,7 +64,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
         case .clipboard: L("Kopyaladıklarının geçmişi ve yapıştırma.", "The history of what you copied, and pasting.")
         case .snippets: L("Kısa bir kelimeyle yapıştırılan hazır metinler.", "Saved text you paste with a short keyword.")
         case .windows: L("Öndeki pencereyi kısayolla yerleştir.", "Place the front window with a shortcut.")
-        case .screenshot: L("Kısayol, sonrasında ne olacağı ve macOS kısayolları.", "The shortcut, what happens next, and macOS's own keys.")
+        case .screenshot: L("Ekran görüntüsü ve ekran kaydı kısayolları, sonrasında ne olacağı.", "Screenshot and screen recording shortcuts, and what happens next.")
         case .focus: L("Pomodoro süreleri ve odakta gizlenecek uygulamalar.", "Pomodoro lengths, and the apps focus mode hides.")
         case .schedules: L("Belirli gün ve saatlerde kendiliğinden yapılacak işler.", "Things done on their own at set days and times.")
         case .calendar: L("Bugünkü toplantılar, hatırlatma ve tek tıkla katılma.", "Today's meetings, a heads-up and one-click join.")
@@ -549,6 +549,7 @@ private struct ShortcutsPage: View {
     @AppStorage(Prefs.noteHotkey) private var noteHotkey = true
     @AppStorage(Prefs.dictationHotkey) private var dictationHotkey = false
     @AppStorage(Prefs.shotHotkey) private var shotHotkey = true
+    @AppStorage(Prefs.recHotkey) private var recHotkey = true
     @AppStorage(Prefs.aiHotkey) private var aiHotkey = true
     @AppStorage(Prefs.aiChatHotkey) private var aiChatHotkey = true
 
@@ -564,6 +565,7 @@ private struct ShortcutsPage: View {
                 HotKeyRow(title: L("Panel", "Panel"), shortcut: .panel, enabled: $panelHotkey)
                 HotKeyRow(title: L("Dikte", "Dictation"), shortcut: .dictation, enabled: $dictationHotkey)
                 HotKeyRow(title: L("Ekran görüntüsü", "Screenshot"), shortcut: .screenshot, enabled: $shotHotkey)
+                HotKeyRow(title: L("Ekran kaydı", "Screen recording"), shortcut: .record, enabled: $recHotkey)
                 Button(L("Neler yapabilir?", "What can it do?")) { HelpWindow.show() }
             } header: {
                 Text(L("Kısayollar", "Shortcuts"))
@@ -579,6 +581,7 @@ private struct ShortcutsPage: View {
 private struct ScreenshotPage: View {
     @AppStorage(Prefs.shotHotkey) private var shotHotkey = true
     @AppStorage(Prefs.shotAfter) private var shotAfter = "preview"
+    @AppStorage(Prefs.recHotkey) private var recHotkey = true
 
     var body: some View {
         Form {
@@ -593,6 +596,15 @@ private struct ScreenshotPage: View {
             } footer: {
                 Footnote(L("Kısayola bas, alanı seç: önizlemeden düzenleyiciyi açar, ok, metin, bulanıklık ve çerçeve eklersin.",
                            "Press the shortcut and pick an area: from the thumbnail open the editor to add arrows, text, blur and a frame."))
+            }
+            SettingsSection("screenshot.record") {
+                HotKeyRow(title: L("Ekran kaydı", "Screen recording"), shortcut: .record, enabled: $recHotkey)
+                Button(L("Son kaydı aç", "Open the last recording")) { RecEditor.showLatest() }
+            } header: {
+                SectionTitle(L("Ekran kaydı", "Screen recording"))
+            } footer: {
+                Footnote(L("Kısayola bas: tüm ekran, pencere ya da alan ve ses seç, kayda başla. Bitirmek için menü çubuğundaki kırmızı noktaya ya da kısayola yeniden bas. Düzenleyici tıkladığın yerlere kendiliğinden yakınlaşır, imleci pürüzsüz ve büyük çizer; arka plan, kırpma ve MP4/GIF dışa aktarma orada.",
+                           "Press the shortcut, pick the whole screen, a window or an area and the sound, and record. To stop, click the red dot in the menu bar or press the shortcut again. The editor zooms in where you clicked and draws the pointer smooth and large; background, trimming and MP4/GIF export are there."))
             }
         }
         .formStyle(.grouped)

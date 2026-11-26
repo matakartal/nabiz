@@ -161,6 +161,8 @@ enum SettingsIndex {
         // Screenshots
         .init(.screenshot, "screenshot.keys", "Ekran görüntüsü kısayolu", "Screenshot shortcut", "screen capture ss yakala"),
         .init(.screenshot, "screenshot.keys", "Ekran görüntüsünden sonra", "After a screenshot", "önizleme preview düzenleyici editor"),
+        .init(.screenshot, "screenshot.record", "Ekran kaydı", "Screen recording", "video kayıt record screen studio mp4 gif zoom"),
+        .init(.screenshot, "screenshot.record", "Son kaydı aç", "Open the last recording", "video kayıt düzenle edit"),
         // Backup & upkeep
         .init(.maintenance, "maintenance.backup", "Yedekle", "Back up", "backup dışa aktar export dosya"),
         .init(.maintenance, "maintenance.backup", "Yedekten yükle", "Load a backup", "restore geri yükle içe aktar import"),
@@ -302,7 +304,7 @@ extension SettingsPage {
         case .clipboard: "pano clipboard geçmiş history kopyala copy yapıştır paste şifreli encrypted"
         case .snippets: "parçacık snippet metin text kelime keyword"
         case .windows: "pencere window yerleştir place layout yarım half"
-        case .screenshot: "ekran görüntüsü screenshot screen capture yakala ⌘⇧3 ⌘⇧4"
+        case .screenshot: "ekran görüntüsü screenshot screen capture yakala kayıt video record"
         case .focus: "pomodoro odak focus engelle block gizle hide"
         case .schedules: "görev task zamanla schedule saat time gün day"
         case .calendar: "takvim calendar toplantı meeting etkinlik event katıl join zoom meet teams"

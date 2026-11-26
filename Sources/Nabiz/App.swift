@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import Carbon.HIToolbox
 import SwiftUI
 
@@ -39,6 +40,52 @@ enum Entry {
             while true { RunLoop.main.run(until: .distantFuture) }
         }
         // `Nabiz --snapshot out.png [--dark] [--settings]` renders the panel (or settings) with live data, for layout checks.
+        // `Nabiz --rec-test folder`: records part of the screen for 3 s, exports MP4 and GIF there, prints what came out.
+        if let index = args.firstIndex(of: "--rec-test"), index + 1 < args.count {
+            _ = NSApplication.shared
+            let folder = URL(fileURLWithPath: args[index + 1])
+            Task { @MainActor in
+                guard let screen = NSScreen.main else { exit(1) }
+                do {
+                    try await RecRecorder.shared.start(screen: screen, rect: CGRect(x: 80, y: 80, width: 640, height: 400), sound: true, microphone: false)
+                } catch { print("start failed: \(error)"); exit(1) }
+                try? await Task.sleep(for: .seconds(3))
+                guard let meta = await RecRecorder.shared.stop() else { print("nothing recorded"); exit(1) }
+                print("recorded \(String(format: "%.2f", meta.duration)) s, \(meta.width)×\(meta.height), \(meta.track.moves.count) moves, \(meta.cursors.count) cursor shapes")
+                let video = AVURLAsset(url: RecStore.video(for: meta.id))
+                let tracks = (try? await video.load(.tracks)) ?? []
+                print("source tracks: \(tracks.map(\.mediaType.rawValue))")
+                for kind in [RecExport.Kind.hd, .gif] {
+                    let out = folder.appendingPathComponent("test.\(kind == .gif ? "gif" : "mp4")")
+                    try? FileManager.default.removeItem(at: out)
+                    let url = await RecExport.run(meta, edit: meta.edit, kind: kind, to: out) { _ in }
+                    let size = (try? FileManager.default.attributesOfItem(atPath: out.path)[.size] as? Int) ?? 0
+                    if kind != .gif, url != nil {
+                        let asset = AVURLAsset(url: out)
+                        let seconds = (try? await asset.load(.duration).seconds) ?? 0
+                        let natural = (try? await asset.loadTracks(withMediaType: .video).first?.load(.naturalSize)) ?? .zero
+                        print("mp4: \(String(format: "%.2f", seconds)) s, \(Int(natural.width))×\(Int(natural.height)), \(size / 1024) KB")
+                    } else {
+                        print("\(kind.rawValue): \(url == nil ? "FAILED" : "\(size / 1024) KB")")
+                    }
+                }
+                if args.contains("--keep") { print("kept: \(RecStore.video(for: meta.id).path)") } else { RecStore.delete(meta.id) }
+                exit(0)
+            }
+            while true { RunLoop.main.run(until: .distantFuture) }
+        }
+        if let index = args.firstIndex(of: "--snapshot"), index + 1 < args.count,
+           let framesIndex = args.firstIndex(of: "--rec-frames"), framesIndex + 1 < args.count {
+            // `--snapshot out.png --rec-frames picture.png`: the recording look at a few moments, side by side.
+            _ = NSApplication.shared
+            let out = args[index + 1], picture = args[framesIndex + 1]
+            Task { @MainActor in
+                guard let sheet = RecDemo.frames(picture: URL(fileURLWithPath: picture), times: [0.3, 1.6, 2.3, 3.4, 5.5]),
+                      let png = NSBitmapImageRep(cgImage: sheet).representation(using: .png, properties: [:]) else { exit(1) }
+                exit((try? png.write(to: URL(fileURLWithPath: out))) != nil ? 0 : 1)
+            }
+            while true { RunLoop.main.run(until: .distantFuture) }
+        }
         if let index = args.firstIndex(of: "--snapshot"), index + 1 < args.count,
            let selectorIndex = args.firstIndex(of: "--selector"), selectorIndex + 1 < args.count {
             // `--snapshot out.png --selector picture.png [--drag]`: the frozen-screen picker drawn over that picture.
@@ -177,6 +224,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         HotKey.update(.note, enabled: Prefs.bool(Prefs.noteHotkey))
         HotKey.update(.dictation, enabled: Prefs.bool(Prefs.dictationHotkey))
         HotKey.update(.screenshot, enabled: Prefs.bool(Prefs.shotHotkey))
+        HotKey.update(.record, enabled: Prefs.bool(Prefs.recHotkey))
         HotKey.update(.ai, enabled: Prefs.bool(Prefs.aiHotkey) && Prefs.bool(Prefs.aiAsk))
         HotKey.update(.aiChat, enabled: Prefs.bool(Prefs.aiChatHotkey))
         for shortcut in HotKey.Shortcut.windows { HotKey.update(shortcut, enabled: Prefs.bool(Prefs.windowHotkeys)) }
@@ -241,6 +289,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                            on: Prefs.bool(Prefs.clipboardHotkey) && Prefs.bool(Prefs.clipboardEnabled)))
         menu.addItem(keyed(item(L("Notlar", "Notes")) { NoteWindow.toggle() }, .note, on: Prefs.bool(Prefs.noteHotkey)))
         menu.addItem(keyed(item(L("Ekran görüntüsü", "Screenshot")) { Capture.run(.area) }, .screenshot, on: Prefs.bool(Prefs.shotHotkey)))
+        menu.addItem(keyed(item(RecRecorder.shared.isRecording ? L("Kaydı durdur", "Stop Recording") : L("Ekranı kaydet", "Record Screen")) { RecControl.toggle() },
+                           .record, on: Prefs.bool(Prefs.recHotkey)))
         menu.addItem(keyed(item(Dictation.shared.isListening ? L("Dikteyi bitir", "Stop Dictation") : L("Dikte et", "Dictate")) { Dictation.shared.toggle() },
                            .dictation, on: Prefs.bool(Prefs.dictationHotkey)))
         let pomodoro = Pomodoro.shared
@@ -500,6 +550,12 @@ enum Snapshot {
             }
             if args.contains("--palette") { LauncherPanel.shared.model.paletteOpen = true }
             root = AnyView(LauncherView(model: LauncherPanel.shared.model))
+        } else if args.contains("--rec-editor") {
+            // `--rec-editor`: the editor on the latest recording (record one with `--rec-test folder --keep`).
+            guard let meta = RecStore.all().first else { return false }
+            let model = RecEditorModel(meta: meta)
+            try? await Task.sleep(for: .seconds(1.5))
+            root = AnyView(RecEditorView(model: model))
         } else if args.contains("--access") {
             // `--access [--stuck | --ready]`: the Screen Recording guide.
             let state = ScreenAccessState()
@@ -521,8 +577,8 @@ enum Snapshot {
         }
         // `--chrome`: Settings in a real titled window, traffic lights and all, drawn off screen.
         // `--chrome`: Settings (or the AI window with `--ai-window`) in a real titled window, window buttons and all.
-        if (settings || args.contains("--ai-window") || args.contains("--shot")) && args.contains("--chrome") {
-            let content: AnyView = args.contains("--shot") ? root : args.contains("--ai-window") ? AnyView(AIChatView(state: AIChatWindow.state))
+        if (settings || args.contains("--ai-window") || args.contains("--shot") || args.contains("--rec-editor")) && args.contains("--chrome") {
+            let content: AnyView = args.contains("--shot") || args.contains("--rec-editor") ? root : args.contains("--ai-window") ? AnyView(AIChatView(state: AIChatWindow.state))
                 : AnyView(SettingsView(selection: selection, query: value(after: "--find") ?? ""))
             let controller = NSHostingController(rootView: content.environment(\.colorScheme, dark ? .dark : .light))
             let window = NSWindow(contentViewController: controller)
