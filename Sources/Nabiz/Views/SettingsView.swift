@@ -810,75 +810,162 @@ private struct PageHeader: View {
 }
 
 /// Price alerts: the list, and a row to add one for a watched market (prefilled with its current price).
+/// Price alerts: a composer that reads like a sentence ("BTC reaches 62,000"), quick ±% targets from the current
+/// price, and a list showing how far each line still is.
 private struct PriceAlertsSection: View {
     let watched: [String]
     @State private var market = ""
-    @State private var above = true
     @State private var price: Double?
+    @State private var repeats = false
     private let alerts = PriceAlerts.shared
     private let store = MarketStore.shared
 
     var body: some View {
         Section {
-            ForEach(alerts.alerts) { alert in
-                LabeledContent {
-                    HStack(spacing: Theme.Spacing.s) {
-                        if !alert.armed {
-                            Text(L("tetiklendi", "fired")).font(Theme.small).foregroundStyle(Theme.textMuted)
-                            Button(L("Yeniden kur", "Re-arm")) { alerts.rearm(alert) }.buttonStyle(.borderless)
-                        }
-                        Button { alerts.remove(alert) } label: { Image(systemName: "minus.circle.fill") }
-                            .buttonStyle(.borderless).foregroundStyle(Theme.danger)
-                    }
-                } label: {
-                    HStack(spacing: Theme.Spacing.s) {
-                        Image(systemName: alert.armed ? "bell.fill" : "bell.slash").foregroundStyle(alert.armed ? Theme.accent : Theme.textMuted)
-                        Text(verbatim: store.markets[alert.market]?.name ?? alert.market).font(Theme.bodyStrong)
-                        Text(verbatim: (alert.above ? "≥ " : "≤ ") + Format.price(alert.price)).monospacedDigit()
-                        if let now = store.markets[alert.market]?.price {
-                            Text(L("şu an \(Format.price(now))", "now \(Format.price(now))")).font(Theme.small).foregroundStyle(Theme.textMuted)
-                        }
-                    }
-                }
+            let sorted = alerts.alerts.sorted { a, b in
+                if a.armed != b.armed { return a.armed }
+                let da = store.markets[a.market].map { a.distance(from: $0.price) } ?? 1
+                let db = store.markets[b.market].map { b.distance(from: $0.price) } ?? 1
+                return da < db
             }
-            if !watched.isEmpty {
-                HStack(spacing: Theme.Spacing.s) {
-                    Picker(L("Piyasa", "Market"), selection: $market) {
-                        ForEach(watched, id: \.self) { Text(verbatim: store.markets[$0]?.name ?? $0).tag($0) }
-                    }
-                    .labelsHidden()
-                    .frame(maxWidth: 130)
-                    Picker(L("Yön", "Direction"), selection: $above) {
-                        Text(L("üstüne çıkınca", "goes above")).tag(true)
-                        Text(L("altına inince", "goes below")).tag(false)
-                    }
-                    .labelsHidden()
-                    .frame(maxWidth: 150)
-                    TextField(L("Fiyat", "Price"), value: $price, format: .number)
-                        .multilineTextAlignment(.trailing)
-                        .frame(maxWidth: 110)
-                    Button(L("Ekle", "Add")) {
-                        guard let price, price > 0, !market.isEmpty else { return }
-                        alerts.add(market: market, above: above, price: price)
-                        self.price = nil
-                    }
-                    .disabled((price ?? 0) <= 0 || market.isEmpty)
-                }
-            }
+            ForEach(sorted) { AlertRow(alert: $0) }
+            if !watched.isEmpty { composer }
         } header: {
             Text(L("Fiyat alarmları", "Price alerts"))
         } footer: {
-            Footnote(L("Fiyat çizgiyi geçince bir kez bildirim gelir; sonra alarm bekler, istersen yeniden kurarsın. Alarm varken fiyatlar arka planda 30 saniyede bir okunur.",
-                       "When the price crosses the line you get one notification; the alert then waits until you re-arm it. While an alert is set, prices are read every 30 seconds in the background."))
+            Footnote(L("Fiyat çizgiye gelince bir kez bildirim gelir. Tekrarlayan alarm, fiyat çizgiden %0,5 geri dönünce kendiliğinden yeniden kurulur. Alarm varken fiyatlar arka planda 30 saniyede bir okunur.",
+                       "When the price reaches the line you get one notification. A repeating alert arms itself again once the price moves 0.5% back. While an alert is set, prices are read every 30 seconds in the background."))
         }
         .onAppear { pick(watched.first ?? "") }
         .onChange(of: market) { pick(market) }
     }
 
-    /// Selecting a market fills in its current price as a starting point.
+    private var current: Double? { store.markets[market]?.price }
+
+    /// Up or down follows from the target: above today's price means "rises to", below means "falls to".
+    private var above: Bool { (price ?? 0) >= (current ?? 0) }
+
+    private var composer: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.m) {
+            HStack(spacing: Theme.Spacing.m) {
+                Picker(L("Piyasa", "Market"), selection: $market) {
+                    ForEach(watched, id: \.self) { Text(verbatim: store.markets[$0]?.name ?? $0).tag($0) }
+                }
+                .labelsHidden()
+                .fixedSize()
+                if let current {
+                    Text(verbatim: Format.price(current)).font(Theme.bodyStrong).monospacedDigit()
+                    if let change = store.markets[market]?.change {
+                        Text(verbatim: Format.change(change)).font(Theme.small).monospacedDigit()
+                            .foregroundStyle(change >= 0 ? Palette.green.mark : Theme.warning.mark)
+                    }
+                }
+                Spacer()
+            }
+            HStack(spacing: Theme.Spacing.s) {
+                Image(systemName: above ? "arrow.up.right" : "arrow.down.right")
+                    .foregroundStyle(above ? Palette.green.mark : Theme.warning.mark)
+                    .frame(width: Theme.menuIcon)
+                Text(above ? L("Şu fiyata çıkınca:", "When it rises to:") : L("Şu fiyata düşünce:", "When it falls to:"))
+                    .foregroundStyle(Theme.textMuted)
+                TextField(L("Fiyat", "Price"), value: $price, format: .number)
+                    .labelsHidden()
+                    .textFieldStyle(.roundedBorder)
+                    .multilineTextAlignment(.trailing)
+                    .monospacedDigit()
+                    .frame(width: 120)
+                if let current, let price, current > 0 {
+                    Text(verbatim: (price >= current ? "+" : "−") + Format.percent(abs(price / current - 1)))
+                        .font(Theme.small).monospacedDigit().foregroundStyle(Theme.textMuted)
+                }
+                Spacer()
+                Toggle(L("Tekrarla", "Repeat"), isOn: $repeats).toggleStyle(.checkbox)
+                Button(L("Alarm kur", "Set alert")) { add() }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!valid)
+            }
+            HStack(spacing: Theme.Spacing.xs) {
+                ForEach([-10, -5, -2, 2, 5, 10], id: \.self) { step in
+                    Button { set(percent: step) } label: {
+                        Text(verbatim: (step > 0 ? "+" : "−") + Format.percent(Double(abs(step)) / 100))
+                            .font(Theme.small).monospacedDigit()
+                            .padding(.horizontal, Theme.Spacing.s)
+                            .padding(.vertical, Theme.Spacing.xs / 2)
+                            .background(Theme.track, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(current == nil)
+                }
+            }
+        }
+        .padding(.vertical, Theme.Spacing.xs)
+    }
+
+    private var valid: Bool {
+        guard let price, price > 0, !market.isEmpty else { return false }
+        return price != current
+    }
+
+    private func add() {
+        guard valid, let price else { return }
+        alerts.add(market: market, above: above, price: price, repeats: repeats)
+        Monitor.panelActions.flash(L("Alarm kuruldu", "Alert set"))
+        set(percent: 5)
+    }
+
+    private func set(percent: Int) {
+        guard let current else { return }
+        price = Self.rounded(current * (1 + Double(percent) / 100))
+    }
+
+    /// Keeps three significant digits or so: 60,494 → 63,500, 1.2345 → 1.30.
+    static func rounded(_ value: Double) -> Double {
+        guard value > 0 else { return value }
+        let step = pow(10, floor(log10(value)) - 2)
+        return (value / step).rounded() * step
+    }
+
+    /// Selecting a market starts at +5% from its current price.
     private func pick(_ id: String) {
         if market.isEmpty { market = id }
-        if let now = store.markets[market]?.price { price = (now * 100).rounded() / 100 }
+        set(percent: 5)
+    }
+}
+
+private struct AlertRow: View {
+    let alert: PriceAlert
+    private let alerts = PriceAlerts.shared
+    private let store = MarketStore.shared
+
+    var body: some View {
+        let now = store.markets[alert.market]?.price
+        HStack(spacing: Theme.Spacing.m) {
+            Image(systemName: alert.above ? "arrow.up.right.circle.fill" : "arrow.down.right.circle.fill")
+                .foregroundStyle(alert.armed ? (alert.above ? Palette.green.mark : Theme.warning.mark) : Theme.textMuted)
+            Text(verbatim: store.markets[alert.market]?.name ?? alert.market).font(Theme.bodyStrong)
+            Text(verbatim: Format.price(alert.price)).monospacedDigit()
+            if alert.armed, let now {
+                Text(L("\(Format.percent(alert.distance(from: now))) uzakta", "\(Format.percent(alert.distance(from: now))) away"))
+                    .font(Theme.small).monospacedDigit().foregroundStyle(Theme.textMuted)
+            } else if let fired = alert.firedAt {
+                Text(L("tetiklendi \(fired.formatted(.relative(presentation: .named).locale(Format.locale)))",
+                       "fired \(fired.formatted(.relative(presentation: .named).locale(Format.locale)))"))
+                    .font(Theme.small).foregroundStyle(Theme.textMuted)
+            }
+            Spacer()
+            Button { alerts.setRepeats(alert, alert.repeats != true) } label: {
+                Image(systemName: "repeat").foregroundStyle(alert.repeats == true ? Theme.accent : Theme.textMuted)
+            }
+            .buttonStyle(.borderless)
+            .help(alert.repeats == true ? L("Tekrarlıyor", "Repeats") : L("Tekrarla", "Repeat"))
+            if !alert.armed {
+                Button(L("Yeniden kur", "Re-arm")) { alerts.rearm(alert) }.buttonStyle(.borderless)
+            }
+            Button { alerts.remove(alert) } label: { Image(systemName: "minus.circle") }
+                .buttonStyle(.borderless).foregroundStyle(Theme.textMuted)
+                .help(L("Sil", "Delete"))
+        }
+        .opacity(alert.armed ? 1 : 0.65)
     }
 }
 

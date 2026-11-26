@@ -326,7 +326,9 @@ enum Snapshot {
         if args.contains("--welcome") {
             root = AnyView(WelcomeView {})
         } else if args.contains("--help") {
-            root = AnyView(HelpView().frame(width: 640, height: 900))
+            HelpState.shared.tab = value(after: "--tab").flatMap(HelpTab.init(rawValue:)) ?? .start
+            HelpState.shared.query = value(after: "--find") ?? ""
+            root = AnyView(HelpView().frame(width: 720, height: 760))
         } else if args.contains("--note") {
             root = AnyView(NoteView().frame(width: 380, height: 440))
         } else if args.contains("--history") {

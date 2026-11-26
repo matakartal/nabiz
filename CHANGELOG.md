@@ -1,7 +1,13 @@
 # Changelog
 
-## 1.8.1
+## Unreleased
 
+- **What can it do?** rebuilt: a fixed header (nothing scrolls under the window buttons any more), four tabs (Start,
+  Launcher, Tools, Shortcuts) and search across all of it. Feature cards open what they describe, launcher examples
+  open the launcher with that text and show their answer on hover, keys are drawn as keycaps.
+- **Price alerts:** pick a market and a price; up or down follows from the price itself. Quick targets (±2, 5, 10%),
+  how far each alert still is, when it fired, and **repeating** alerts that arm themselves again once the price
+  moves 0.5% back.
 - Notes: no more empty strip above the header; the header sits in the title bar and drags the window.
 - **Apple Notes** option (Settings → General): the notes shortcut, the Notes tool, "New note" and "Save as note"
   open Apple Notes instead.

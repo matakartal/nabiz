@@ -1,20 +1,26 @@
 import AppKit
 import SwiftUI
 
-/// "What can it do?": the shortcuts, launcher examples you can click to try, and every tool in one sentence.
+/// "What can it do?": a short tour in four tabs (start, launcher, tools, shortcuts) with search across all of it.
+/// Launcher examples open the launcher with that text, so trying something is one click.
 @MainActor
 enum HelpWindow {
     private static var window: NSWindow?
 
-    static func show() {
+    static func show(_ tab: HelpTab = .start) {
+        HelpState.shared.tab = tab
+        HelpState.shared.query = ""
         if window == nil {
             let window = NSWindow(contentViewController: NSHostingController(rootView: HelpView()))
             window.styleMask = [.titled, .closable, .resizable, .fullSizeContentView]
             window.titlebarAppearsTransparent = true
+            window.titleVisibility = .hidden
+            window.isMovableByWindowBackground = true
             window.isReleasedWhenClosed = false
             window.backgroundColor = .clear
             window.isOpaque = false
-            window.setContentSize(NSSize(width: 640, height: 620))
+            window.minSize = NSSize(width: 600, height: 480)
+            window.setContentSize(NSSize(width: 720, height: 640))
             window.center()
             self.window = window
         }
@@ -24,106 +30,432 @@ enum HelpWindow {
     }
 }
 
+enum HelpTab: String, CaseIterable, Identifiable {
+    case start, launcher, tools, keys
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .start: L("Başlangıç", "Start")
+        case .launcher: L("Başlatıcı", "Launcher")
+        case .tools: L("Araçlar", "Tools")
+        case .keys: L("Kısayollar", "Shortcuts")
+        }
+    }
+}
+
+@MainActor
+@Observable
+final class HelpState {
+    static let shared = HelpState()
+    var tab: HelpTab = .start
+    var query = ""
+}
+
+/// One thing to learn: an example to try, a key combination, or a tool.
+private struct HelpItem: Identifiable {
+    var id: String { tab.rawValue + group + title + (example ?? "") }
+    let tab: HelpTab
+    let group: String
+    let title: String
+    var detail = ""
+    var keys: String?
+    var example: String?
+    var symbol: String?
+}
+
 struct HelpView: View {
     @AppStorage(Prefs.language) private var language = "system"
-
-    private var examples: [(String, String)] {
-        [
-            ("100 usd", L("döviz", "currency")), ("0.5 btc", L("kripto", "crypto")), ("5 bin tl eur", L("Türkçe tutar", "amounts")),
-            ("√2 * 3", L("matematik", "maths")), ("120 km/h mph", L("birim", "units")), ("tokyo", L("dünya saati", "world clock")),
-            ("bugün + 3 hafta", L("tarih", "dates")), ("255 hex", L("taban", "bases")), ("=", L("hesap geçmişi", "maths history")),
-            ("> ", L("komutlar", "commands")), (":kalp", "emoji"), ("/", L("dosya ara", "find files")),
-            ("g nabız", L("web'de ara", "web search")), ("pomodoro", L("odak", "focus")), ("sol yarı", L("pencere", "windows")),
-        ]
-    }
+    @Bindable private var state = HelpState.shared
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
-                VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-                    Text(L("Neler yapabilir?", "What Nabız can do")).font(Theme.title).foregroundStyle(Theme.text)
-                    Text(L("Menü çubuğundaki Nabız, Mac'ini izler ve bir kısayol uzağında bir başlatıcı, pano geçmişi, notlar ve araçlar sunar.",
-                           "Nabız watches your Mac from the menu bar and keeps a launcher, clipboard history, notes and tools one shortcut away."))
-                        .font(Theme.body).foregroundStyle(Theme.textMuted)
-                }
-
-                group(L("Kısayollar", "Shortcuts")) {
-                    shortcut(HotKey.label(.launcher), L("Başlatıcı: uygulama, komut, hesap, dosya, emoji", "Launcher: apps, commands, maths, files, emoji"))
-                    shortcut(HotKey.label(.clipboard), L("Pano geçmişi", "Clipboard history"))
-                    shortcut(HotKey.label(.note), L("Notlar", "Notes"))
-                    shortcut(HotKey.label(.panel), L("Bu panel", "This panel"))
-                    shortcut("⌘K", L("Başlatıcıda seçili satırın tüm eylemleri", "In the launcher: everything you can do with the selected row"))
-                    shortcut("⇧⌘F", L("Favorilere ekle", "Add to favourites"))
-                    shortcut("⌃⌥← → ↑ ↓", L("Pencere yerleşimi (Ayarlar → Pencereler'den açılır)", "Window layouts (turn on in Settings → Windows)"))
-                }
-
-                group(L("Başlatıcıda dene", "Try in the launcher")) {
-                    FlowLayout(spacing: Theme.Spacing.s) {
-                        ForEach(examples, id: \.0) { example in
-                            Button { LauncherPanel.shared.show(text: example.0) } label: {
-                                HStack(spacing: Theme.Spacing.xs) {
-                                    Text(verbatim: example.0).font(Theme.bodyStrong).foregroundStyle(Theme.text)
-                                    Text(verbatim: example.1).font(Theme.small).foregroundStyle(Theme.textMuted)
-                                }
-                                .padding(.horizontal, Theme.Spacing.m)
-                                .padding(.vertical, Theme.Spacing.xs + 2)
-                                .background(Theme.track, in: Capsule())
-                            }
-                            .buttonStyle(.plain)
-                            .help(L("Başlatıcıda aç", "Open in the launcher"))
+        VStack(spacing: 0) {
+            header
+            Rectangle().fill(Theme.hairline).frame(height: 1)
+            ScrollView {
+                Group {
+                    if !state.query.trimmingCharacters(in: .whitespaces).isEmpty {
+                        results
+                    } else {
+                        switch state.tab {
+                        case .start: start
+                        case .launcher: launcher
+                        case .tools: tools
+                        case .keys: keys
                         }
                     }
                 }
-
-                group(L("Araçlar", "Tools")) {
-                    ForEach(ToolKind.allCases) { kind in
-                        HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.m) {
-                            Image(systemName: kind.symbol).foregroundStyle(Theme.accent).frame(width: Theme.menuIcon)
-                            Text(verbatim: kind.title).font(Theme.bodyStrong).foregroundStyle(Theme.text).frame(width: 120, alignment: .leading)
-                            Text(verbatim: kind.help).font(Theme.body).foregroundStyle(Theme.textMuted)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                }
-
-                group(L("İpuçları", "Tips")) {
-                    tip(L("Panoda bir öğeye ⌘K: sabitle, nota kaydet, BÜYÜK HARF, JSON, Base64, QR kodu…", "⌘K on a clipboard item: pin, save as a note, UPPERCASE, JSON, Base64, QR code…"))
-                    tip(L("Notlarda Return listeyi sürdürür; kutuya tıkla ya da ⌘L ile işaretle.", "In notes, Return continues a list; click a box or press ⌘L to tick it."))
-                    tip(L("Bir video bağlantısını başlatıcıya yapıştır: video ya da sesi indirir.", "Paste a video link into the launcher to save the video or its sound."))
-                    tip(L("Menü çubuğundaki simgeye sağ tıkla: kısa menü.", "Right-click the menu bar item for a short menu."))
-                    tip(L("Kendi betiklerin: Ayarlar → Başlatıcı → Betik klasörü.", "Your own scripts: Settings → Launcher → Scripts folder."))
-                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(Theme.Spacing.xl)
             }
-            .padding(Theme.Spacing.xl)
-            .padding(.top, Theme.Spacing.l)
+            .scrollIndicators(.never)
         }
-        .scrollIndicators(.never)
-        .frame(minWidth: 520, minHeight: 420)
+        .ignoresSafeArea(edges: .top)
+        .frame(minWidth: 600, minHeight: 480)
         .background(MenuMaterial().ignoresSafeArea())
         .appearanceRoot(opaqueFill: Theme.surface)
     }
 
-    private func group<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+    // MARK: Header
+
+    /// The title sits in the title bar next to the window buttons; tabs and search under it. Content scrolls below,
+    /// never behind them.
+    private var header: some View {
+        VStack(spacing: Theme.Spacing.m) {
+            Text(L("Neler yapabilir?", "What Nabız can do")).font(Theme.bodyStrong).foregroundStyle(Theme.text)
+                .frame(height: Theme.noteHeader - Theme.Spacing.s)
+            HStack(spacing: Theme.Spacing.m) {
+                Picker("", selection: $state.tab) {
+                    ForEach(HelpTab.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                .disabled(!state.query.isEmpty)
+                Spacer()
+                HStack(spacing: Theme.Spacing.s) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(Theme.textMuted)
+                    TextField(L("Ara: hesap, pano, kısayol…", "Search: maths, clipboard, keys…"), text: $state.query)
+                        .textFieldStyle(.plain)
+                    if !state.query.isEmpty {
+                        Button { state.query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.textMuted) }
+                            .buttonStyle(.plain)
+                    }
+                }
+                .font(Theme.body)
+                .padding(.horizontal, Theme.Spacing.s)
+                .frame(width: 240, height: Theme.toolTile)
+                .background(Theme.field, in: RoundedRectangle(cornerRadius: Theme.fieldRadius, style: .continuous))
+            }
+            .padding(.horizontal, Theme.Spacing.xl)
+        }
+        .padding(.top, Theme.Spacing.xs)
+        .padding(.bottom, Theme.Spacing.m)
+    }
+
+    // MARK: Tabs
+
+    private var start: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
+            Text(L("Nabız menü çubuğundan Mac'ini izler. Bir kısayol uzağında da bunlar var:",
+                   "Nabız watches your Mac from the menu bar. One shortcut away, there's also:"))
+                .font(Theme.body).foregroundStyle(Theme.textMuted)
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: Theme.Spacing.m), GridItem(.flexible())], spacing: Theme.Spacing.m) {
+                FeatureCard(symbol: "magnifyingglass", title: L("Başlatıcı", "Launcher"), keys: HotKey.label(.launcher),
+                            text: L("Uygulama aç, hesapla, para ve birim çevir, dosya ve emoji bul, komut çalıştır.",
+                                    "Open apps, calculate, convert money and units, find files and emoji, run commands.")) {
+                    LauncherPanel.shared.show()
+                }
+                FeatureCard(symbol: "doc.on.clipboard", title: L("Pano geçmişi", "Clipboard history"), keys: HotKey.label(.clipboard),
+                            text: L("Kopyaladığın her şey burada: ara, sabitle, ↩ ile yapıştır.", "Everything you copied: search, pin, paste with ↩.")) {
+                    LauncherPanel.shared.show(.clipboard)
+                }
+                FeatureCard(symbol: "note.text", title: L("Notlar", "Notes"), keys: HotKey.label(.note),
+                            text: L("Her uygulamanın üstünde duran notlar ve yapılacaklar.", "Notes and checklists that float over every app.")) {
+                    NoteWindow.toggle()
+                }
+                FeatureCard(symbol: "menubar.rectangle", title: L("Panel", "Panel"), keys: HotKey.label(.panel),
+                            text: L("İşlemci, bellek, AI limitleri, piyasalar, döviz ve araçlar.", "CPU, memory, AI limits, markets, rates and tools.")) {
+                    HotKey.togglePanel()
+                }
+            }
+            section(L("Bilmekte fayda var", "Good to know")) {
+                VStack(alignment: .leading, spacing: Theme.Spacing.m) {
+                    tip("command", L("Başlatıcıda bir satırı seçip ⌘K'ye bas: o satırla yapılabilecek her şey çıkar.",
+                                     "Select a row in the launcher and press ⌘K for everything you can do with it."))
+                    tip("textformat", L("Panodaki metne ⌘K: BÜYÜK HARF, tek satır, JSON, Base64, QR kodu…",
+                                        "⌘K on copied text: UPPERCASE, one line, JSON, Base64, QR code…"))
+                    tip("arrow.down.circle", L("Bir YouTube ya da Instagram bağlantısını başlatıcıya yapıştır: video ya da ses iner.",
+                                               "Paste a YouTube or Instagram link into the launcher to save the video or its sound."))
+                    tip("brain.head.profile", L("Pomodoro'yu başlat; odak bloklarında sohbet uygulamaları kendiliğinden gizlenir.",
+                                                "Start a Pomodoro; chat apps hide themselves during focus blocks."))
+                    tip("cursorarrow.click.2", L("Menü çubuğundaki simgeye sağ tıkla: kısa bir menü açılır.", "Right-click the menu bar item for a short menu."))
+                }
+            }
+        }
+    }
+
+    private var launcher: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
+            section(L("Ön ekler", "Prefixes")) {
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: Theme.Spacing.m), GridItem(.flexible())], alignment: .leading,
+                          spacing: Theme.Spacing.s) {
+                    prefix("=", L("yalnızca hesap; boşsa geçmiş", "maths only; empty shows history"))
+                    prefix(">", L("yalnızca komutlar", "commands only"))
+                    prefix("/", L("yalnızca dosyalar", "files only"))
+                    prefix(":", L("emoji", "emoji"))
+                    prefix("g", L("Google'da ara (gh, yt, w…)", "search Google (gh, yt, w…)"))
+                }
+            }
+            ForEach(groups(for: .launcher), id: \.self) { group in
+                section(group) {
+                    FlowLayout(spacing: Theme.Spacing.s) {
+                        ForEach(items(.launcher, group)) { ExampleChip(item: $0) }
+                    }
+                }
+            }
+        }
+    }
+
+    private var tools: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
+            ForEach(groups(for: .tools), id: \.self) { group in
+                section(group) {
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: Theme.Spacing.m), GridItem(.flexible())], alignment: .leading,
+                              spacing: Theme.Spacing.m) {
+                        ForEach(items(.tools, group)) { ToolCard(item: $0) }
+                    }
+                }
+            }
+        }
+    }
+
+    private var keys: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
+            ForEach(groups(for: .keys), id: \.self) { group in
+                section(group) {
+                    VStack(spacing: Theme.Spacing.s) {
+                        ForEach(items(.keys, group)) { KeyRow(item: $0) }
+                    }
+                }
+            }
+            Button(L("Kısayolları değiştir…", "Change shortcuts…")) { SettingsWindow.show(.general) }
+        }
+    }
+
+    private var results: some View {
+        let query = state.query.trimmingCharacters(in: .whitespaces)
+        let found = Self.all.filter { item in
+            [item.title, item.detail, item.example ?? "", item.keys ?? "", item.group].contains { Fuzzy.contains(query, $0) }
+        }
+        return VStack(alignment: .leading, spacing: Theme.Spacing.m) {
+            if found.isEmpty {
+                Text(L("Bulunamadı. Başlatıcıda dene: ", "Nothing here. Try it in the launcher: ") + query)
+                    .font(Theme.body).foregroundStyle(Theme.textMuted)
+                Button(L("Başlatıcıda aç", "Open in the launcher")) { LauncherPanel.shared.show(text: query) }
+            }
+            ForEach(found) { item in
+                if item.example != nil {
+                    ExampleChip(item: item)
+                } else if item.keys != nil {
+                    KeyRow(item: item)
+                } else {
+                    ToolCard(item: item)
+                }
+            }
+        }
+    }
+
+    // MARK: Pieces
+
+    private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.m) {
             Text(verbatim: title).font(Theme.smallStrong).foregroundStyle(Theme.textMuted)
             content()
         }
     }
 
-    private func shortcut(_ keys: String, _ text: String) -> some View {
+    private func tip(_ symbol: String, _ text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.m) {
+            Image(systemName: symbol).foregroundStyle(Theme.accent).frame(width: Theme.menuIcon)
+            Text(verbatim: text).font(Theme.body).foregroundStyle(Theme.text).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func prefix(_ key: String, _ text: String) -> some View {
         HStack(spacing: Theme.Spacing.m) {
-            Text(verbatim: keys).font(Theme.bodyStrong).monospacedDigit().foregroundStyle(Theme.text)
-                .padding(.horizontal, Theme.Spacing.s).padding(.vertical, 2)
-                .background(Theme.track, in: RoundedRectangle(cornerRadius: Theme.fieldRadius, style: .continuous))
-                .frame(width: 120, alignment: .leading)
+            Keycap(key)
             Text(verbatim: text).font(Theme.body).foregroundStyle(Theme.text)
         }
     }
 
-    private func tip(_ text: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.s) {
-            Text(verbatim: "•").foregroundStyle(Theme.accent)
-            Text(verbatim: text).font(Theme.body).foregroundStyle(Theme.text).fixedSize(horizontal: false, vertical: true)
+    private func groups(for tab: HelpTab) -> [String] {
+        var seen: [String] = []
+        for item in Self.all where item.tab == tab && !seen.contains(item.group) { seen.append(item.group) }
+        return seen
+    }
+
+    private func items(_ tab: HelpTab, _ group: String) -> [HelpItem] {
+        Self.all.filter { $0.tab == tab && $0.group == group }
+    }
+
+    // MARK: Content
+
+    private static var all: [HelpItem] {
+        func example(_ group: String, _ text: String, _ detail: String) -> HelpItem {
+            HelpItem(tab: .launcher, group: group, title: text, detail: detail, example: text)
+        }
+        func key(_ group: String, _ keys: String, _ title: String) -> HelpItem {
+            HelpItem(tab: .keys, group: group, title: title, keys: keys)
+        }
+        let maths = L("Hesap", "Maths"), money = L("Para ve kripto", "Money and crypto"), units = L("Birimler", "Units")
+        let time = L("Saat ve tarih", "Time and dates"), commands = L("Komutlar", "Commands"), find = L("Arama", "Search")
+        var list: [HelpItem] = [
+            example(maths, "12*4", L("dört işlem", "arithmetic")), example(maths, "√2 * 3", L("kök", "roots")),
+            example(maths, "sin 30", L("trigonometri (derece)", "trig (degrees)")), example(maths, "20% of 150", L("yüzde", "percent")),
+            example(maths, "200 + %18", L("KDV ekle", "add tax")), example(maths, "5!", L("faktöriyel", "factorial")),
+            example(maths, "17 mod 5", L("mod", "modulo")), example(maths, "255 hex", L("onaltılık", "hexadecimal")),
+            example(money, "100 usd", L("TL ve diğer kurlar", "to your currencies")), example(money, "250 € tl", L("iki para", "two currencies")),
+            example(money, "5 bin tl eur", L("Türkçe tutar", "Turkish amounts")), example(money, "0.5 btc", L("kripto", "crypto")),
+            example(money, "1000 tl eth", L("TL'den kriptoya", "fiat to crypto")),
+            example(units, "5 km mi", L("uzunluk", "length")), example(units, "120 km/h mph", L("hız", "speed")),
+            example(units, "3 dönüm m2", L("alan", "area")), example(units, "2 gb mb", L("veri", "data")),
+            example(units, "100 f c", L("sıcaklık", "temperature")), example(units, "2 l ml", L("hacim", "volume")),
+            example(time, "tokyo", L("orada saat kaç", "time there")), example(time, "15:00 istanbul to new york", L("saat çevir", "convert a time")),
+            example(time, "bugün + 3 hafta", L("tarih ekle", "add to a date")), example(time, "1.1.2027 ye kaç gün", L("kalan gün", "days left")),
+            example(commands, "kilitle", L("ekranı kilitle", "lock the screen")), example(commands, "pomodoro", L("odak bloğu", "focus block")),
+            example(commands, "sol yarı", L("pencere yerleşimi", "window layout")), example(commands, "25 dk", L("zamanlayıcı", "timer")),
+            example(commands, "30 dk sonra uyut", L("uyku zamanlayıcı", "sleep timer")), example(commands, "ekran görüntüsü", L("ekran al", "screenshot")),
+            example(find, "g nabız", L("Google", "Google")), example(find, "gh swift", "GitHub"), example(find, "/rapor", L("dosya", "files")),
+            example(find, ":ateş", "emoji"), example(find, "safari", L("uygulama", "app")),
+        ]
+        let everyday = L("Her gün", "Everyday"), more = L("Diğer araçlar", "More tools")
+        list += ToolKind.allCases.map { kind in
+            HelpItem(tab: .tools, group: ToolKind.everyday.contains(kind) ? everyday : more, title: kind.title, detail: kind.help, symbol: kind.symbol)
+        }
+        let anywhere = L("Her yerden", "Anywhere"), inLauncher = L("Başlatıcıda", "In the launcher"), inNotes = L("Notlarda", "In notes")
+        list += [
+            key(anywhere, HotKey.label(.launcher), L("Başlatıcı", "Launcher")), key(anywhere, HotKey.label(.clipboard), L("Pano geçmişi", "Clipboard history")),
+            key(anywhere, HotKey.label(.note), L("Notlar", "Notes")), key(anywhere, HotKey.label(.panel), L("Panel", "Panel")),
+            key(anywhere, "⌃⌥← → ↑ ↓", L("Pencereyi yarıya yerleştir (Ayarlar → Pencereler)", "Snap the window to a half (Settings → Windows)")),
+            key(anywhere, "⌃⌥↩", L("Pencereyi ekranı kaplayacak kadar büyüt", "Maximize the window")),
+            key(inLauncher, "↑ ↓", L("Seç", "Pick")), key(inLauncher, "↩", L("Çalıştır, aç ya da yapıştır", "Run, open or paste")),
+            key(inLauncher, "⌘↩", L("İkinci eylem (kopyala, Finder'da göster…)", "Second action (copy, show in Finder…)")),
+            key(inLauncher, "⌘K", L("Satırın tüm eylemleri", "Every action for the row")), key(inLauncher, "⇧⌘F", L("Favorilere ekle", "Add to favourites")),
+            key(inLauncher, "⌘P", L("Pano öğesini sabitle", "Pin a clipboard item")), key(inLauncher, "⌘⌫", L("Pano öğesini sil", "Delete a clipboard item")),
+            key(inLauncher, "⎋", L("Yazıyı sil, sonra kapat", "Clear the text, then close")),
+            key(inNotes, "⌘N", L("Yeni not", "New note")), key(inNotes, "⌘P", L("Tüm notlar ve arama", "All notes and search")),
+            key(inNotes, "⌘[ ⌘]", L("Önceki / sonraki not", "Previous / next note")), key(inNotes, "⌘L", L("Yapılacak kutusu ekle ya da işaretle", "Add or tick a checkbox")),
+            key(inNotes, "⇧⌘L", L("Madde işareti", "Bullet")), key(inNotes, "⌘B ⌘I", L("Kalın, eğik", "Bold, italic")),
+            key(inNotes, "⇧⌘C", L("Notu kopyala", "Copy the note")), key(inNotes, "⎋", L("Kapat", "Close")),
+        ]
+        return list
+    }
+}
+
+/// A key combination drawn as separate keys: ⌃ ⌥ Space.
+struct Keycap: View {
+    let text: String
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        HStack(spacing: Theme.Spacing.xs / 2) {
+            ForEach(Array(Self.split(text).enumerated()), id: \.offset) { _, key in
+                Text(verbatim: key).font(Theme.smallStrong).monospacedDigit().foregroundStyle(Theme.text)
+                    .padding(.horizontal, Theme.Spacing.xs + 1)
+                    .frame(minWidth: Theme.menuRow - Theme.Spacing.xs, minHeight: Theme.menuRow - Theme.Spacing.xs)
+                    .background(Theme.field, in: RoundedRectangle(cornerRadius: Theme.fieldRadius - 1, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: Theme.fieldRadius - 1, style: .continuous).strokeBorder(Theme.hairline))
+            }
+        }
+    }
+
+    /// "⌃⌥Space" → ⌃ ⌥ Space; "⌘[ ⌘]" → ⌘ [ ⌘ ].
+    static func split(_ text: String) -> [String] {
+        var keys: [String] = []
+        for word in text.split(separator: " ") {
+            var rest = ""
+            for character in word {
+                if "⌃⌥⇧⌘".contains(character) {
+                    if !rest.isEmpty { keys.append(rest); rest = "" }
+                    keys.append(String(character))
+                } else {
+                    rest.append(character)
+                }
+            }
+            if !rest.isEmpty { keys.append(rest) }
+        }
+        return keys
+    }
+}
+
+private struct FeatureCard: View {
+    let symbol: String
+    let title: String
+    let keys: String
+    let text: String
+    let open: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: open) {
+            VStack(alignment: .leading, spacing: Theme.Spacing.m) {
+                HStack(spacing: Theme.Spacing.m) {
+                    Image(systemName: symbol).font(Theme.title).foregroundStyle(.white)
+                        .frame(width: Theme.settingsHeaderIcon - Theme.Spacing.s, height: Theme.settingsHeaderIcon - Theme.Spacing.s)
+                        .background(Theme.accent, in: RoundedRectangle(cornerRadius: Theme.fieldRadius + 2, style: .continuous))
+                    Text(verbatim: title).font(Theme.title).foregroundStyle(Theme.text)
+                    Spacer(minLength: 0)
+                    Keycap(keys)
+                }
+                Text(verbatim: text).font(Theme.body).foregroundStyle(Theme.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text(L("Aç →", "Open →")).font(Theme.smallStrong).foregroundStyle(Theme.accent).opacity(hovering ? 1 : 0.7)
+            }
+            .padding(Theme.Spacing.l)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(hovering ? Theme.hover : Theme.track, in: RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).strokeBorder(Theme.hairline))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+    }
+}
+
+/// An example to try: click opens the launcher with it; hover shows what it gives.
+private struct ExampleChip: View {
+    let item: HelpItem
+    @State private var hovering = false
+
+    var body: some View {
+        Button { LauncherPanel.shared.show(text: item.example ?? item.title) } label: {
+            HStack(spacing: Theme.Spacing.s) {
+                Text(verbatim: item.title).font(.system(.body, design: .monospaced).weight(.medium)).foregroundStyle(Theme.text)
+                Text(verbatim: item.detail).font(Theme.small).foregroundStyle(Theme.textMuted)
+            }
+            .padding(.horizontal, Theme.Spacing.m)
+            .frame(height: Theme.toolTile)
+            .background(hovering ? Theme.hover : Theme.track, in: Capsule())
+            .overlay(Capsule().strokeBorder(hovering ? Theme.accent.opacity(0.6) : Theme.hairline))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(Calculator.evaluate(item.example ?? "")?.text ?? L("Başlatıcıda dene", "Try it in the launcher"))
+    }
+}
+
+private struct ToolCard: View {
+    let item: HelpItem
+
+    var body: some View {
+        HStack(alignment: .top, spacing: Theme.Spacing.m) {
+            Image(systemName: item.symbol ?? "wrench").font(Theme.body).foregroundStyle(.white)
+                .frame(width: Theme.settingsIcon + 4, height: Theme.settingsIcon + 4)
+                .background(Theme.accent, in: RoundedRectangle(cornerRadius: Theme.fieldRadius, style: .continuous))
+            VStack(alignment: .leading, spacing: Theme.Spacing.xs / 2) {
+                Text(verbatim: item.title).font(Theme.bodyStrong).foregroundStyle(Theme.text)
+                Text(verbatim: item.detail).font(Theme.small).foregroundStyle(Theme.textMuted).fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(Theme.Spacing.m)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Theme.track, in: RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
+    }
+}
+
+private struct KeyRow: View {
+    let item: HelpItem
+
+    var body: some View {
+        HStack(spacing: Theme.Spacing.l) {
+            Keycap(item.keys ?? "").frame(width: 150, alignment: .leading)
+            Text(verbatim: item.title).font(Theme.body).foregroundStyle(Theme.text)
+            Spacer(minLength: 0)
         }
     }
 }

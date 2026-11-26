@@ -10,6 +10,12 @@ struct PriceAlert: Codable, Identifiable, Equatable, Sendable {
     var above: Bool
     var price: Double
     var armed = true
+    /// Arms itself again once the price moves back 0.5% past the line, instead of waiting to be re-armed.
+    var repeats: Bool?
+    var firedAt: Date?
+
+    /// How far the price still has to go, as a fraction of the current price (0.032 = 3.2%).
+    func distance(from now: Double) -> Double { now > 0 ? abs(price - now) / now : 0 }
 }
 
 @MainActor
@@ -29,8 +35,8 @@ final class PriceAlerts {
     /// Markets that need prices even when they aren't watched in the panel.
     var markets: Set<String> { Set(alerts.filter(\.armed).map(\.market)) }
 
-    func add(market: String, above: Bool, price: Double) {
-        alerts.append(PriceAlert(market: market, above: above, price: price))
+    func add(market: String, above: Bool, price: Double, repeats: Bool = false) {
+        alerts.append(PriceAlert(market: market, above: above, price: price, repeats: repeats))
         save()
         Notifier.shared.requestPermission(keepSetting: true)
     }
@@ -43,18 +49,35 @@ final class PriceAlerts {
     func rearm(_ alert: PriceAlert) {
         guard let index = alerts.firstIndex(where: { $0.id == alert.id }) else { return }
         alerts[index].armed = true
+        alerts[index].firedAt = nil
+        save()
+    }
+
+    func setRepeats(_ alert: PriceAlert, _ on: Bool) {
+        guard let index = alerts.firstIndex(where: { $0.id == alert.id }) else { return }
+        alerts[index].repeats = on
         save()
     }
 
     /// Called after every price update.
     func check(_ markets: [String: Market]) {
         var changed = false
+        // Repeating alerts arm again once the price is clearly back on the other side.
+        for index in alerts.indices where !alerts[index].armed && alerts[index].repeats == true {
+            let alert = alerts[index]
+            guard let price = markets[alert.market]?.price else { continue }
+            if alert.above ? price < alert.price * 0.995 : price > alert.price * 1.005 {
+                alerts[index].armed = true
+                changed = true
+            }
+        }
         for index in alerts.indices where alerts[index].armed {
             let alert = alerts[index]
             guard let market = markets[alert.market] else { continue }
             let crossed = alert.above ? market.price >= alert.price : market.price <= alert.price
             guard crossed else { continue }
             alerts[index].armed = false
+            alerts[index].firedAt = Date()
             changed = true
             let line = Format.price(alert.price), now = Format.price(market.price)
             Notifier.shared.post(
