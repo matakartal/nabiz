@@ -12,7 +12,7 @@ durumu, geliştirici araçları.
 
 <a href="../../releases/latest"><img src="https://img.shields.io/badge/%C4%B0ndir-Nab%C4%B1z%201.10.0-1DB954?style=for-the-badge&logo=apple&logoColor=white" alt="Nabız'ı indir"></a>
 
-[English](README.md) · [X'te takip et: @mehmetatakartal](https://x.com/mehmetatakartal)
+[English](README.md) · [简体中文](README.zh-CN.md) · [X'te takip et: @mehmetatakartal](https://x.com/mehmetatakartal)
 
 <br>
 
@@ -61,6 +61,12 @@ Sen yazıyorsun, ajanlar kuruyor, Mac'in sessizce doluyor. Nabız bu çalışma 
 </p>
 
 ## Kurulum
+
+```bash
+brew tap matakartal/nabiz https://github.com/matakartal/nabiz && brew install --cask matakartal/nabiz/nabiz
+```
+
+Ya da:
 
 1. [Releases](../../releases/latest) sayfasından `Nabiz-x.y.z.dmg` dosyasını indir.
 2. Aç ve Nabız'ı Programlar klasörüne sürükle.

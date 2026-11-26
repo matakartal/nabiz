@@ -36,4 +36,8 @@ if [[ "${1:-}" == "publish" ]]; then
     awk -v v="## $VERSION" '$0==v{f=1;next} /^## /{f=0} f' CHANGELOG.md > "$NOTES"
     gh release create "v$VERSION" "$DMG" --title "Nabız $VERSION" --notes-file "$NOTES" --target main
     rm -f "$NOTES"
+    # The Homebrew cask points at this release; commit and push it once the release is out.
+    SHA=$(shasum -a 256 "$DMG" | cut -d' ' -f1)
+    sed -i '' -E "s/^  version \".*\"/  version \"$VERSION\"/; s/^  sha256 \".*\"/  sha256 \"$SHA\"/" Casks/nabiz.rb
+    echo "Casks/nabiz.rb updated to $VERSION — commit and push it."
 fi

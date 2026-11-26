@@ -4,23 +4,24 @@
 
 # Nabız
 
-**The menu bar app every developer should have — and the friendliest one for vibecoders.**
+**Your Mac's pulse — and your dev stack — in the menu bar.**
 
-Your Mac's pulse in the menu bar. A small, native, open-source app for macOS: a system
-monitor with one-tap fixes, AI chat with your own
-subscriptions or Apple's free on-device model, a launcher, screenshots and Screen Studio–style recordings, the weather,
-and tools made for developers.
+Free and open source. A native macOS menu bar app with a system monitor that fixes things in one tap, your AI limits
+and an AI chat (Apple's on-device model, or your own Claude, Codex, Grok or Gemini), dev servers and ports, and a
+launcher, clipboard, screenshots and Screen Studio–style recordings.
 
-<a href="../../releases/latest"><img src="https://img.shields.io/badge/Download-Nab%C4%B1z%201.10.0-1DB954?style=for-the-badge&logo=apple&logoColor=white" alt="Download Nabız"></a>
+<a href="../../releases/latest"><img src="https://img.shields.io/badge/Download%20free-Nab%C4%B1z%201.10.0-1DB954?style=for-the-badge&logo=apple&logoColor=white" alt="Download Nabız"></a>
 
 <img src="https://img.shields.io/badge/macOS-14%2B-111?logo=apple&logoColor=white" alt="macOS 14+">
-<img src="https://img.shields.io/badge/Apple%20silicon%20%2B%20Intel-universal-111" alt="Universal">
-<img src="https://img.shields.io/badge/Swift%206-SwiftUI%20%2B%20AppKit-F05138?logo=swift&logoColor=white" alt="Swift 6">
-<img src="https://img.shields.io/badge/notarized-Developer%20ID-1DB954" alt="Notarized">
+<img src="https://img.shields.io/github/downloads/matakartal/nabiz/total?color=1DB954" alt="Downloads">
 <img src="https://img.shields.io/badge/license-GPLv3-blue" alt="GPLv3">
 <a href="https://x.com/mehmetatakartal"><img src="https://img.shields.io/badge/follow-%40mehmetatakartal-000?logo=x&logoColor=white" alt="Follow @mehmetatakartal on X"></a>
 
-[Features](#features) · [Shortcuts](#shortcuts) · [Privacy](#privacy) · [Build](#build) · [Türkçe](README.tr.md)
+```bash
+brew tap matakartal/nabiz https://github.com/matakartal/nabiz && brew install --cask matakartal/nabiz/nabiz
+```
+
+[Features](#features) · [Install](#install) · [Use it from Claude Code](#use-it-from-claude-code-and-cursor) · [Privacy](#privacy) · [Türkçe](README.tr.md) · [简体中文](README.zh-CN.md)
 
 <br>
 
@@ -174,12 +175,29 @@ Settings has a searchable sidebar in Turkish and English, and **What can it do?*
 
 ## Install
 
-1. Download `Nabiz-x.y.z.dmg` from [Releases](../../releases/latest).
-2. Open it and drag Nabız to Applications.
-3. Open Nabız. A short welcome shows where things are and offers to open it at login.
+**Homebrew:**
 
-Releases are signed with a Developer ID and notarized by Apple. New versions show an **Update** button in the panel
-that installs them and reopens Nabız. Requires macOS 14 or later; universal for Apple silicon and Intel.
+```bash
+brew tap matakartal/nabiz https://github.com/matakartal/nabiz && brew install --cask matakartal/nabiz/nabiz
+```
+
+**Or download** `Nabiz-x.y.z.dmg` from [Releases](../../releases/latest), open it and drag Nabız to Applications.
+
+Builds are universal (Apple silicon and Intel), signed with a Developer ID and notarized by Apple, so Nabız opens
+without warnings. macOS 14 or later. A short welcome shows where things are, and new versions update themselves from
+the panel's **Update** button.
+
+## Use it from Claude Code and Cursor
+
+Turn on Settings → MCP (one click adds it to Claude Code and Claude Desktop), or add it yourself:
+
+```bash
+claude mcp add --scope user nabiz -- /Applications/Nabiz.app/Contents/MacOS/Nabiz --mcp
+```
+
+Your agents can then see this Mac's status, the dev servers and ports already running (so they reuse a server
+instead of starting a second one), your projects, Docker, AI limits, calendar and notes — and start timers, focus
+mode or a screen recording.
 
 ## Shortcuts
 
