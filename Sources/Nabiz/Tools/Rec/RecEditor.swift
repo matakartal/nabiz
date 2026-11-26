@@ -56,15 +56,21 @@ final class RecEditorModel {
             scheduleRebuild()
         }
     }
+    /// Playhead, in seconds of the recording (not of the sped-up result).
     var time = 0.0
     var playing = false
     var selectedZoom: UUID?
+    var selectedSpeed: UUID?
     var exportProgress: Double?
     var toast: String?
     var thumbnails: [CGImage] = []
+    /// The look being shown; its time map turns recording time into played time.
+    private(set) var plan: RecPlan
 
     let player = AVPlayer()
     @ObservationIgnored private let asset: AVURLAsset
+    @ObservationIgnored private var built: RecPlan.Built?
+    @ObservationIgnored private var builtSpeeds: [RecSpeed] = []
     @ObservationIgnored private var observer: Any?
     @ObservationIgnored private var rebuildTask: Task<Void, Never>?
 
@@ -72,24 +78,26 @@ final class RecEditorModel {
         self.meta = meta
         edit = meta.edit
         asset = AVURLAsset(url: RecStore.video(for: meta.id))
-        let item = AVPlayerItem(asset: asset)
-        item.videoComposition = RecPlan(meta: meta, edit: meta.edit, maxWidth: 1600).composition(for: asset)
-        player.replaceCurrentItem(with: item)
+        plan = RecPlan(meta: meta, edit: meta.edit, maxWidth: 1600)
         player.actionAtItemEnd = .pause
         observer = player.addPeriodicTimeObserver(forInterval: CMTime(value: 1, timescale: 30), queue: .main) { [weak self] time in
             MainActor.assumeIsolated { self?.tick(time.seconds) }
         }
-        applyTrim()
-        seek(edit.trimStart)
-        Task { await makeThumbnails() }
+        Task {
+            await rebuild(recompose: true)
+            seek(edit.trimStart)
+            await makeThumbnails()
+        }
     }
 
     var duration: Double { meta.duration }
     var trimEnd: Double { edit.trimEnd > edit.trimStart ? edit.trimEnd : duration }
+    /// How long the result plays, trimmed and sped up.
+    var playedLength: Double { plan.map.played(trimEnd) - plan.map.played(edit.trimStart) }
 
     private func tick(_ seconds: Double) {
         guard seconds.isFinite else { return }
-        time = seconds
+        time = plan.map.source(seconds)
         if playing && player.rate == 0 { playing = false }
     }
 
@@ -107,12 +115,12 @@ final class RecEditorModel {
     func seek(_ seconds: Double) {
         let t = min(max(seconds, 0), duration)
         time = t
-        player.seek(to: CMTime(seconds: t, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        player.seek(to: CMTime(seconds: plan.map.played(t), preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
     }
 
     private func applyTrim() {
         player.currentItem?.forwardPlaybackEndTime = edit.trimEnd > edit.trimStart
-            ? CMTime(seconds: edit.trimEnd, preferredTimescale: 600) : .invalid
+            ? CMTime(seconds: plan.map.played(edit.trimEnd), preferredTimescale: 600) : .invalid
     }
 
     /// Builds the new look a moment after the last change, then shows it on the paused frame too.
@@ -121,10 +129,27 @@ final class RecEditorModel {
         rebuildTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(120))
             guard let self, !Task.isCancelled else { return }
-            player.currentItem?.videoComposition = RecPlan(meta: meta, edit: edit, maxWidth: 1600).composition(for: asset)
-            applyTrim()
-            if !playing { seek(time) }
+            await rebuild(recompose: edit.speeds != builtSpeeds)
         }
+    }
+
+    /// A new look; when the speed-ups changed, the whole timeline is put together again (keeping the playhead).
+    private func rebuild(recompose: Bool) async {
+        let keep = time
+        plan = RecPlan(meta: meta, edit: edit, maxWidth: 1600)
+        if recompose || built == nil {
+            guard let fresh = await RecPlan.build(meta: meta, speeds: edit.speeds) else { show(L("Kayıt açılamadı", "Couldn't open the recording")); return }
+            built = fresh
+            builtSpeeds = edit.speeds
+            let item = AVPlayerItem(asset: fresh.asset)
+            item.audioTimePitchAlgorithm = .spectral
+            item.videoComposition = plan.composition(for: fresh)
+            player.replaceCurrentItem(with: item)
+        } else if let built {
+            player.currentItem?.videoComposition = plan.composition(for: built)
+        }
+        applyTrim()
+        if !playing { seek(keep) }
     }
 
     /// A strip of stills for the timeline.
@@ -165,6 +190,38 @@ final class RecEditorModel {
         edit.zooms = RecEdit.autoZooms(from: meta.track.clicks, duration: duration, scale: edit.style.zoomLevel)
         edit.zoomsMade = true
         selectedZoom = nil
+    }
+
+    // MARK: Speed
+
+    func addSpeed() {
+        let start = min(time, max(0, duration - 1))
+        var speed = RecSpeed(start: start, end: min(duration, start + 3), rate: 2)
+        if let next = edit.speeds.filter({ $0.start > start }).map(\.start).min() { speed.end = min(speed.end, next) }
+        if let inside = edit.speeds.first(where: { $0.start <= start && $0.end > start }) { speed.start = inside.end }
+        guard speed.end - speed.start > 0.4 else { return }
+        edit.speeds.append(speed)
+        edit.speeds.sort { $0.start < $1.start }
+        selectedSpeed = speed.id
+        selectedZoom = nil
+    }
+
+    func deleteSelection() {
+        if selectedSpeed != nil {
+            edit.speeds.removeAll { $0.id == selectedSpeed }
+            selectedSpeed = nil
+        } else {
+            deleteZoom()
+        }
+    }
+
+    /// Plays every stretch of steady typing three times faster.
+    func speedUpTyping() {
+        let found = RecEdit.typingSpeeds(meta.track.typing)
+        guard !found.isEmpty else { show(L("Bu kayıtta yazma yok", "No typing in this recording")); return }
+        edit.speeds = (edit.speeds.filter { speed in !found.contains { $0.start < speed.end && speed.start < $0.end } } + found)
+            .sorted { $0.start < $1.start }
+        show(L("\(found.count) yazma bölümü hızlandı", "Sped up \(found.count) stretches of typing"))
     }
 
     // MARK: Out
@@ -243,7 +300,7 @@ struct RecEditorView: View {
                 }
                 Rectangle().fill(Theme.hairline).frame(height: 1)
                 RecTimeline(model: model)
-                    .frame(height: 132)
+                    .frame(height: 158)
             }
             .ignoresSafeArea(.container, edges: .top)
         }
@@ -252,14 +309,14 @@ struct RecEditorView: View {
         .focusable()
         .focusEffectDisabled()
         .onKeyPress(.space) { model.togglePlay(); return .handled }
-        .onKeyPress(.delete) { model.deleteZoom(); return .handled }
+        .onKeyPress(.delete) { model.deleteSelection(); return .handled }
     }
 
     private var topBar: some View {
         HStack(spacing: Theme.Spacing.s) {
             Color.clear.frame(width: WindowChrome.trafficLights)
             Text(L("Ekran kaydı", "Screen recording")).font(Theme.bodyStrong).foregroundStyle(Theme.text)
-            Text(verbatim: "· " + RecTimeline.format(model.trimEnd - model.edit.trimStart))
+            Text(verbatim: "· " + RecTimeline.format(model.playedLength))
                 .font(Theme.body).monospacedDigit().foregroundStyle(Theme.textMuted)
             Spacer()
             if let progress = model.exportProgress {
@@ -344,6 +401,18 @@ struct RecInspector: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
+                section(L("Çerçeve", "Frame")) {
+                    Picker(L("Oran", "Shape"), selection: $model.edit.style.aspect) {
+                        Text(L("Kaydın", "Own")).tag("auto")
+                        Text(verbatim: "16:9").tag("16:9")
+                        Text(verbatim: "9:16").tag("9:16")
+                        Text(verbatim: "1:1").tag("1:1")
+                        Text(verbatim: "4:3").tag("4:3")
+                    }
+                    .pickerStyle(.segmented).labelsHidden().controlSize(.small)
+                    Text(L("9:16 Reels, Shorts ve TikTok için; 1:1 gönderiler için.", "9:16 for Reels, Shorts and TikTok; 1:1 for posts."))
+                        .font(Theme.small).foregroundStyle(Theme.textMuted)
+                }
                 section(L("Arka plan", "Background")) {
                     LazyVGrid(columns: Array(repeating: GridItem(.fixed(24), spacing: 8), count: 8), alignment: .leading, spacing: 8) {
                         ForEach(Array(ShotBackground.presets.enumerated()), id: \.offset) { index, pair in
@@ -362,6 +431,50 @@ struct RecInspector: View {
                     slider(L("Boyut", "Size"), value: $model.edit.style.cursorSize, range: 1...3)
                     toggle(L("Pürüzsüz hareket", "Smooth movement"), $model.edit.style.smoothCursor)
                     toggle(L("Tıklama halkası", "Click rings"), $model.edit.style.clickRings)
+                    toggle(L("Dururken gizle", "Hide when still"), $model.edit.style.hideIdleCursor)
+                    toggle(L("Hareket bulanıklığı", "Motion blur"), $model.edit.style.motionBlur)
+                }
+                if model.meta.cameraOffset != nil {
+                    section(L("Kamera", "Camera")) {
+                        toggle(L("Göster", "Show"), $model.edit.style.camera)
+                        slider(L("Boyut", "Size"), value: $model.edit.style.cameraSize, range: 0.12...0.4)
+                        HStack(spacing: Theme.Spacing.s) {
+                            ForEach([("topLeft", "arrow.up.left"), ("topRight", "arrow.up.right"), ("bottomLeft", "arrow.down.left"),
+                                     ("bottomRight", "arrow.down.right")], id: \.0) { corner, symbol in
+                                ShotToolButton(symbol: symbol, help: L("Köşe", "Corner"), active: model.edit.style.cameraCorner == corner) {
+                                    model.edit.style.cameraCorner = corner
+                                }
+                            }
+                            Spacer()
+                            ShotToolButton(symbol: model.edit.style.cameraCircle ? "circle" : "app", help: L("Daire ya da kare", "Circle or square"),
+                                           active: false) { model.edit.style.cameraCircle.toggle() }
+                        }
+                    }
+                }
+                section(L("Kısayol tuşları", "Shortcut keys")) {
+                    toggle(L("Ekranda göster", "Show on screen"), $model.edit.style.showKeys)
+                    Text(model.meta.track.keys.isEmpty
+                         ? L("Bu kayıtta kısayol yok. Nabız'a Erişilebilirlik izni verilince ⌘C gibi kısayollar kaydedilir; yazdığın metin asla.",
+                             "No shortcuts in this recording. With Accessibility access, shortcuts like ⌘C are recorded; what you type never is.")
+                         : L("⌘C, ⌃⌥R gibi kısayollar altta kısa bir etiketle görünür.", "Shortcuts like ⌘C show as a short label at the bottom."))
+                        .font(Theme.small).foregroundStyle(Theme.textMuted).fixedSize(horizontal: false, vertical: true)
+                }
+                section(L("Hız", "Speed")) {
+                    if let id = model.selectedSpeed, let index = model.edit.speeds.firstIndex(where: { $0.id == id }) {
+                        slider(L("Bu bölüm: \(String(format: "%.1f", model.edit.speeds[index].rate))×", "This part: \(String(format: "%.1f", model.edit.speeds[index].rate))×"),
+                               value: $model.edit.speeds[index].rate, range: 1.5...8)
+                        Button(L("Bu bölümü sil  ⌫", "Delete this part  ⌫"), role: .destructive) { model.deleteSelection() }
+                            .buttonStyle(TextButtonStyle(font: Theme.small))
+                    }
+                    HStack {
+                        Button(L("Ekle", "Add")) { model.addSpeed() }.buttonStyle(TextButtonStyle(font: Theme.small, color: Theme.accent))
+                        Spacer()
+                        Button(L("Yazmayı hızlandır", "Speed up typing")) { model.speedUpTyping() }
+                            .buttonStyle(TextButtonStyle(font: Theme.small, color: Theme.accent))
+                            .disabled(model.meta.track.typing.isEmpty)
+                    }
+                    Text(L("Uzun yazma ya da bekleme anlarını hızlı geçirir; ses tonu bozulmaz.", "Plays long typing or waiting faster; voices keep their pitch."))
+                        .font(Theme.small).foregroundStyle(Theme.textMuted).fixedSize(horizontal: false, vertical: true)
                 }
                 section(L("Yakınlaştırma", "Zoom")) {
                     if let id = model.selectedZoom, let index = model.edit.zooms.firstIndex(where: { $0.id == id }) {
@@ -445,6 +558,10 @@ struct RecTimeline: View {
                     Label(L("Yakınlaştırma ekle", "Add zoom"), systemImage: "plus.magnifyingglass").font(Theme.small)
                 }
                 .buttonStyle(TextButtonStyle(font: Theme.small, color: Theme.accent))
+                Button { model.addSpeed() } label: {
+                    Label(L("Hızlandır", "Speed up"), systemImage: "forward").font(Theme.small)
+                }
+                .buttonStyle(TextButtonStyle(font: Theme.small, color: Theme.accent))
             }
             GeometryReader { geometry in
                 let width = geometry.size.width
@@ -466,11 +583,14 @@ struct RecTimeline: View {
                     trimHandle(at: x(model.edit.trimStart), width: width, leading: true)
                     trimHandle(at: x(model.trimEnd), width: width, leading: false)
                     // Zooms.
+                    ForEach(model.edit.speeds) { speed in
+                        speedCapsule(speed, x: x, width: width)
+                    }
                     ForEach(model.edit.zooms) { zoom in
                         zoomCapsule(zoom, x: x, width: width)
                     }
                     // Playhead.
-                    Rectangle().fill(Theme.text).frame(width: 2, height: 78).offset(x: x(model.time) - 1, y: -4)
+                    Rectangle().fill(Theme.text).frame(width: 2, height: 104).offset(x: x(model.time) - 1, y: -4)
                         .allowsHitTesting(false)
                 }
                 .contentShape(Rectangle())
@@ -478,7 +598,7 @@ struct RecTimeline: View {
                     model.seek(Double(drag.location.x / width) * model.duration)
                 })
             }
-            .frame(height: 74)
+            .frame(height: 100)
         }
         .padding(.horizontal, Theme.Spacing.l)
         .padding(.vertical, Theme.Spacing.m)
@@ -497,6 +617,41 @@ struct RecTimeline: View {
             })
             .onHover { inside in if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() } }
             .help(L("Baştan ya da sondan kırp", "Trim the start or the end"))
+    }
+
+    private func speedCapsule(_ speed: RecSpeed, x: (Double) -> CGFloat, width: CGFloat) -> some View {
+        let selected = model.selectedSpeed == speed.id
+        let seconds = { (dx: CGFloat) in Double(dx / width) * model.duration }
+        return RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .fill(selected ? Theme.text.opacity(0.75) : Theme.textMuted.opacity(0.55))
+            .overlay(alignment: .leading) {
+                Label(String(format: "%.1f×", speed.rate), systemImage: "forward.fill")
+                    .font(.system(size: 10, weight: .semibold)).foregroundStyle(Theme.surface).labelStyle(.titleAndIcon)
+                    .padding(.leading, 8).lineLimit(1)
+            }
+            .overlay(alignment: .trailing) {
+                Color.clear.frame(width: 8).contentShape(Rectangle())
+                    .onHover { inside in if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() } }
+                    .gesture(DragGesture(minimumDistance: 1).onChanged { drag in
+                        guard let index = model.edit.speeds.firstIndex(where: { $0.id == speed.id }) else { return }
+                        let limit = model.edit.speeds.filter { $0.start > speed.start }.map(\.start).min() ?? model.duration
+                        model.edit.speeds[index].end = min(max(speed.end + seconds(drag.translation.width), speed.start + 0.5), limit)
+                    })
+            }
+            .frame(width: max(14, x(speed.end) - x(speed.start)), height: 22)
+            .offset(x: x(speed.start), y: 76)
+            .onTapGesture { model.selectedSpeed = selected ? nil : speed.id; model.selectedZoom = nil }
+            .gesture(DragGesture(minimumDistance: 3).onChanged { drag in
+                guard let index = model.edit.speeds.firstIndex(where: { $0.id == speed.id }) else { return }
+                let length = speed.end - speed.start
+                let previous = model.edit.speeds.filter { $0.end <= speed.start }.map(\.end).max() ?? 0
+                let next = model.edit.speeds.filter { $0.start >= speed.end }.map(\.start).min() ?? model.duration
+                let start = min(max(speed.start + seconds(drag.translation.width), previous), next - length)
+                model.edit.speeds[index].start = start
+                model.edit.speeds[index].end = start + length
+                model.selectedSpeed = speed.id
+            })
+            .help(L("Hızlı bölüm · Sürükle: taşı · Sağ kenar: uzat", "Faster part · Drag to move · Right edge to stretch"))
     }
 
     private func zoomCapsule(_ zoom: RecZoom, x: (Double) -> CGFloat, width: CGFloat) -> some View {
@@ -520,7 +675,7 @@ struct RecTimeline: View {
             }
             .frame(width: max(14, x(zoom.end) - x(zoom.start)), height: 22)
             .offset(x: x(zoom.start), y: 50)
-            .onTapGesture { model.selectedZoom = selected ? nil : zoom.id }
+            .onTapGesture { model.selectedZoom = selected ? nil : zoom.id; model.selectedSpeed = nil }
             .gesture(DragGesture(minimumDistance: 3).onChanged { drag in
                 guard let index = model.edit.zooms.firstIndex(where: { $0.id == zoom.id }) else { return }
                 let length = zoom.end - zoom.start

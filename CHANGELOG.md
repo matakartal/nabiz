@@ -8,6 +8,9 @@
   larger, rings each click, and zooms in where you clicked, following the pointer with soft springs. Gradient
   background, padding, rounded corners and shadow; drag zooms on the timeline, stretch or add them, trim the start
   and end. Export MP4 (full size, 4K, 1080p) or GIF, or copy a 1080p MP4 straight to the clipboard.
+  Also: the camera in a circle or rounded square in any corner (with a live bubble while recording), shortcuts
+  pressed shown as a label (never what you type), 16:9 / 9:16 / 1:1 / 4:3 frames, faster parts on the timeline and
+  one-click "speed up typing", the pointer fading out when still, and motion blur on fast moves.
 - **Settings, easier to search:** search now finds single settings, not just pages — in Turkish or English, without
   accents ("karanlik"), by word starts and with a typo forgiven. Results list the pages, then each setting with its
   page; ↑↓ walk them and the page scrolls to the setting and lights it up. Busy pages are split into smaller ones:
