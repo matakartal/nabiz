@@ -196,7 +196,9 @@ final class FocusMode {
         until = minutes.map { Date().addingTimeInterval(Double($0) * 60) }
         let blocked = blocked
         let front = NSWorkspace.shared.frontmostApplication?.processIdentifier
-        for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular && app.processIdentifier != front {
+        // Never Nabız itself (it is a regular app while it shows in the Dock): its notes and chats stay.
+        let me = ProcessInfo.processInfo.processIdentifier
+        for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular && app.processIdentifier != front && app.processIdentifier != me {
             if blocked.contains(app.bundleIdentifier ?? "") || Prefs.bool(Prefs.focusHideOthers) {
                 app.hide()
                 if blocked.contains(app.bundleIdentifier ?? "") { blockedCount += 1 }

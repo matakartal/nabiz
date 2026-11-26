@@ -109,6 +109,9 @@
   "Summarize and continue" squeezes a long chat into a summary that goes in place of the old messages.
   Claude, Codex and Grok can search the web when a question needs current facts, with sources (+ → Web search to
   turn it off; nothing else is allowed, no files or commands). ⌘K jumps to the chat search.
+- **Show in Dock** (Settings → General, off until turned on): Nabız also sits in the Dock and ⌘⇥ with its own
+  menus (About, Settings, Hide, Quit, Edit, Window). Clicking the icon opens the panel; right-clicking lists the
+  quick actions. Focus mode and "Hide others" never hide Nabız's own windows.
 - **New tools in the panel:** Record and Dictate sit in the main grid; Clean-up (with how much it can free) opens
   the developer clean-up. The AI chat tile mentions Grok and web search.
 - **Your own shortcut or alias for any app or command:** in the launcher press ⌘K on a row → "Set a shortcut…"

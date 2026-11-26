@@ -19,6 +19,7 @@ struct SettingsSearchTests {
         #expect(SettingsIndex.search("şifre").contains { $0.target.anchor == "clipboard.excluded" })
         #expect(top("yedek")?.page == .maintenance)
         #expect(top("btc") != nil)
+        #expect(SettingsIndex.search("dock").contains { $0.target.anchor == "general.language" && $0.title == "Show in Dock" })
     }
 
     @Test func forgivesOneTypo() {

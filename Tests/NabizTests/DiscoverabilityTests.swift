@@ -27,4 +27,16 @@ struct DiscoverabilityTests {
         #expect(ToolKind.everyday.contains(.aiChat))
         #expect(ToolKind.everyday.count == 11)
     }
+
+    @Test func dockIconBringsAFullMenuBar() {
+        #expect(!Prefs.bool(Prefs.showInDock))
+        let dock = AppDelegate.mainMenu(dock: true)
+        #expect(dock.items.count == 3)
+        #expect(dock.items[0].submenu?.items.contains { $0.keyEquivalent == "q" } == true)
+        #expect(dock.items[2].submenu?.items.contains { $0.keyEquivalent == "w" } == true)
+        let bare = AppDelegate.mainMenu(dock: false)
+        #expect(bare.items.count == 1)
+        #expect(bare.items[0].submenu?.items.contains { $0.keyEquivalent == "w" } == true)
+        #expect(bare.items[0].submenu?.items.contains { $0.keyEquivalent == "q" } == false)
+    }
 }

@@ -146,6 +146,7 @@ enum SettingsIndex {
         // General
         .init(.general, "general.language", "Dil", "Language", "türkçe english ingilizce locale"),
         .init(.general, "general.language", "Girişte aç", "Open at login", "başlangıç startup otomatik başlat launch açılış"),
+        .init(.general, "general.language", "Dock'ta göster", "Show in Dock", "dock simge icon ⌘⇥ cmd tab uygulama değiştirici app switcher"),
         .init(.general, "general.refresh", "Arka planda yenileme sıklığı", "Background refresh", "saniye interval pil battery hız"),
         .init(.general, "general.notes", "Notlar uygulaması", "Notes app", "apple notes not nabız"),
         .init(.general, "general.notifications", "Bildirimler", "Notifications", "uyarı alert bellek cpu disk pil limit"),

@@ -198,6 +198,8 @@ enum Prefs {
     static let aiSuggest = "aiSuggest"
     /// Claude, Codex and Grok may search the web when a question needs it.
     static let aiWebSearch = "aiWebSearch"
+    /// Nabız also shows in the Dock and ⌘⇥, with a full menu bar (off: only the menu bar item).
+    static let showInDock = "showInDock"
     /// The app version whose "New" note in the panel was seen or closed.
     static let seenVersion = "seenVersion"
 
@@ -227,7 +229,7 @@ enum Prefs {
             downloadQuality: "best", downloadFolder: "",
             appearanceMode: "system", fontDesign: "standard", density: "normal", meterStyle: "thin",
             barSymbol: "gauge.with.dots.needle.33percent", customAccent: "#1DB954", sectionOrder: "",
-            aiAsk: true, aiEngine: "onDevice", aiHistory: true, aiHotkey: true, aiChatHotkey: true, aiClaudeSessions: true, aiNotify: true, aiSuggest: true, aiWebSearch: true, seenVersion: "",
+            aiAsk: true, aiEngine: "onDevice", aiHistory: true, aiHotkey: true, aiChatHotkey: true, aiClaudeSessions: true, aiNotify: true, aiSuggest: true, aiWebSearch: true, showInDock: false, seenVersion: "",
         ])
         AdviceKind.registerDefaults()
     }

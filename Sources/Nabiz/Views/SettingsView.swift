@@ -498,6 +498,7 @@ private struct GeneralPage: View {
     @AppStorage(Prefs.refreshSeconds) private var refresh = 5
     @AppStorage(Prefs.notesApp) private var notesApp = "nabiz"
     @AppStorage(Prefs.notifications) private var notifications = false
+    @AppStorage(Prefs.showInDock) private var dock = false
     @State private var login = SMAppService.mainApp.status == .enabled
 
     var body: some View {
@@ -510,6 +511,10 @@ private struct GeneralPage: View {
                     Text(verbatim: "English").tag("en")
                 }
                 Toggle(L("Girişte aç", "Open at login"), isOn: Binding(get: { login }, set: setLogin))
+                Toggle(L("Dock'ta göster", "Show in Dock"), isOn: $dock)
+            } footer: {
+                Footnote(L("Dock'ta gösterince Nabız ⌘⇥ listesinde ve menü çubuğunda da kendi menüsüyle çıkar. Dock simgesine tıklamak paneli açar, sağ tıklamak kısayolları gösterir.",
+                           "In the Dock, Nabız also shows in ⌘⇥ and gets its own menus in the menu bar. Clicking its icon opens the panel; right-clicking lists the shortcuts."))
             }
             SettingsSection("general.refresh") {
                 Picker(L("Arka planda yenile", "Refresh in background"), selection: $refresh) {

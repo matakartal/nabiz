@@ -134,7 +134,8 @@ enum Entry {
         let app = NSApplication.shared
         let delegate = AppDelegate()
         app.delegate = delegate
-        app.setActivationPolicy(.accessory)
+        // In the Dock too when that's on (Settings → General); otherwise only the menu bar item.
+        app.setActivationPolicy(UserDefaults.standard.bool(forKey: Prefs.showInDock) ? .regular : .accessory)
         withExtendedLifetime(delegate) { app.run() }
     }
 }
@@ -196,7 +197,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AppearanceMode.apply()
         ClipboardHistory.shared.update()
         AppIndex.shared.refreshIfNeeded()
-        NSApp.mainMenu = Self.editMenu()
+        applyDock()
         HotKey.togglePanel = { [weak self] in self?.togglePanel() }
         updateHotKeys()
         MCPServer.shared.update()
@@ -204,6 +205,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.updateHotKeys()
+                self?.applyDock()
                 MenuBarHider.shared.update()
                 BrightnessKeys.shared.update()
                 MCPServer.shared.update()
@@ -261,21 +263,78 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         HotKey.registerItems()
     }
 
-    /// Without an Edit menu, ⌘C, ⌘V and ⌘A do nothing in text fields (Settings, the note). The menu bar never shows it.
-    private static func editMenu() -> NSMenu {
+    /// What the Dock and menu bar show now, so a settings change only rebuilds when it matters.
+    private var dockState: (dock: Bool, turkish: Bool)?
+
+    /// The Dock icon (Settings → General): on, Nabız is a regular app with a full menu bar and a Dock menu; off, only
+    /// the menu bar item. Switching drops Nabız behind the front app for a moment, so Settings comes back forward.
+    private func applyDock() {
+        let dock = Prefs.bool(Prefs.showInDock), turkish = Prefs.isTurkish
+        guard dockState?.dock != dock || dockState?.turkish != turkish else { return }
+        let switched = dockState != nil && dockState?.dock != dock
+        dockState = (dock, turkish)
+        NSApp.mainMenu = Self.mainMenu(dock: dock)
+        // The Window menu lists the open windows.
+        NSApp.windowsMenu = dock ? NSApp.mainMenu?.items.last?.submenu : nil
+        guard switched else { return }
+        NSApp.setActivationPolicy(dock ? .regular : .accessory)
+        DispatchQueue.main.async { NSApp.activate() }
+    }
+
+    /// Clicking the Dock icon with no window open opens the panel.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag && !panel.isShown { togglePanel() }
+        return true
+    }
+
+    /// Right-clicking the Dock icon: the same quick actions as the menu bar item's right-click menu.
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? { quickMenu(dock: true) }
+
+    /// Without an Edit menu, ⌘C, ⌘V and ⌘A do nothing in text fields (Settings, the note). Hidden while Nabız is only in
+    /// the menu bar; with the Dock icon it is a full menu bar: Nabız (About, Settings, Hide, Quit), Edit and Window.
+    static func mainMenu(dock: Bool) -> NSMenu {
         let main = NSMenu()
+        if dock {
+            let appItem = NSMenuItem()
+            main.addItem(appItem)
+            let app = NSMenu()
+            app.addItem(ClosureMenuItem(title: L("Nabız hakkında", "About Nabız"), keyEquivalent: "") { SettingsWindow.show(.about) })
+            app.addItem(.separator())
+            app.addItem(ClosureMenuItem(title: L("Ayarlar…", "Settings…"), keyEquivalent: ",") { SettingsWindow.show(nil) })
+            app.addItem(.separator())
+            app.addItem(withTitle: L("Nabız'ı gizle", "Hide Nabız"), action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+            app.addItem(withTitle: L("Diğerlerini gizle", "Hide Others"), action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
+                .keyEquivalentModifierMask = [.command, .option]
+            app.addItem(withTitle: L("Tümünü göster", "Show All"), action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
+            app.addItem(.separator())
+            app.addItem(withTitle: L("Nabız'dan çık", "Quit Nabız"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+            appItem.submenu = app
+        }
         let editItem = NSMenuItem()
         main.addItem(editItem)
-        let edit = NSMenu(title: "Edit")
-        edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
-        edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        let edit = NSMenu(title: L("Düzen", "Edit"))
+        edit.addItem(withTitle: L("Geri al", "Undo"), action: Selector(("undo:")), keyEquivalent: "z")
+        edit.addItem(withTitle: L("Yinele", "Redo"), action: Selector(("redo:")), keyEquivalent: "Z")
         edit.addItem(.separator())
-        edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
-        edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
-        edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
-        edit.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        edit.addItem(withTitle: L("Kes", "Cut"), action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: L("Kopyala", "Copy"), action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: L("Yapıştır", "Paste"), action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: L("Tümünü seç", "Select All"), action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         editItem.submenu = edit
+        let close = NSMenuItem(title: L("Kapat", "Close"), action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        guard dock else {
+            edit.addItem(close)
+            return main
+        }
+        let windowItem = NSMenuItem()
+        main.addItem(windowItem)
+        let window = NSMenu(title: L("Pencere", "Window"))
+        window.addItem(withTitle: L("Küçült", "Minimize"), action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        window.addItem(withTitle: L("Büyüt", "Zoom"), action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
+        window.addItem(close)
+        window.addItem(.separator())
+        window.addItem(withTitle: L("Tümünü öne getir", "Bring All to Front"), action: #selector(NSApplication.arrangeInFront(_:)), keyEquivalent: "")
+        windowItem.submenu = window
         return main
     }
 
@@ -287,6 +346,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         panel.close()
+        statusItem.menu = quickMenu(dock: false)
+        statusItem.button?.performClick(nil)
+        statusItem.menu = nil
+    }
+
+    /// The quick actions with their keys: the menu bar item's right-click menu, and the Dock icon's (which adds its
+    /// own Quit).
+    private func quickMenu(dock: Bool) -> NSMenu {
         let menu = NSMenu()
         func item(_ title: String, _ key: String = "", _ action: @escaping @MainActor () -> Void) -> NSMenuItem {
             let item = ClosureMenuItem(title: title, keyEquivalent: key, handler: action)
@@ -332,11 +399,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         menu.addItem(item(L("Neler yapabilir?", "What Can It Do?")) { HelpWindow.show() })
         menu.addItem(item(L("Ayarlar…", "Settings…"), ",") { SettingsWindow.show(nil) })
+        guard !dock else { return menu }
         menu.addItem(.separator())
         menu.addItem(item(L("Nabız'dan çık", "Quit Nabız"), "q") { NSApp.terminate(nil) })
-        statusItem.menu = menu
-        statusItem.button?.performClick(nil)
-        statusItem.menu = nil
+        return menu
     }
 
     @ObservationIgnored private var rollTimer: Timer?
@@ -458,6 +524,8 @@ final class StatusPanel {
         place()
         window.present()
     }
+
+    var isShown: Bool { window.isVisible }
 
     func close() {
         guard window.isVisible else { return }

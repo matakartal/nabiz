@@ -154,7 +154,8 @@ enum SystemCommand: String, CaseIterable, Identifiable {
         case .displayOff: Task { _ = await Toolbox.run("/usr/bin/pmset", ["displaysleepnow"]) }
         case .hideOthers:
             let front = NSWorkspace.shared.frontmostApplication?.processIdentifier
-            for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular && app.processIdentifier != front {
+            for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular && app.processIdentifier != front
+                && app.processIdentifier != ProcessInfo.processInfo.processIdentifier {
                 app.hide()
             }
         case .quitAll:
