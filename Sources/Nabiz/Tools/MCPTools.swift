@@ -209,7 +209,7 @@ enum MCPTools {
                     properties: ["query": ["type": "string"], "limit": ["type": "integer", "minimum": 1, "maximum": 100]]) { args in
                 clipboardHistory(args["query"] as? String ?? "", limit: int(args["limit"]) ?? 20)
             },
-        ]
+        ] + recording
     }
 
     // MARK: Helpers

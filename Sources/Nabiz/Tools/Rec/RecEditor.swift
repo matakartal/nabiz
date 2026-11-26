@@ -51,6 +51,13 @@ enum RecEditor {
         window.makeKeyAndOrderFront(nil)
     }
 
+    /// Closes the recording's editor (which saves it) and says whether one was open; used before an AI app edits it.
+    static func closeIfOpen(_ id: UUID) -> Bool {
+        guard let window = open[id] else { return false }
+        window.close()
+        return true
+    }
+
     /// The most recent recording, if any.
     static func showLatest() {
         if let latest = RecStore.all().first { show(latest) } else { Monitor.panelActions.flash(L("Henüz kayıt yok", "No recordings yet")) }

@@ -440,13 +440,14 @@ final class RecRecorder {
 }
 
 enum RecError: LocalizedError {
-    case noDisplay, tooSmall, noCamera
+    case noDisplay, tooSmall, noCamera, busy
 
     var errorDescription: String? {
         switch self {
         case .noDisplay: L("Ekran bulunamadı", "Couldn't find the display")
         case .tooSmall: L("Alan çok küçük", "The area is too small")
         case .noCamera: L("Kamera bulunamadı", "No camera found")
+        case .busy: L("Zaten kayıt yapılıyor", "Already recording")
         }
     }
 }

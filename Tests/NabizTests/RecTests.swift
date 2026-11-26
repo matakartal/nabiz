@@ -1,3 +1,4 @@
+import Foundation
 import CoreImage
 import Testing
 @testable import Nabiz
@@ -140,5 +141,14 @@ struct RecTests {
         #expect(zip(a, b).contains { abs(Int($0) - Int($1)) > 30 })
         // A still camera looks the same either way.
         #expect(pixels(sharp, 0.2) == pixels(blurred, 0.2))
+    }
+    @Test func recordingToolsAreListed() {
+        let tools = MCPTools.all
+        let names = tools.map(\.name)
+        #expect(Set(names).count == names.count)
+        for name in ["recording_start", "recording_stop", "recording_info", "recording_edit", "recording_frame", "recording_export"] {
+            #expect(names.contains(name))
+        }
+        #expect(tools.allSatisfy { JSONSerialization.isValidJSONObject($0.descriptor) })
     }
 }

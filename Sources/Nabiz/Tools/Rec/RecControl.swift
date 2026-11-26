@@ -145,6 +145,24 @@ enum RecControl {
         }
     }
 
+    /// Starts at once, for an AI app over MCP: the same red indicator and outline as always, no countdown.
+    static func recordNow(screen: NSScreen, rect: CGRect?, window: CGWindowID?, sound: Bool, microphone: Bool, camera: Bool) async throws {
+        guard !RecRecorder.shared.isRecording else { throw RecError.busy }
+        closeBar()
+        try await RecRecorder.shared.start(screen: screen, rect: rect, window: window, sound: sound, microphone: microphone, camera: camera)
+        let area = rect ?? CGRect(origin: .zero, size: screen.frame.size)
+        showRecording(global: NSRect(x: screen.frame.minX + area.minX, y: screen.frame.maxY - area.maxY, width: area.width, height: area.height),
+                      whole: rect == nil)
+    }
+
+    /// Stops and hands the recording back (for MCP); the editor opens only when asked.
+    static func stopNow(openEditor: Bool) async -> RecMeta? {
+        clearIndicator()
+        guard let meta = await RecRecorder.shared.stop() else { return nil }
+        if openEditor { RecEditor.show(meta) }
+        return meta
+    }
+
     // MARK: While recording
 
     private static func showRecording(global: NSRect, whole: Bool) {
@@ -186,12 +204,7 @@ enum RecControl {
     }
 
     static func stop() {
-        ticker?.invalidate()
-        ticker = nil
-        if let indicator { NSStatusBar.system.removeStatusItem(indicator) }
-        indicator = nil
-        outline?.orderOut(nil)
-        outline = nil
+        clearIndicator()
         guard RecRecorder.shared.isRecording else { return }
         Task {
             guard let meta = await RecRecorder.shared.stop() else {
@@ -200,6 +213,15 @@ enum RecControl {
             }
             RecEditor.show(meta)
         }
+    }
+
+    private static func clearIndicator() {
+        ticker?.invalidate()
+        ticker = nil
+        if let indicator { NSStatusBar.system.removeStatusItem(indicator) }
+        indicator = nil
+        outline?.orderOut(nil)
+        outline = nil
     }
 }
 
