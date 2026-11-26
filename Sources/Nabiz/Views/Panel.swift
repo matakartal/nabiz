@@ -81,8 +81,7 @@ struct PanelContent: View {
     @AppStorage(Prefs.sectionOrder) private var order = ""
 
     var body: some View {
-        // Pressure and uptime are already shown above, so they are not repeated as suggestions.
-        let advice = monitor.advice.filter { $0.id != "pressure" && $0.id != "uptime" }
+        let advice = monitor.advice
         let memory = monitor.top(by: .memory, count: memoryCount)
         let cpu = monitor.top(by: .cpu, count: cpuCount)
         let codes = watched.split(separator: ",").map(String.init).filter { $0 != base }
@@ -212,11 +211,13 @@ private struct StatusSection: View {
             }
             .help(L("macOS'un ısı durumu. Sıcakken işlemci kendini yavaşlatır.", "macOS's thermal state. When hot, the processor slows itself down."))
             if !monitor.security.isEmpty {
-                let off = monitor.security.filter { !$0.on }
+                // Checks the user chose not to watch (the firewall, by default) don't turn the row orange.
+                let off = monitor.security.filter { !$0.on && $0.kind.isWatched }
                 PanelRow(icon: .symbol(off.isEmpty ? "checkmark.shield" : "exclamationmark.shield"), title: L("Güvenlik", "Security"),
                          action: off.first.map { check in { if let url = check.settingsURL { NSWorkspace.shared.open(url) } } }) { _ in
-                    Value(off.isEmpty ? L("\(monitor.security.count)/\(monitor.security.count) açık", "all \(monitor.security.count) on")
-                                      : L("\(off[0].title) kapalı", "\(off[0].title) off"),
+                    let on = monitor.security.filter(\.on).count
+                    Value(off.isEmpty ? (on == monitor.security.count ? L("\(on)/\(on) açık", "all \(on) on") : L("Sorun yok", "All fine"))
+                                      : off.count == 1 ? L("\(off[0].title) kapalı", "\(off[0].title) off") : L("\(off.count) ayar kapalı", "\(off.count) off"),
                           color: off.isEmpty ? Palette.green.mark : Theme.warning.mark)
                 }
                 .help(monitor.security.map { ($0.on ? "✓ " : "✗ ") + $0.title }.joined(separator: "\n"))
@@ -278,7 +279,22 @@ private struct AdviceSection: View {
                     InlineButton(fix.title, role: fix.isDestructive ? .destructive : nil) { run(fix) }
                 }
             }
+            .contextMenu {
+                Button(L("Yarına kadar gizle", "Hide until tomorrow")) { hide(item, for: 86_400) }
+                Button(L("Bir hafta gizle", "Hide for a week")) { hide(item, for: 7 * 86_400) }
+                Divider()
+                Button(item.kind == .security ? L("Bu kontrolü izleme", "Stop watching this check") : L("Bir daha gösterme", "Don't show again")) {
+                    monitor.turnOff(item)
+                    flash(L("Ayarlar → Öneriler'den geri açabilirsin", "Turn it back on in Settings → Suggestions"))
+                }
+                Button(L("Öneri ayarları…", "Suggestion settings…")) { SettingsWindow.show(.advice) }
+            }
         }
+    }
+
+    private func hide(_ item: Advice, for seconds: TimeInterval) {
+        monitor.hide(item, for: seconds)
+        flash(L("Gizlendi; ciddileşirse yine görünür", "Hidden; it comes back if it gets worse"))
     }
 
     private func color(_ level: Advice.Level) -> Color {
@@ -966,7 +982,7 @@ private struct StatusPill: View {
     let monitor: Monitor
 
     var body: some View {
-        let advice = monitor.advice.filter { $0.id != "uptime" }
+        let advice = monitor.advice
         let danger = advice.contains { $0.level == .danger }
         let warning = advice.contains { $0.level == .warning }
         let color = danger ? Theme.danger : warning ? Theme.warning.fill : Theme.accent

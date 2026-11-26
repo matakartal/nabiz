@@ -62,15 +62,19 @@ struct SecurityCheck: Identifiable, Sendable, Equatable {
         case .firewall: L("Güvenlik duvarı", "Firewall")
         case .gatekeeper: "Gatekeeper"
         case .sip: L("Sistem bütünlüğü (SIP)", "System Integrity (SIP)")
-        case .autoUpdates: L("Otomatik güncelleme", "Automatic updates")
+        case .autoUpdates: L("Güvenlik güncellemeleri", "Security updates")
         }
     }
 
     /// The System Settings pane where it is turned on.
     var settingsURL: URL? {
         switch kind {
-        case .fileVault, .firewall, .gatekeeper, .sip:
+        case .fileVault, .gatekeeper:
             URL(string: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension")
+        case .firewall:
+            URL(string: "x-apple.systempreferences:com.apple.Network-Settings.extension?Firewall")
+        // SIP can only be turned back on from Recovery; there is no pane for it.
+        case .sip: nil
         case .autoUpdates:
             URL(string: "x-apple.systempreferences:com.apple.Software-Update-Settings.extension")
         }
@@ -85,14 +89,14 @@ enum SecurityChecker {
         async let gatekeeper = output("/usr/sbin/spctl", ["--status"])
         async let sip = Toolbox.run("/usr/bin/csrutil", ["status"])
         let updates = UserDefaults(suiteName: "/Library/Preferences/com.apple.SoftwareUpdate")?
-            .object(forKey: "AutomaticallyInstallMacOSUpdates") as? Bool
+            .object(forKey: "CriticalUpdateInstall") as? Bool
 
         var checks: [SecurityCheck] = []
         if let text = await fileVault { checks.append(SecurityCheck(kind: .fileVault, on: text.contains("is On"))) }
         if let text = await firewall { checks.append(SecurityCheck(kind: .firewall, on: text.contains("enabled"))) }
         if let text = await gatekeeper { checks.append(SecurityCheck(kind: .gatekeeper, on: text.contains("enabled"))) }
         if let text = await sip { checks.append(SecurityCheck(kind: .sip, on: text.contains("enabled"))) }
-        // Unset means the system default, which is on.
+        // "Install security responses and system files"; unset means the system default, which is on.
         checks.append(SecurityCheck(kind: .autoUpdates, on: updates ?? true))
         return checks
     }

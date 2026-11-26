@@ -3,13 +3,27 @@ import Observation
 
 /// A suggestion shown when something is slowing the Mac down, with the one-tap fix for it when there is one.
 struct Advice: Identifiable {
-    enum Level { case info, warning, danger }
+    enum Level: Int, Comparable {
+        case info, warning, danger
+        static func < (a: Level, b: Level) -> Bool { a.rawValue < b.rawValue }
+    }
 
-    let id: String
+    let kind: AdviceKind
     let title: String
     let detail: String
     let level: Level
     var fix: Fix?
+    /// Usually the kind; security adds which checks are off, so turning another one off shows again after a hide.
+    var id: String
+
+    init(_ kind: AdviceKind, id: String? = nil, title: String, detail: String, level: Level, fix: Fix? = nil) {
+        self.kind = kind
+        self.id = id ?? kind.rawValue
+        self.title = title
+        self.detail = detail
+        self.level = level
+        self.fix = fix
+    }
 }
 
 /// One tap that deals with a problem directly, instead of sending the user to a tool they may not know.
@@ -70,6 +84,10 @@ final class Monitor {
     private(set) var security: [SecurityCheck] = []
     /// When the CPU went above 90% and stayed there; nil while it is below.
     private(set) var busySince: Date?
+    /// When memory pressure left normal; a short spike isn't worth a suggestion.
+    private(set) var tightSince: Date?
+    /// Bumped when a suggestion is hidden, so the panel redraws without waiting for the next sample.
+    private(set) var adviceRevision = 0
     @ObservationIgnored private var securityAt: Date?
     /// Running Docker containers; nil when Docker isn't running or its CLI isn't found.
     private(set) var dockerContainers: Int?
@@ -116,6 +134,7 @@ final class Monitor {
         system = snapshot
         history.append(snapshot)
         busySince = snapshot.cpu > 0.9 ? (busySince ?? Date()) : nil
+        tightSince = snapshot.pressure != .normal ? (tightSince ?? Date()) : nil
         UsageHistory.shared.record(cpu: snapshot.cpu, memory: snapshot.memoryFraction, gpu: snapshot.gpu,
                                    ai: AILimitsStore.shared.statuses.first(where: { !$0.limits.isEmpty })?.headline?.used)
         // With the panel closed, the per-app scan (the heaviest part) runs every sixth tick: enough for suggestions.
@@ -170,78 +189,60 @@ final class Monitor {
 
     var claudeCode: ProcessGroup? { groups.first { $0.kind == .claudeCode } }
 
+    /// What to show: every rule that fires, minus the ones turned off in Settings or hidden for now,
+    /// the most serious first.
     var advice: [Advice] {
+        _ = adviceRevision
+        return allAdvice
+            .filter { $0.kind.isOn && !AdviceSnooze.isHidden($0) }
+            .enumerated()
+            .sorted { $0.element.level != $1.element.level ? $0.element.level > $1.element.level : $0.offset < $1.offset }
+            .map(\.element)
+    }
+
+    func hide(_ item: Advice, for seconds: TimeInterval) {
+        AdviceSnooze.hide(item, for: seconds)
+        adviceRevision += 1
+    }
+
+    /// "Don't show again": turns the kind off, or for security just the checks it named.
+    func turnOff(_ item: Advice) {
+        if item.kind == .security {
+            security.filter { !$0.on && $0.kind.isWatched }.forEach { UserDefaults.standard.set(false, forKey: $0.kind.prefKey) }
+        } else {
+            UserDefaults.standard.set(false, forKey: item.kind.prefKey)
+        }
+        adviceRevision += 1
+    }
+
+    func adviceSettingsChanged() { adviceRevision += 1 }
+
+    /// Every rule, in priority order within each level.
+    private var allAdvice: [Advice] {
         guard let s = system else { return [] }
         var list: [Advice] = []
+        let now = Date()
 
-        // Memory: one suggestion, with the single step that frees the most.
+        // Memory: one suggestion, with the single step that frees the most. Critical shows at once; a tight
+        // spike has to last half a minute first, so it doesn't flicker in and out.
         let swapHigh = s.swapTotal > 0 && s.swapFraction > 0.6 && s.swapUsed >= 2 << 30
-        if s.pressure != .normal || swapHigh {
+        let tightLasted = tightSince.map { now.timeIntervalSince($0) >= 30 } ?? false
+        if s.pressure == .critical || tightLasted || swapHigh {
             let fix = memoryFix
             let fallback = swapHigh
                 ? L("Takas alanı \(Format.bytes(s.swapUsed)) dolu, Mac yavaşlar.", "Swap is at \(Format.bytes(s.swapUsed)); the Mac slows down.")
                 : L("Açık uygulamalar RAM'i dolduruyor.", "Open apps are filling RAM.")
-            list.append(Advice(id: "memory",
+            list.append(Advice(.memory,
                                title: s.pressure == .critical ? L("Bellek kritik seviyede", "Memory is critical") : L("Bellek dolu", "Memory is full"),
                                detail: fix?.detail ?? fallback,
                                level: s.pressure == .critical ? .danger : .warning, fix: fix?.fix))
         }
 
-        if let claude = claudeCode, claude.count >= 20 {
-            let memory = Format.bytes(claude.memory)
-            list.append(Advice(id: "claude", title: L("\(claude.count) Claude Code işlemi açık", "\(claude.count) Claude Code processes"),
-                               detail: L("\(memory) · eskileri Claude'da arşivle", "\(memory) · archive old ones in Claude"),
-                               level: .info, fix: .openClaude))
-        }
-
-        if let burn = AILimitsStore.shared.burning.first, let runway = burn.limit.pace?.runway {
-            let name = "\(burn.provider.shortName) · \(burn.limit.label)"
-            list.append(Advice(id: "ai-burn", title: L("\(name) hızlı bitiyor", "\(name) is burning fast"),
-                               detail: L("Bu hızla \(Format.duration(runway)) sonra biter, sıfırlanmadan önce.",
-                                         "At this speed it runs out in \(Format.duration(runway)), before it resets."),
-                               level: .warning))
-        }
-
-        if let docker = idleDocker, !list.contains(where: { $0.fix.map { if case .quitDocker = $0 { true } else { false } } ?? false }) {
-            list.append(Advice(id: "docker", title: L("Docker boşta", "Docker is idle"),
-                               detail: L("Çalışan konteyner yok ama \(Format.bytes(docker.memory)) kullanıyor.",
-                                         "No containers running, but it uses \(Format.bytes(docker.memory))."),
-                               level: .info, fix: .quitDocker))
-        }
-
-        let rust = Toolbox.shared.rustSize
-        if rust >= 10 << 30 {
-            list.append(Advice(id: "rust", title: L("Rust önbelleği \(Format.bytes(rust))", "Rust caches: \(Format.bytes(rust))"),
-                               detail: L("Derleme önbellekleri; silinebilir, gerekince yeniden oluşur.", "Build caches; safe to delete, rebuilt when needed."),
-                               level: .info, fix: .cleanRust))
-        }
-
-        if let free = s.diskFree, free < 10 << 30 {
-            let left = Format.bytes(free)
-            list.append(Advice(id: "disk", title: L("Disk dolmak üzere", "Disk almost full"),
-                               detail: L("\(left) boş kaldı.", "\(left) left."), level: .warning, fix: .openStorage))
-        }
-
-        if let health = batteryHealth?.health, health < 0.8 {
-            list.append(Advice(id: "battery-health", title: L("Pil yıpranmış", "Battery is worn"),
-                               detail: L("Kapasite \(Format.percent(health)); servis zamanı gelmiş olabilir.",
-                                         "Capacity is \(Format.percent(health)); it may be due for service."), level: .info))
-        }
-
-        if let off = security.first(where: { !$0.on }) {
-            list.append(Advice(id: "security", title: L("\(off.title) kapalı", "\(off.title) is off"),
-                               detail: L("Mac'in daha az korunuyor.", "Your Mac is less protected."),
-                               level: .info, fix: .openSettings(off.settingsURL)))
-        }
-
-        if let battery, !battery.plugged, battery.percent <= 15 {
-            list.append(Advice(id: "battery", title: L("Pil azaldı", "Battery low"),
-                               detail: Format.percent(Double(battery.percent) / 100), level: .warning))
-        }
-
-        if s.thermal >= ProcessInfo.ThermalState.serious.rawValue {
-            let busiest = groups.filter { $0.kind == .app && $0.cpu > 0.15 }.sorted { $0.cpu > $1.cpu }.first(where: canQuit)
-            list.append(Advice(id: "thermal", title: L("Mac ısınıyor", "Your Mac is hot"),
+        // Heat: name what works the Mac hardest, with a Quit for it.
+        let busiest = groups.filter { $0.kind == .app && $0.cpu > 0.15 }.sorted { $0.cpu > $1.cpu }.first(where: canQuit)
+        let hot = s.thermal >= ProcessInfo.ThermalState.serious.rawValue
+        if hot {
+            list.append(Advice(.thermal, title: L("Mac ısınıyor", "Your Mac is hot"),
                                detail: busiest.map { L("En çok \($0.name) yoruyor (\(Format.percent($0.cpu)))",
                                                        "\($0.name) works it hardest (\(Format.percent($0.cpu)))") }
                                    ?? L("İşlemci yavaşlatılıyor.", "The CPU is being throttled."),
@@ -249,11 +250,92 @@ final class Monitor {
                                fix: busiest.map { .quit($0) }))
         }
 
+        // CPU pinned for two minutes (and not already covered by the heat suggestion).
+        if !hot, let since = busySince, now.timeIntervalSince(since) >= 120 {
+            let minutes = Int(now.timeIntervalSince(since) / 60)
+            list.append(Advice(.cpu, title: L("İşlemci \(minutes) dakikadır yoğun", "CPU busy for \(minutes) minutes"),
+                               detail: busiest.map { L("En çok \($0.name) kullanıyor (\(Format.percent($0.cpu))).",
+                                                       "\($0.name) uses the most (\(Format.percent($0.cpu))).") }
+                                   ?? L("Pil daha hızlı biter, fan çalışabilir.", "The battery drains faster and the fan may spin."),
+                               level: .warning, fix: busiest.map { .quit($0) }))
+        }
+
+        if let free = s.diskFree, free < 10 << 30 {
+            let left = Format.bytes(free)
+            list.append(Advice(.disk, title: L("Disk dolmak üzere", "Disk almost full"),
+                               detail: free < 3 << 30 ? L("\(left) boş kaldı; uygulamalar kaydedemeyebilir.", "\(left) left; apps may fail to save.")
+                                                      : L("\(left) boş kaldı.", "\(left) left."),
+                               level: free < 3 << 30 ? .danger : .warning, fix: .openStorage))
+        }
+
+        if let battery, !battery.plugged, battery.percent <= 15 {
+            let lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
+            let time = battery.minutesLeft.map { L("yaklaşık \(Format.duration(TimeInterval($0 * 60))) kaldı", "about \(Format.duration(TimeInterval($0 * 60))) left") }
+            let hint = lowPower ? nil : L("Düşük Güç Modu pili uzatır.", "Low Power Mode makes it last longer.")
+            let parts = [time, hint].compactMap { $0 }
+            list.append(Advice(.battery, title: L("Pil \(Format.percent(Double(battery.percent) / 100))", "Battery at \(Format.percent(Double(battery.percent) / 100))"),
+                               detail: parts.isEmpty ? L("Şarja tak.", "Plug in.") : parts.joined(separator: " · "),
+                               level: battery.percent <= 5 ? .danger : .warning,
+                               fix: lowPower ? nil : .openSettings(URL(string: "x-apple.systempreferences:com.apple.Battery-Settings.extension"))))
+        }
+
+        if let burn = AILimitsStore.shared.burning.first, let runway = burn.limit.pace?.runway {
+            let name = "\(burn.provider.shortName) · \(burn.limit.label)"
+            list.append(Advice(.aiBurn, title: L("\(name) hızlı bitiyor", "\(name) is burning fast"),
+                               detail: L("Bu hızla \(Format.duration(runway)) sonra biter, sıfırlanmadan önce.",
+                                         "At this speed it runs out in \(Format.duration(runway)), before it resets."),
+                               level: .warning))
+        }
+
+        // Docker: only when the memory suggestion isn't already offering to quit it.
+        if let docker = idleDocker, !list.contains(where: { $0.fix.map { if case .quitDocker = $0 { true } else { false } } ?? false }) {
+            list.append(Advice(.docker, title: L("Docker boşta", "Docker is idle"),
+                               detail: L("Çalışan konteyner yok ama \(Format.bytes(docker.memory)) kullanıyor.",
+                                         "No containers running, but it uses \(Format.bytes(docker.memory))."),
+                               level: .info, fix: .quitDocker))
+        }
+
+        if let claude = claudeCode, claude.count >= 20 {
+            let memory = Format.bytes(claude.memory)
+            list.append(Advice(.claude, title: L("\(claude.count) Claude Code işlemi açık", "\(claude.count) Claude Code processes"),
+                               detail: L("\(memory) · eskileri Claude'da arşivle", "\(memory) · archive old ones in Claude"),
+                               level: .info, fix: .openClaude))
+        }
+
+        let rust = Toolbox.shared.rustSize
+        if rust >= 10 << 30 {
+            list.append(Advice(.rust, title: L("Rust önbelleği \(Format.bytes(rust))", "Rust caches: \(Format.bytes(rust))"),
+                               detail: L("Derleme önbellekleri; silinebilir, gerekince yeniden oluşur.", "Build caches; safe to delete, rebuilt when needed."),
+                               level: .info, fix: .cleanRust))
+        }
+
+        // Security: only the checks the user watches, the most important named first.
+        let off = security.filter { !$0.on && $0.kind.isWatched }.sorted { $0.kind.priority < $1.kind.priority }
+        if let first = off.first {
+            let id = "security:" + off.map(\.kind.rawValue).sorted().joined(separator: ",")
+            let title = off.count == 1 ? L("\(first.title) kapalı", "\(first.title) is off")
+                                       : L("\(off.count) güvenlik ayarı kapalı", "\(off.count) security settings are off")
+            let detail = off.count == 1 ? first.kind.risk : off.map(\.title).joined(separator: ", ")
+            list.append(Advice(.security, id: id, title: title, detail: detail,
+                               level: first.kind == .fileVault ? .warning : .info,
+                               fix: off.first(where: { $0.settingsURL != nil }).map { .openSettings($0.settingsURL) }))
+        }
+
+        if let health = batteryHealth?.health, health < 0.8 {
+            list.append(Advice(.batteryHealth, title: L("Pil yıpranmış", "Battery is worn"),
+                               detail: L("Kapasite \(Format.percent(health)); servis zamanı gelmiş olabilir.",
+                                         "Capacity is \(Format.percent(health)); it may be due for service."), level: .info))
+        }
+
+        // Uptime: only when it is likely to matter (swap piling up), or after a month.
         if let boot = s.bootDate {
-            let days = Int(Date().timeIntervalSince(boot) / 86_400)
-            if days >= 7 {
-                list.append(Advice(id: "uptime", title: L("\(days) gündür yeniden başlatılmadı", "Not restarted for \(days) days"),
-                                   detail: L("Yeniden başlatmak takas alanını temizler.", "A restart clears swap."), level: .info))
+            let days = Int(now.timeIntervalSince(boot) / 86_400)
+            if (days >= 7 && s.swapUsed >= 1 << 30) || days >= 30 {
+                list.append(Advice(.uptime, title: L("\(days) gündür yeniden başlatılmadı", "Not restarted for \(days) days"),
+                                   detail: s.swapUsed >= 1 << 30
+                                       ? L("Takasta \(Format.bytes(s.swapUsed)) birikti; yeniden başlatmak temizler.", "\(Format.bytes(s.swapUsed)) piled up in swap; a restart clears it.")
+                                       : L("Yeniden başlatmak bekleyen güncellemeleri de kurar.", "A restart also installs pending updates."),
+                                   level: .info))
             }
         }
         return list

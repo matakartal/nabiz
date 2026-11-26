@@ -5,7 +5,7 @@ import Carbon.HIToolbox
 import SwiftUI
 
 enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
-    case general, appearance, menuBar, panel, launcher, clipboard, snippets, windows, focus, schedules, markets, currency, ai, about
+    case general, appearance, menuBar, panel, advice, launcher, clipboard, snippets, windows, focus, schedules, markets, currency, ai, about
 
     var id: String { rawValue }
 
@@ -15,6 +15,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
         case .appearance: L("Görünüm", "Appearance")
         case .menuBar: L("Menü çubuğu", "Menu Bar")
         case .panel: L("Panel", "Panel")
+        case .advice: L("Öneriler", "Suggestions")
         case .launcher: L("Başlatıcı", "Launcher")
         case .clipboard: L("Pano", "Clipboard")
         case .snippets: L("Parçacıklar", "Snippets")
@@ -35,6 +36,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
         case .appearance: L("Renk, tema, yazı tipi, boyut ve sıklık.", "Colour, theme, typeface, size and density.")
         case .menuBar: L("Menü çubuğunda ne ve nasıl görüneceği.", "What the menu bar shows, and how.")
         case .panel: L("Paneldeki bölümler, sıraları, katlama ve araçlar.", "The panel's sections, their order, folding and tools.")
+        case .advice: L("Hangi durumlarda öneri görüneceği.", "Which situations bring up a suggestion.")
         case .launcher: L("Uygulama, komut, hesap ve web araması tek yerde.", "Apps, commands, maths and web search in one place.")
         case .clipboard: L("Kopyaladıklarının geçmişi ve yapıştırma.", "The history of what you copied, and pasting.")
         case .snippets: L("Kısa bir kelimeyle yapıştırılan hazır metinler.", "Saved text you paste with a short keyword.")
@@ -54,6 +56,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
         case .appearance: "paintpalette.fill"
         case .menuBar: "menubar.rectangle"
         case .panel: "list.bullet.rectangle.fill"
+        case .advice: "lightbulb.fill"
         case .launcher: "magnifyingglass"
         case .clipboard: "doc.on.clipboard.fill"
         case .snippets: "text.quote"
@@ -142,6 +145,7 @@ struct SettingsView: View {
                 case .appearance: AppearancePage()
                 case .menuBar: MenuBarPage()
                 case .panel: PanelPage()
+                case .advice: AdvicePage()
                 case .launcher: LauncherPage()
                 case .clipboard: ClipboardPage()
                 case .snippets: SnippetsPage()
@@ -446,6 +450,96 @@ private struct PanelPage: View {
             // Turning accordion on keeps only the first open section open.
             guard accordion, let first = PanelSection.allCases.first(where: { $0.isExpanded }) else { return }
             first.setExpanded(true)
+        }
+    }
+}
+
+private struct AdvicePage: View {
+    @AppStorage(Prefs.showAdvice) private var showAdvice = true
+    @State private var hidden = AdviceSnooze.count
+
+    var body: some View {
+        Form {
+            Section {} header: { PageHeader(page: .advice) }
+            Section {
+                Toggle(L("Panelde önerileri göster", "Show suggestions in the panel"), isOn: $showAdvice)
+            } footer: {
+                Footnote(L("Paneldeki bir öneriye sağ tıklayınca onu bir günlüğüne, bir haftalığına ya da tamamen gizleyebilirsin. Gizlenen öneri daha ciddileşirse yine görünür.",
+                           "Right-click a suggestion in the panel to hide it for a day, a week or for good. A hidden suggestion shows again if it gets more serious."))
+            }
+            Section {
+                ForEach(AdviceKind.allCases) { AdviceKindRow(kind: $0) }
+            } header: {
+                Text(L("Ne zaman öneri gelsin", "When to suggest"))
+            }
+            .disabled(!showAdvice)
+            Section {
+                ForEach(SecurityCheck.Kind.allCases, id: \.self) { SecurityWatchRow(kind: $0) }
+            } header: {
+                Text(L("Güvenlik kontrolleri", "Security checks"))
+            } footer: {
+                Footnote(L("Güvenlik duvarı macOS'ta zaten kapalı gelir; evde modemin arkasında çoğu zaman gerekmez. Ortak Wi‑Fi'da sık çalışıyorsan aç.",
+                           "The firewall ships off on macOS and is rarely needed behind a home router. Turn it on here if you often work on public Wi‑Fi."))
+            }
+            .disabled(!showAdvice || !AdviceKind.security.isOn)
+            Section {
+                HStack {
+                    Text(hidden == 0 ? L("Gizlenen öneri yok", "No hidden suggestions") : L("\(hidden) öneri gizli", "\(hidden) hidden"))
+                        .foregroundStyle(Theme.textMuted)
+                    Spacer()
+                    Button(L("Hepsini geri getir", "Show them again")) {
+                        AdviceSnooze.clear()
+                        hidden = 0
+                        SettingsWindow.monitor?.adviceSettingsChanged()
+                    }
+                    .disabled(hidden == 0)
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .onAppear { hidden = AdviceSnooze.count }
+    }
+}
+
+private struct AdviceKindRow: View {
+    let kind: AdviceKind
+    @AppStorage private var on: Bool
+
+    init(kind: AdviceKind) {
+        self.kind = kind
+        _on = AppStorage(wrappedValue: true, kind.prefKey)
+    }
+
+    var body: some View {
+        Toggle(isOn: Binding(get: { on }, set: { on = $0; SettingsWindow.monitor?.adviceSettingsChanged() })) {
+            VStack(alignment: .leading, spacing: Theme.Spacing.xs / 2) {
+                Text(verbatim: kind.title)
+                Text(verbatim: kind.detail).font(Theme.small).foregroundStyle(Theme.textMuted)
+            }
+        }
+    }
+}
+
+private struct SecurityWatchRow: View {
+    let kind: SecurityCheck.Kind
+    @AppStorage private var on: Bool
+
+    init(kind: SecurityCheck.Kind) {
+        self.kind = kind
+        _on = AppStorage(wrappedValue: kind.watchedByDefault, kind.prefKey)
+    }
+
+    var body: some View {
+        let state = SettingsWindow.monitor?.security.first { $0.kind == kind }
+        Toggle(isOn: Binding(get: { on }, set: { on = $0; SettingsWindow.monitor?.adviceSettingsChanged() })) {
+            HStack {
+                Text(verbatim: SecurityCheck(kind: kind, on: true).title)
+                Spacer()
+                if let state {
+                    Text(state.on ? L("açık", "on") : L("kapalı", "off"))
+                        .font(Theme.small).foregroundStyle(state.on ? Theme.textMuted : Theme.warning.mark)
+                }
+            }
         }
     }
 }
