@@ -53,12 +53,20 @@ enum RecControl {
         panel.layoutIfNeeded()
         let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main ?? NSScreen.screens[0]
         let size = panel.contentViewController?.view.fittingSize ?? NSSize(width: 520, height: 52)
-        panel.setFrame(NSRect(x: screen.visibleFrame.midX - size.width / 2, y: screen.visibleFrame.minY + 48,
-                              width: size.width, height: size.height), display: true)
+        let end = NSRect(x: screen.visibleFrame.midX - size.width / 2, y: screen.visibleFrame.minY + 48, width: size.width, height: size.height)
+        let still = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        panel.setFrame(still ? end : end.offsetBy(dx: 0, dy: -14), display: true)
+        panel.alphaValue = 0
         panel.onClose = { bar = nil; RecPicker.close() }
         // Clicks on the picker (Nabız's own windows) mustn't close the bar.
         panel.keepsOpenOnClick = { _ in true }
         panel.present()
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = still ? 0.12 : 0.26
+            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.3, 1)
+            panel.animator().setFrame(end, display: true)
+            panel.animator().alphaValue = 1
+        }
         bar = panel
         RecPicker.show(options.target)
     }
@@ -233,72 +241,91 @@ final class RecOptions {
     }
 }
 
+/// The recording bar, in Nabız's own look: frosted, 28-point controls, thin dividers, the chosen target lit with a
+/// soft highlight that slides between them, the accent only for what's on and for the one main action.
 struct RecBarView: View {
     @Bindable var options: RecOptions
+    @Namespace private var selection
 
     var body: some View {
-        HStack(spacing: Theme.Spacing.s) {
+        HStack(spacing: Theme.Spacing.xs) {
             BarButton(symbol: "xmark", help: L("Kapat  ⎋", "Close  ⎋")) { RecControl.closeBar() }
             divider
-            ForEach(RecControl.Target.allCases) { target in
-                Button { RecControl.choose(target) } label: {
-                    VStack(spacing: 3) {
-                        Image(systemName: target.symbol).font(.system(size: 15))
-                        Text(target.title).font(.system(size: 10, weight: .medium))
+            HStack(spacing: 2) {
+                ForEach(RecControl.Target.allCases) { target in
+                    targetButton(target)
+                }
+            }
+            divider
+            ShotToolButton(symbol: options.sound ? "speaker.wave.2" : "speaker.slash", help: L("Bilgisayarın sesi", "The Mac's sound"),
+                           active: options.sound) { options.sound.toggle() }
+            ShotToolButton(symbol: options.microphone ? "mic" : "mic.slash",
+                           help: options.microphoneAvailable ? L("Mikrofon", "Microphone") : L("Mikrofon için macOS 15 gerekir", "The microphone needs macOS 15"),
+                           active: options.microphone) { options.microphone.toggle() }
+                .disabled(!options.microphoneAvailable)
+                .opacity(options.microphoneAvailable ? 1 : 0.4)
+            ShotToolButton(symbol: options.camera ? "video" : "video.slash", help: L("Kamera, köşede", "Camera, in a corner"),
+                           active: options.camera) { options.camera.toggle() }
+            divider
+            ZStack {
+            if options.target == .window {
+                Text(L("Bir pencereye tıkla", "Click a window"))
+                    .font(Theme.body).foregroundStyle(Theme.textMuted)
+                    .padding(.horizontal, Theme.Spacing.s)
+                    .frame(height: 28)
+                    .transition(.opacity)
+            } else {
+                Button { RecControl.begin() } label: {
+                    HStack(spacing: Theme.Spacing.xs + 2) {
+                        Image(systemName: "record.circle").font(.system(size: 13, weight: .semibold))
+                        Text(L("Kaydet", "Record")).font(Theme.bodyStrong)
+                        Text(verbatim: "↩").font(Theme.small).opacity(0.75)
                     }
-                    .foregroundStyle(options.target == target ? Theme.accent : Theme.text)
-                    .frame(width: 70, height: 42)
-                    .background(options.target == target ? Theme.accent.opacity(0.15) : .clear,
-                                in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, Theme.Spacing.m)
+                    .frame(height: 28)
+                    .background(Theme.accent, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .keyboardShortcut(.defaultAction)
+                .transition(.opacity)
             }
-            divider
-            toggle(on: $options.sound, symbol: options.sound ? "speaker.wave.2.fill" : "speaker.slash",
-                   help: L("Bilgisayarın sesi", "The Mac's sound"))
-            toggle(on: $options.microphone, symbol: options.microphone ? "mic.fill" : "mic.slash",
-                   help: options.microphoneAvailable ? L("Mikrofon", "Microphone") : L("Mikrofon için macOS 15 gerekir", "The microphone needs macOS 15"))
-                .disabled(!options.microphoneAvailable)
-            toggle(on: $options.camera, symbol: options.camera ? "video.fill" : "video.slash", help: L("Kamera, köşede", "Camera, in a corner"))
-            divider
-            Button { RecControl.begin() } label: {
-                HStack(spacing: 6) {
-                    Circle().fill(Color.red).frame(width: 9, height: 9)
-                    Text(options.target == .window ? L("Pencereye tıkla", "Click a window") : L("Kayda başla", "Record")).font(Theme.bodyStrong)
-                }
-                .foregroundStyle(.white)
-                .padding(.horizontal, Theme.Spacing.m)
-                .frame(height: 30)
-                .background(Theme.accent, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
-            .buttonStyle(.plain)
-            .keyboardShortcut(.defaultAction)
-            .disabled(options.target == .window)
-            .opacity(options.target == .window ? 0.6 : 1)
+            // One width for both, so the bar never jumps.
+            .frame(width: 136)
         }
-        .padding(.horizontal, Theme.Spacing.m)
-        .padding(.vertical, Theme.Spacing.s)
+        .animation(.spring(duration: 0.28, bounce: 0.12), value: options.target)
+        .padding(Theme.Spacing.s)
         .fixedSize()
         .onExitCommand { RecControl.closeBar() }
         .appearanceRoot(opaqueFill: Theme.surface)
     }
 
     private var divider: some View {
-        Rectangle().fill(Theme.hairline).frame(width: 1, height: 28)
+        Rectangle().fill(Theme.hairline).frame(width: 1, height: 18).padding(.horizontal, Theme.Spacing.xs)
     }
 
-    private func toggle(on: Binding<Bool>, symbol: String, help: String) -> some View {
-        Button { on.wrappedValue.toggle() } label: {
-            Image(systemName: symbol)
-                .font(.system(size: 14))
-                .foregroundStyle(on.wrappedValue ? Theme.accent : Theme.textMuted)
-                .frame(width: 34, height: 34)
-                .background(on.wrappedValue ? Theme.accent.opacity(0.15) : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .contentShape(Rectangle())
+    private func targetButton(_ target: RecControl.Target) -> some View {
+        let chosen = options.target == target
+        return Button { RecControl.choose(target) } label: {
+            HStack(spacing: Theme.Spacing.xs + 2) {
+                Image(systemName: target.symbol).font(.system(size: 13))
+                    .foregroundStyle(chosen ? Theme.accent : Theme.textMuted)
+                Text(target.title).font(chosen ? Theme.bodyStrong : Theme.body)
+                    .foregroundStyle(chosen ? Theme.text : Theme.textMuted)
+            }
+            .padding(.horizontal, Theme.Spacing.s + 2)
+            .frame(height: 28)
+            .background {
+                if chosen {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Theme.hover)
+                        .matchedGeometryEffect(id: "target", in: selection)
+                }
+            }
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(help)
     }
 }
 

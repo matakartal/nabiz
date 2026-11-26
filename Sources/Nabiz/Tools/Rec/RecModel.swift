@@ -80,11 +80,13 @@ struct RecStyle: Codable, Sendable, Equatable {
     /// Corner radius, as a share of the video's width.
     var radius = 0.012
     var shadow = true
-    var cursorSize = 1.6
+    var cursorSize = 2.4
     var smoothCursor = true
-    var clickRings = true
+    var clickRings = false
     var autoZoom = true
-    var zoomLevel = 2.0
+    var zoomLevel = 1.8
+    /// The pointer's press-and-rebound on a click.
+    var clickBounce = true
     /// The pointer fades out after 2 s without moving.
     var hideIdleCursor = true
     var motionBlur = true
@@ -113,6 +115,7 @@ struct RecStyle: Codable, Sendable, Equatable {
         clickRings = try c.decodeIfPresent(Bool.self, forKey: .clickRings) ?? d.clickRings
         autoZoom = try c.decodeIfPresent(Bool.self, forKey: .autoZoom) ?? d.autoZoom
         zoomLevel = try c.decodeIfPresent(Double.self, forKey: .zoomLevel) ?? d.zoomLevel
+        clickBounce = try c.decodeIfPresent(Bool.self, forKey: .clickBounce) ?? d.clickBounce
         hideIdleCursor = try c.decodeIfPresent(Bool.self, forKey: .hideIdleCursor) ?? d.hideIdleCursor
         motionBlur = try c.decodeIfPresent(Bool.self, forKey: .motionBlur) ?? d.motionBlur
         aspect = try c.decodeIfPresent(String.self, forKey: .aspect) ?? d.aspect
@@ -151,6 +154,9 @@ struct RecZoom: Codable, Sendable, Equatable, Identifiable {
     var start: Double
     var end: Double
     var scale: Double
+    /// Where it looks (0…1 of the picture); nil follows the pointer.
+    var focusX: Double?
+    var focusY: Double?
 }
 
 /// A stretch played faster (typing, waiting for something to load).
@@ -163,6 +169,11 @@ struct RecSpeed: Codable, Sendable, Equatable, Identifiable {
 
 /// Everything changed in the editor; the video itself is never touched.
 struct RecEdit: Codable, Sendable, Equatable {
+    /// Zooms planned from the clicks (see `RecZoomPlanner`).
+    static func autoZooms(meta: RecMeta) -> [RecZoom] {
+        RecZoomPlanner.plan(clicks: meta.track.clicks, size: CGSize(width: meta.width, height: meta.height), duration: meta.duration)
+    }
+
     var style = RecStyle.saved
     var zooms: [RecZoom] = []
     var speeds: [RecSpeed] = []
@@ -200,28 +211,8 @@ struct RecEdit: Codable, Sendable, Equatable {
         return speeds
     }
 
-    /// Zooms around bursts of clicks: from a moment before the first click to a little after the last.
-    static func autoZooms(from clicks: [RecTrack.Point], duration: Double, scale: Double) -> [RecZoom] {
-        var groups: [[RecTrack.Point]] = []
-        // Clicks in the last second are usually the one that stops the recording.
-        for click in clicks.sorted(by: { $0.t < $1.t }) where click.t < duration - 1 {
-            if let last = groups.last?.last, click.t - last.t < 2.5 { groups[groups.count - 1].append(click) } else { groups.append([click]) }
-        }
-        var zooms: [RecZoom] = []
-        for group in groups {
-            guard let first = group.first, let last = group.last else { continue }
-            var start = max(0, first.t - 0.3), end = min(duration - 0.3, last.t + 2.5)
-            if end - start < 1.6 { end = min(duration, start + 1.6) }
-            if let previous = zooms.last, start - previous.end < 0.8 {
-                zooms[zooms.count - 1].end = end
-                continue
-            }
-            start = max(start, zooms.last?.end ?? 0)
-            if end > start + 0.3 { zooms.append(RecZoom(start: start, end: end, scale: scale)) }
-        }
-        return zooms
-    }
 }
+
 
 enum RecStore {
     /// ~/Library/Application Support/Nabiz/Recordings

@@ -20,9 +20,10 @@ final class RecPlan: @unchecked Sendable {
     let style: RecStyle
 
     private let fps = 60.0
-    private let zoom: [Double]
-    private let focus: [CGPoint]
-    private let pointer: [CGPoint]
+    /// Where the pointer is drawn and how it reacts to clicks.
+    private let cursorPath: RecCursorPath
+    /// Where the camera looks.
+    private let lens: RecLens
     private let clicks: [RecTrack.Point]
     private let shapes: [RecTrack.Shape]
     private let cursors: [(image: CIImage, info: RecCursor)]
@@ -32,7 +33,6 @@ final class RecPlan: @unchecked Sendable {
     /// Recording time ↔ played time, with the speed-ups.
     let map: RecTimeMap
     /// How visible the pointer is (it fades after standing still).
-    private let pointerAlpha: [Double]
     private let keys: [RecTrack.Key]
     private let keyImages: [String: CIImage]
     private let cameraOn: Bool
@@ -61,11 +61,10 @@ final class RecPlan: @unchecked Sendable {
         cameraOn = style.camera && meta.cameraOffset != nil
 
         let steps = max(2, Int(meta.duration * fps) + 2)
-        let (zoom, focus) = Self.camera(edit: edit, track: meta.track, source: source, steps: steps, fps: fps)
-        self.zoom = zoom
-        self.focus = focus
-        pointer = Self.pointer(track: meta.track, smooth: style.smoothCursor, steps: steps, fps: fps)
-        pointerAlpha = style.hideIdleCursor ? Self.idle(track: meta.track, steps: steps, fps: fps) : [1]
+        cursorPath = RecCursorPath(track: meta.track, size: source, smoothing: style.smoothCursor ? 0.3 : 0)
+        lens = RecLens(regions: edit.zooms.map { zoom in
+            RecLens.Region(start: zoom.start, end: zoom.end, scale: zoom.scale, focus: zoom.focusX.map { ($0, zoom.focusY ?? 0.5) })
+        }, cursor: cursorPath)
         var keyImages: [String: CIImage] = [:]
         for key in keys where keyImages[key.text] == nil {
             keyImages[key.text] = Self.keyImage(key.text, height: output.height * 0.055)
@@ -159,25 +158,30 @@ final class RecPlan: @unchecked Sendable {
         return mix(values[index], values[next], position - Double(index))
     }
 
+    /// Zoom and the point it looks at, in source pixels (top-left origin).
     func camera(at time: Double) -> (Double, CGPoint) {
-        let z = sample(zoom, at: time) { $0 + ($1 - $0) * $2 }
-        let f = sample(focus, at: time) { a, b, u in CGPoint(x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u) }
-        return (z, f)
+        let state = lens.state(at: time)
+        return (state.scale, CGPoint(x: state.focus.0 * source.width, y: state.focus.1 * source.height))
+    }
+
+    private func pointer(at time: Double) -> CGPoint? {
+        cursorPath.at(time).map { CGPoint(x: $0.0 * source.width, y: $0.1 * source.height) }
     }
 
     /// The pointer image at its spot, with a soft shadow, sized with the zoom.
     private func cursor(at time: Double, transform: CGAffineTransform, scale s: CGFloat) -> CIImage? {
         guard !cursors.isEmpty else { return nil }
-        let alpha = sample(pointerAlpha, at: time) { $0 + ($1 - $0) * $2 }
-        guard alpha > 0.01 else { return nil }
-        let p = sample(pointer, at: time) { a, b, u in CGPoint(x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u) }
+        let alpha = style.hideIdleCursor ? cursorPath.opacity(time) : 1
+        guard alpha > 0.01, let p = pointer(at: time) else { return nil }
         let at = CGPoint(x: p.x, y: source.height - p.y).applying(transform)
         guard content.insetBy(dx: -40, dy: -40).contains(at) else { return nil }
         var index = 0
         if let shape = shapes.last(where: { $0.t <= time }) { index = min(shape.index, cursors.count - 1) }
         let (image, info) = cursors[index]
         // Output pixels per screen point: source pixels per point × output pixels per source pixel.
-        let width = CGFloat(info.width) * screenScale * s * CGFloat(style.cursorSize)
+        // The click bounce scales around the hot spot, so the tip stays on what was clicked.
+        let bounce = style.clickBounce ? CGFloat(cursorPath.bounce(time)) : 1
+        let width = CGFloat(info.width) * screenScale * s * CGFloat(style.cursorSize) * bounce
         let fit = width / max(image.extent.width, 1)
         let sized = image.transformed(by: CGAffineTransform(scaleX: fit, y: fit))
         let origin = CGPoint(x: at.x - CGFloat(info.hotX) * width / CGFloat(info.width),
@@ -185,7 +189,7 @@ final class RecPlan: @unchecked Sendable {
         var placed = sized.transformed(by: CGAffineTransform(translationX: origin.x - sized.extent.minX, y: origin.y - sized.extent.minY))
         // A fast pointer smears along its path, like a camera would see it.
         if style.motionBlur {
-            let before = sample(pointer, at: max(0, time - 1 / fps)) { a, b, u in CGPoint(x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u) }
+            let before = pointer(at: max(0, time - 1 / fps)) ?? p
             let dx = (p.x - before.x) * s, dy = -(p.y - before.y) * s
             let speed = hypot(dx, dy)
             if speed > 8 * k {
@@ -271,117 +275,6 @@ final class RecPlan: @unchecked Sendable {
         let shadow = (rounded(box.offsetBy(dx: 0, dy: -side * 0.03), radius, CIColor(red: 0, green: 0, blue: 0, alpha: 0.45)) ?? .empty())
             .applyingGaussianBlur(sigma: Double(side * 0.06))
         return face.composited(over: rim.composited(over: shadow))
-    }
-
-    // MARK: Motion
-
-    /// 1 while the pointer moves, fading to 0 after 2 s still (and back in a blink when it moves or clicks).
-    private static func idle(track: RecTrack, steps: Int, fps: Double) -> [Double] {
-        var result = [Double](repeating: 1, count: steps)
-        let events = (track.moves.map(\.t) + track.clicks.map(\.t)).sorted()
-        guard !events.isEmpty else { return result }
-        var j = 0
-        for i in 0..<steps {
-            let t = Double(i) / fps
-            while j + 1 < events.count && events[j + 1] <= t { j += 1 }
-            let last = events[j] <= t ? events[j] : -1
-            let still = last < 0 ? t : t - last
-            result[i] = min(1, max(0, 1 - (still - 2) / 0.35))
-        }
-        return result
-    }
-
-    /// Zoom and camera centre at each step: critically damped springs (no wobble), slower for panning than for
-    /// zooming, chasing the zoom segments and the smoothed pointer.
-    private static func camera(edit: RecEdit, track: RecTrack, source: CGSize, steps: Int, fps: Double) -> ([Double], [CGPoint]) {
-        let dt = 1 / fps
-        let centre = CGPoint(x: source.width / 2, y: source.height / 2)
-        let raw = pointer(track: track, smooth: true, steps: steps, fps: fps)
-        var zooms = [Double](repeating: 1, count: steps)
-        var focuses = [CGPoint](repeating: centre, count: steps)
-        var z = 1.0, zv = 0.0
-        var f = centre, fv = CGVector.zero
-        // Zoom: ~0.45 s to settle, no overshoot. Pan: softer, and only when the pointer leaves the middle of the view
-        // (a box 50% × 70% of what's visible), so the picture doesn't drift with every small move.
-        let zoomOmega = 8.0, panOmega = 4.0
-        var aim = centre
-        // Start already aimed at the first zoom's pointer so it doesn't sweep in from the middle.
-        if let first = edit.zooms.first { f = raw[min(Int(first.start * fps), steps - 1)]; aim = f }
-        for i in 0..<steps {
-            let t = Double(i) * dt
-            // Look slightly ahead so the zoom is under way when the click happens.
-            let segment = edit.zooms.first { t + 0.15 >= $0.start && t < $0.end }
-            let target = segment?.scale ?? 1
-            let a = zoomOmega * zoomOmega * (target - z) - 2 * zoomOmega * zv
-            zv += a * dt
-            z += zv * dt
-            if segment != nil {
-                let visible = CGSize(width: source.width / max(z, 1), height: source.height / max(z, 1))
-                let p = raw[i]
-                if aim == centre || abs(p.x - aim.x) > visible.width * 0.25 || abs(p.y - aim.y) > visible.height * 0.35 { aim = p }
-            } else if z < 1.02 {
-                aim = centre
-            }
-            let ax = panOmega * panOmega * (aim.x - f.x) - 2 * panOmega * fv.dx
-            let ay = panOmega * panOmega * (aim.y - f.y) - 2 * panOmega * fv.dy
-            fv.dx += ax * dt
-            fv.dy += ay * dt
-            f.x += fv.dx * dt
-            f.y += fv.dy * dt
-            zooms[i] = max(1, z)
-            focuses[i] = f
-        }
-        return (zooms, focuses)
-    }
-
-    /// The pointer at each step: the recorded path, or the same followed by a stiff critically damped spring, which
-    /// takes out the jitter and the jumps without lagging noticeably.
-    private static func pointer(track: RecTrack, smooth: Bool, steps: Int, fps: Double) -> [CGPoint] {
-        let moves = track.moves
-        guard let first = moves.first else { return [CGPoint](repeating: .zero, count: steps) }
-        var result = [CGPoint](repeating: .zero, count: steps)
-        var j = 0
-        let dt = 1 / fps
-        var p = CGPoint(x: first.x, y: first.y), v = CGVector.zero
-        let omega = 22.0
-        // A critically damped spring trails by about 2/ω; reading the path that far ahead cancels it.
-        let lead = smooth ? 1.6 / omega : 0
-        let clicks = track.clicks.map(\.t).sorted()
-        var c = 0
-        for i in 0..<steps {
-            let t = Double(i) * dt + lead
-            while j + 1 < moves.count && moves[j + 1].t <= t { j += 1 }
-            let a = moves[j]
-            var raw = CGPoint(x: a.x, y: a.y)
-            if j + 1 < moves.count {
-                let b = moves[j + 1]
-                let u = b.t > a.t ? min(max((t - a.t) / (b.t - a.t), 0), 1) : 0
-                raw = CGPoint(x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u)
-            }
-            while c + 1 < clicks.count && clicks[c] < t - lead - 0.3 { c += 1 }
-            // Around a click the pointer is exactly where it clicked: the spring stiffens there.
-            let nearClick = c < clicks.count && abs(clicks[c] - (t - lead)) < 0.18
-            if smooth && nearClick {
-                let w = omega * 2.2
-                let ax = w * w * (raw.x - p.x) - 2 * w * v.dx
-                let ay = w * w * (raw.y - p.y) - 2 * w * v.dy
-                v.dx += ax * dt
-                v.dy += ay * dt
-                p.x += v.dx * dt
-                p.y += v.dy * dt
-            } else if smooth {
-                let ax = omega * omega * (raw.x - p.x) - 2 * omega * v.dx
-                let ay = omega * omega * (raw.y - p.y) - 2 * omega * v.dy
-                v.dx += ax * dt
-                v.dy += ay * dt
-                p.x += v.dx * dt
-                p.y += v.dy * dt
-            } else {
-                p = raw
-            }
-            result[i] = p
-        }
-        return result
     }
 
     // MARK: Images

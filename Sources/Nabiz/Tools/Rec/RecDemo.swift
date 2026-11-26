@@ -21,7 +21,7 @@ enum RecDemo {
         var edit = RecEdit()
         edit.style = RecStyle()
         edit.style.aspect = "16:9"
-        edit.zooms = RecEdit.autoZooms(from: track.clicks, duration: 6, scale: edit.style.zoomLevel)
+        edit.zooms = [RecZoom(start: 1.8, end: 4.2, scale: 1.8)]
         var meta = RecMeta(id: UUID(), created: Date(), duration: 6, width: width, height: height, scale: 2, track: track, edit: edit)
         meta.cameraOffset = 0
         return meta

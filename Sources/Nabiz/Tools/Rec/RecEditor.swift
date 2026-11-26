@@ -187,7 +187,7 @@ final class RecEditorModel {
     }
 
     func remakeZooms() {
-        edit.zooms = RecEdit.autoZooms(from: meta.track.clicks, duration: duration, scale: edit.style.zoomLevel)
+        edit.zooms = RecEdit.autoZooms(meta: meta)
         edit.zoomsMade = true
         selectedZoom = nil
     }

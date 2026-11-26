@@ -18,7 +18,7 @@ enum CaptureMode: String, CaseIterable, Identifiable {
         case .areaFile: L("Alan seç → dosyaya", "Area → file")
         case .screenFile: L("Tüm ekran → dosyaya", "Whole screen → file")
         case .timed: L("5 saniye sonra tüm ekran", "Whole screen in 5 seconds")
-        case .toolbar: L("Kayıt ve diğer seçenekler (⇧⌘5)", "Record and more (⇧⌘5)")
+        case .toolbar: L("macOS ekran görüntüsü araçları (⇧⌘5)", "macOS screenshot tools (⇧⌘5)")
         case .text: L("Ekrandan metin ya da QR oku", "Read text or a QR code on screen")
         }
     }

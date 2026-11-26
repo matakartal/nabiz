@@ -6,18 +6,32 @@ import Testing
 @MainActor
 @Suite("Screen recording")
 struct RecTests {
-    private func click(_ t: Double) -> RecTrack.Point { RecTrack.Point(t: t, x: 100, y: 100) }
+    private func click(_ t: Double, _ x: Double, _ y: Double) -> RecTrack.Point { RecTrack.Point(t: t, x: x, y: y) }
 
-    @Test func clicksBecomeZooms() {
-        let zooms = RecEdit.autoZooms(from: [click(2), click(3), click(10)], duration: 20, scale: 2)
+    @Test func clicksBecomeShots() {
+        let size = CGSize(width: 1000, height: 1000)
+        // Two clicks close in time and space share a shot; a far later one gets its own.
+        let zooms = RecZoomPlanner.plan(clicks: [click(5, 500, 500), click(6, 520, 510), click(14, 200, 200)], size: size, duration: 30)
         #expect(zooms.count == 2)
-        #expect(abs(zooms[0].start - 1.7) < 0.001)
-        #expect(abs(zooms[0].end - 5.5) < 0.001)
-        #expect(zooms.allSatisfy { $0.scale == 2 && $0.end > $0.start })
+        #expect(zooms[0].start < 5 && zooms[0].end > 6)
+        #expect(zooms.allSatisfy { $0.end - $0.start >= 1.8 && $0.scale <= 1.8 })
     }
 
-    @Test func lastSecondClickIsIgnored() {
-        #expect(RecEdit.autoZooms(from: [click(9.5)], duration: 10, scale: 2).isEmpty)
+    @Test func openingAndStopClickStayWide() {
+        let size = CGSize(width: 1000, height: 1000)
+        #expect(RecZoomPlanner.plan(clicks: [click(9.5, 500, 500)], size: size, duration: 10).isEmpty)
+        let early = RecZoomPlanner.plan(clicks: [click(1, 500, 500)], size: size, duration: 20)
+        #expect(early.allSatisfy { $0.start >= 2.5 })
+    }
+
+    @Test func pointerLandsOnTheClick() {
+        var track = RecTrack()
+        for i in 0...120 { track.moves.append(RecTrack.Point(t: Double(i) / 60, x: Double(i) * 8, y: 400)) }
+        track.clicks = [RecTrack.Point(t: 1, x: 480, y: 400)]
+        let path = RecCursorPath(track: track, size: CGSize(width: 1000, height: 800), smoothing: 0.3)
+        let at = path.at(1)!
+        #expect(abs(at.0 - 0.48) < 0.001 && abs(at.1 - 0.5) < 0.001)
+        #expect(path.bounce(1.05) < 1 && path.bounce(1.2) > 1 && path.bounce(2) == 1)
     }
 
     @Test func planSizesAreEvenAndPadded() {
@@ -36,12 +50,12 @@ struct RecTests {
     @Test func cameraZoomsInAndBack() {
         var edit = RecEdit()
         edit.style = RecStyle()
-        edit.zooms = [RecZoom(start: 1, end: 3, scale: 2)]
+        edit.zooms = [RecZoom(start: 1.5, end: 3, scale: 2)]
         let meta = RecMeta(id: UUID(), created: Date(), duration: 6, width: 1280, height: 800, scale: 2, track: RecTrack(), edit: edit)
         let plan = RecPlan(meta: meta, edit: edit, maxWidth: 640)
-        #expect(plan.camera(at: 0.5).0 < 1.05)
-        #expect(plan.camera(at: 2.5).0 > 1.8)
-        #expect(plan.camera(at: 5.8).0 < 1.1)
+        #expect(plan.camera(at: 0.3).0 < 1.05)
+        #expect(plan.camera(at: 2.5).0 > 1.99)
+        #expect(plan.camera(at: 5.9).0 < 1.05)
     }
 
     @Test func speedMapGoesBothWays() {

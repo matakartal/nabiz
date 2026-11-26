@@ -554,6 +554,12 @@ enum Snapshot {
             }
             if args.contains("--palette") { LauncherPanel.shared.model.paletteOpen = true }
             root = AnyView(LauncherView(model: LauncherPanel.shared.model))
+        } else if args.contains("--rec-bar") {
+            // `--rec-bar [--target window]`: the recording bar.
+            let options = RecOptions()
+            options.target = value(after: "--target").flatMap(RecControl.Target.init(rawValue:)) ?? .area
+            options.sound = true
+            root = AnyView(RecBarView(options: options).background(MenuMaterial()).clipShape(RoundedRectangle(cornerRadius: Theme.radius)).padding(20))
         } else if args.contains("--rec-editor") {
             // `--rec-editor`: the editor on the latest recording (record one with `--rec-test folder --keep`).
             guard let meta = RecStore.all().first else { return false }

@@ -247,7 +247,7 @@ final class RecRecorder {
         let duration = max(0.1, end.seconds - first)
         var edit = RecEdit()
         if edit.style.autoZoom {
-            edit.zooms = RecEdit.autoZooms(from: track.clicks, duration: duration, scale: edit.style.zoomLevel)
+            edit.zooms = RecZoomPlanner.plan(clicks: track.clicks, size: size, duration: duration)
             edit.zoomsMade = true
         }
         var meta = RecMeta(id: id, created: startedAt ?? Date(), duration: duration, width: Int(size.width), height: Int(size.height),
@@ -323,6 +323,21 @@ final class RecRecorder {
         }
     }
 
+    private static func sharp(_ image: NSImage) -> NSBitmapImageRep? {
+        let width = Int(image.size.width * 4), height = Int(image.size.height * 4)
+        guard width > 0, height > 0,
+              let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height, bitsPerSample: 8, samplesPerPixel: 4,
+                                         hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)
+        else { return nil }
+        rep.size = image.size
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        NSGraphicsContext.current?.imageInterpolation = .high
+        image.draw(in: NSRect(origin: .zero, size: image.size), from: .zero, operation: .copy, fraction: 1)
+        NSGraphicsContext.restoreGraphicsState()
+        return rep
+    }
+
     private func click() {
         guard isRecording, let (x, y) = pointer() else { return }
         clicks.append(RecTrack.Point(t: Self.hostNow, x: x, y: y))
@@ -340,7 +355,8 @@ final class RecRecorder {
         } else {
             index = cursors.count
             let file = "cursor-\(index).png"
-            if let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+            // Drawn at 4× from the cursor's best representation, so it stays sharp when shown large and zoomed.
+            if let png = Self.sharp(image)?.representation(using: .png, properties: [:]) {
                 try? png.write(to: RecStore.folder(for: id).appendingPathComponent(file))
             }
             cursorKeys.append(key)

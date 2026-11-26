@@ -20,19 +20,34 @@ enum RecPicker {
         if target == .window { windows = windowList() }
         if panels.isEmpty {
             panels = NSScreen.screens.map { RecPickerPanel(screen: $0) }
-            panels.forEach { $0.orderFrontRegardless() }
+            for panel in panels {
+                panel.alphaValue = 0
+                panel.orderFrontRegardless()
+                (panel.contentView as? RecPickerView)?.update(animated: false)
+            }
             panels.first { $0.screen == hoveredScreen }?.makeKey()
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.2
+                panels.forEach { $0.animator().alphaValue = 1 }
+            }
         }
         refresh()
     }
 
     static func close() {
-        panels.forEach { $0.orderOut(nil) }
+        let closing = panels
         panels = []
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.15
+            closing.forEach { $0.animator().alphaValue = 0 }
+        } completionHandler: {
+            MainActor.assumeIsolated { closing.forEach { $0.orderOut(nil) } }
+        }
     }
 
-    static func refresh() {
-        panels.forEach { $0.contentView?.needsDisplay = true }
+    /// Redraws; `animated` glides the dimming and the outline to their new place (hover, mode change).
+    static func refresh(animated: Bool = true) {
+        panels.forEach { ($0.contentView as? RecPickerView)?.update(animated: animated) }
     }
 
     /// The window under a global point.
@@ -99,10 +114,73 @@ final class RecPickerPanel: NSPanel {
 final class RecPickerView: NSView {
     private enum Drag { case none, move(NSRect, NSPoint), resize(Int, NSRect), draw(NSPoint) }
     private var drag = Drag.none
+    /// The shade over what won't be recorded (with a hole for what will) and the outline around it, as layers so
+    /// they can glide from one window to the next instead of jumping.
+    private let shade = CAShapeLayer()
+    private let outline = CAShapeLayer()
+    private var lastMode: RecControl.Target?
+    private var lastHole: NSRect?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
+        wantsLayer = true
+        shade.fillRule = .evenOdd
+        shade.fillColor = CGColor(gray: 0, alpha: 0.38)
+        outline.fillColor = nil
+        layer?.addSublayer(shade)
+        layer?.addSublayer(outline)
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .activeAlways, .inVisibleRect, .cursorUpdate], owner: self))
+    }
+
+    /// The hole: the screen with the pointer, the window under it, or the area.
+    private func hole() -> NSRect? {
+        guard let window else { return nil }
+        switch RecPicker.mode {
+        case .screen: return window.frame.contains(NSEvent.mouseLocation) ? bounds : nil
+        case .window: return RecPicker.window(at: NSEvent.mouseLocation).map { local($0.frame) }
+        case .area: return local(RecPicker.area)
+        }
+    }
+
+    func update(animated: Bool) {
+        let rect = hole()
+        // Nothing moved (the pointer stayed over the same window): leave the running glide alone.
+        if rect == lastHole, lastMode == RecPicker.mode, animated { return }
+        lastHole = rect
+        // Always "screen + one rect" (an empty one in the middle when there's no hole), so the paths animate.
+        let gap = rect ?? NSRect(x: bounds.midX, y: bounds.midY, width: 0, height: 0)
+        let shadePath = CGMutablePath()
+        shadePath.addRect(bounds)
+        shadePath.addRect(gap)
+        let mode = RecPicker.mode
+        let ring = mode == .area ? gap.insetBy(dx: -0.5, dy: -0.5) : gap.insetBy(dx: 2, dy: 2)
+        let outlinePath = CGPath(roundedRect: ring, cornerWidth: mode == .window ? 8 : 0, cornerHeight: mode == .window ? 8 : 0, transform: nil)
+        let modeChanged = lastMode != mode
+        lastMode = mode
+        CATransaction.begin()
+        if animated, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            CATransaction.setAnimationDuration(modeChanged ? 0.24 : 0.16)
+            CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.3, 1))
+            for (layer, path) in [(shade, shadePath as CGPath), (outline, outlinePath)] {
+                let move = CABasicAnimation(keyPath: "path")
+                move.fromValue = layer.presentation()?.path ?? layer.path
+                move.toValue = path
+                layer.add(move, forKey: "path")
+            }
+        } else {
+            CATransaction.setDisableActions(true)
+        }
+        shade.frame = bounds
+        outline.frame = bounds
+        shade.path = shadePath
+        outline.path = outlinePath
+        shade.fillColor = CGColor(gray: 0, alpha: mode == .screen ? (rect == nil ? 0.3 : 0) : 0.38)
+        outline.strokeColor = mode == .area ? CGColor(gray: 1, alpha: 0.95) : accent.cgColor
+        outline.lineWidth = mode == .area ? 1 : (mode == .screen ? 6 : 4)
+        outline.lineDashPattern = mode == .area ? [6, 4] : nil
+        outline.opacity = rect == nil ? 0 : 1
+        CATransaction.commit()
+        needsDisplay = true
     }
 
     @available(*, unavailable)
@@ -126,63 +204,34 @@ final class RecPickerView: NSView {
 
     // MARK: Drawing
 
+    /// Handles, size and hints, on top of the layers.
     override func draw(_ dirtyRect: NSRect) {
-        guard let ctx = NSGraphicsContext.current?.cgContext, let window else { return }
-        let mouseHere = window.frame.contains(NSEvent.mouseLocation)
+        guard let window else { return }
         switch RecPicker.mode {
         case .screen:
-            if mouseHere {
-                ctx.setFillColor(accent.withAlphaComponent(0.10).cgColor)
-                ctx.fill(bounds)
-                ctx.setStrokeColor(accent.cgColor)
-                ctx.setLineWidth(6)
-                ctx.stroke(bounds.insetBy(dx: 3, dy: 3))
+            if window.frame.contains(NSEvent.mouseLocation) {
                 hint(L("Bu ekranı kaydetmek için tıkla", "Click to record this screen"), at: NSPoint(x: bounds.midX, y: bounds.midY))
-            } else {
-                ctx.setFillColor(CGColor(gray: 0, alpha: 0.3))
-                ctx.fill(bounds)
             }
         case .window:
-            let hovered = RecPicker.window(at: NSEvent.mouseLocation)
-            let lit = hovered.map { local($0.frame) }
-            let dim = CGMutablePath()
-            dim.addRect(bounds)
-            if let lit { dim.addRect(lit) }
-            ctx.addPath(dim)
-            ctx.setFillColor(CGColor(gray: 0, alpha: 0.35))
-            ctx.fillPath(using: .evenOdd)
-            if let lit, bounds.intersects(lit) {
-                ctx.setFillColor(accent.withAlphaComponent(0.12).cgColor)
-                ctx.fill(lit)
-                ctx.setStrokeColor(accent.cgColor)
-                ctx.setLineWidth(4)
-                ctx.stroke(lit.insetBy(dx: 2, dy: 2))
+            if let lit = RecPicker.window(at: NSEvent.mouseLocation).map({ local($0.frame) }), bounds.intersects(lit) {
                 hint(L("Bu pencereyi kaydetmek için tıkla", "Click to record this window"), at: NSPoint(x: lit.midX, y: lit.midY))
             }
         case .area:
             let box = local(RecPicker.area)
-            let dim = CGMutablePath()
-            dim.addRect(bounds)
-            dim.addRect(box)
-            ctx.addPath(dim)
-            ctx.setFillColor(CGColor(gray: 0, alpha: 0.4))
-            ctx.fillPath(using: .evenOdd)
-            guard bounds.intersects(box) else { return }
-            ctx.setStrokeColor(CGColor(gray: 1, alpha: 0.95))
-            ctx.setLineWidth(1)
-            ctx.setLineDash(phase: 0, lengths: [6, 4])
-            ctx.stroke(box.insetBy(dx: -0.5, dy: -0.5))
-            ctx.setLineDash(phase: 0, lengths: [])
+            guard bounds.intersects(box), let ctx = NSGraphicsContext.current?.cgContext else { return }
             for handle in handles(box) {
                 let dot = NSRect(x: handle.x - 5, y: handle.y - 5, width: 10, height: 10)
+                ctx.saveGState()
+                ctx.setShadow(offset: CGSize(width: 0, height: -1), blur: 3, color: CGColor(gray: 0, alpha: 0.4))
                 ctx.setFillColor(.white)
                 ctx.fillEllipse(in: dot)
+                ctx.restoreGState()
                 ctx.setStrokeColor(accent.cgColor)
                 ctx.setLineWidth(1.5)
                 ctx.strokeEllipse(in: dot.insetBy(dx: 0.75, dy: 0.75))
             }
             let label = "\(Int(RecPicker.area.width)) × \(Int(RecPicker.area.height))"
-            badge(label, at: NSPoint(x: box.midX, y: box.minY - 30 > 8 ? box.minY - 30 : box.minY + 10))
+            badge(label, at: NSPoint(x: box.midX, y: box.minY - 30 > 8 ? box.minY - 24 : box.minY + 16))
         }
     }
 
@@ -268,7 +317,7 @@ final class RecPickerView: NSView {
             }
             RecPicker.area = NSRect(x: min(minX, maxX), y: min(minY, maxY), width: abs(maxX - minX), height: abs(maxY - minY))
         }
-        RecPicker.refresh()
+        RecPicker.refresh(animated: false)
     }
 
     override func mouseUp(with event: NSEvent) {
