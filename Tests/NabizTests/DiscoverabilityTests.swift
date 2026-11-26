@@ -25,6 +25,6 @@ struct DiscoverabilityTests {
         let keys: [Int] = HotKey.Shortcut.allCases.filter { $0.window == nil }.map(\.key)
         #expect(keys.count == Set(keys).count)
         #expect(ToolKind.everyday.contains(.aiChat))
-        #expect(ToolKind.everyday.count == 9)
+        #expect(ToolKind.everyday.count == 11)
     }
 }

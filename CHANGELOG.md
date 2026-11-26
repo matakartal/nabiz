@@ -109,6 +109,8 @@
   "Summarize and continue" squeezes a long chat into a summary that goes in place of the old messages.
   Claude, Codex and Grok can search the web when a question needs current facts, with sources (+ → Web search to
   turn it off; nothing else is allowed, no files or commands). ⌘K jumps to the chat search.
+- **New tools in the panel:** Record and Dictate sit in the main grid; Clean-up (with how much it can free) opens
+  the developer clean-up. The AI chat tile mentions Grok and web search.
 - **Your own shortcut or alias for any app or command:** in the launcher press ⌘K on a row → "Set a shortcut…"
   (works from any app, e.g. ⌥S for Safari) or "Set an alias…" (type "ss" and that row comes first). Listed and
   removable in Settings → Launcher.

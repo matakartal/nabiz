@@ -155,7 +155,7 @@ struct EmojiShortcutTests {
 
     @Test("The tools grid starts short")
     func everyday() {
-        #expect(ToolKind.everyday.count == 9)
+        #expect(ToolKind.everyday.count == 11)
         #expect(ToolKind.allCases.count > ToolKind.everyday.count)
     }
 }

@@ -4,14 +4,14 @@ import Security
 
 /// The one-tap tools in the panel's grid. Each does its job directly; nothing sends the user to another app to finish.
 enum ToolKind: String, CaseIterable, Identifiable {
-    case aiChat, calculator, clipboard, note, pomodoro, focus, keepAwake, timer, sleepTimer, color, screenshot, readText, download, mic
-    case displayOff, darkMode, speedTest, ip, password, uuid, eject, xcode, rust, hiddenFiles, desktop, clearClipboard, activity
+    case aiChat, calculator, clipboard, note, pomodoro, focus, keepAwake, timer, sleepTimer, color, screenshot, record, readText, download, mic, dictation
+    case displayOff, darkMode, speedTest, ip, password, uuid, eject, xcode, rust, cleanup, hiddenFiles, desktop, clearClipboard, activity
 
     var id: String { rawValue }
 
     /// Short enough for a 66 pt tile.
     /// Shown in the grid straight away; the rest sit behind "More tools".
-    static let everyday: Set<ToolKind> = [.aiChat, .calculator, .clipboard, .note, .pomodoro, .focus, .keepAwake, .timer, .screenshot]
+    static let everyday: Set<ToolKind> = [.aiChat, .calculator, .clipboard, .note, .pomodoro, .focus, .keepAwake, .timer, .screenshot, .record, .dictation]
 
     var title: String {
         switch self {
@@ -29,6 +29,9 @@ enum ToolKind: String, CaseIterable, Identifiable {
         case .timer: L("Zamanlayıcı", "Timer")
         case .color: L("Renk al", "Pick color")
         case .screenshot: L("Ekran al", "Screenshot")
+        case .record: L("Ekran kaydı", "Record")
+        case .dictation: L("Dikte", "Dictate")
+        case .cleanup: L("Temizlik", "Clean-up")
         case .displayOff: L("Ekranı kapat", "Display off")
         case .darkMode: L("Karanlık", "Dark mode")
         case .speedTest: L("Hız", "Speed")
@@ -61,6 +64,9 @@ enum ToolKind: String, CaseIterable, Identifiable {
         case .timer: "timer"
         case .color: "eyedropper"
         case .screenshot: "camera.viewfinder"
+        case .record: "record.circle"
+        case .dictation: "waveform"
+        case .cleanup: "trash.circle"
         case .displayOff: "moon.zzz"
         case .darkMode: "circle.lefthalf.filled"
         case .speedTest: "speedometer"
@@ -80,8 +86,14 @@ enum ToolKind: String, CaseIterable, Identifiable {
     /// The tooltip: what one tap does, in one sentence.
     var help: String {
         switch self {
-        case .aiChat: L("Claude, Codex, Gemini ya da Apple'ın modeliyle sohbet (⌃⌥I). Hızlı soru için ⌃⌥A.",
-                        "Chat with Claude, Codex, Gemini or Apple's model (⌃⌥I). ⌃⌥A for a quick question.")
+        case .aiChat: L("Claude, Codex, Grok, Gemini ya da Apple'ın modeliyle sohbet; gerekince web'de arar (⌃⌥I). Hızlı soru için ⌃⌥A.",
+                        "Chat with Claude, Codex, Grok, Gemini or Apple's model; it searches the web when needed (⌃⌥I). ⌃⌥A for a quick question.")
+        case .record: L("Ekranı, bir pencereyi ya da alanı kaydet; editörde yakınlaştırma, imleç ve arka planla düzenle (⌃⌥R). Kayıttayken basınca durur.",
+                        "Record the screen, a window or an area, then edit zooms, the pointer and the background (⌃⌥R). Tap again to stop.")
+        case .dictation: L("Konuş, yine bas; söylediklerin imlecin olduğu yere yazılır (⌃⌥D).",
+                           "Speak, tap again, and your words are typed where the cursor is (⌃⌥D).")
+        case .cleanup: L("Eski worktree'ler, build klasörleri, simülatörler, önbellekler… Boyutlarını gösterir, sorarak temizler.",
+                         "Old worktrees, build folders, simulators, caches… Shows their size and cleans after asking.")
         case .calculator: L("Uygulama aç, komut çalıştır, hesapla, çevir, web'de ara (⌃⌥Boşluk).",
                             "Open apps, run commands, calculate, convert, search the web (⌃⌥Space).")
         case .clipboard: L("Kopyaladıklarının geçmişi; seç, yapıştır, sabitle (⌃⌥V).", "Everything you copied; pick, paste, pin (⌃⌥V).")
@@ -250,6 +262,15 @@ final class Toolbox {
         case .speedTest: return speedRunning ? L("ölçülüyor", "testing") : speedResult
         case .ip: return LocalIP.address() ?? L("yok", "offline")
         case .eject: return ejectable.isEmpty ? L("disk yok", "none") : L("\(ejectable.count) disk", "\(ejectable.count) disk")
+        case .record:
+            guard RecRecorder.shared.isRecording, let start = RecRecorder.shared.startedAt else { return nil }
+            let seconds = max(Int(-start.timeIntervalSinceNow), 0)
+            return String(format: "%d:%02d", seconds / 60, seconds % 60)
+        case .dictation: return Dictation.shared.isListening ? L("dinliyor", "listening") : nil
+        case .cleanup:
+            let store = DevCleanupStore.shared
+            if store.scanning { return L("aranıyor", "scanning") }
+            return store.lastTotal > 0 ? Format.bytes(store.lastTotal) : nil
         case .xcode: return cleaning ? L("siliniyor", "cleaning") : derivedDataSize.map(Format.bytes)
         case .rust: return cleaningRust ? L("siliniyor", "cleaning") : rustScanning && rustCaches.isEmpty ? L("aranıyor", "scanning")
             : rustCaches.isEmpty ? L("yok", "none") : Format.bytes(rustSize)
@@ -270,6 +291,8 @@ final class Toolbox {
         case .mic: micMuted
         case .sleepTimer: SleepTimer.shared.at != nil
         case .download: Downloader.shared.running != nil
+        case .record: RecRecorder.shared.isRecording
+        case .dictation: Dictation.shared.isListening
         default: false
         }
     }
@@ -307,6 +330,15 @@ final class Toolbox {
             NoteWindow.toggle()
         case .keepAwake, .timer, .pomodoro, .focus, .screenshot, .sleepTimer:
             break // the grid opens their chips
+        case .record:
+            actions.close()
+            RecControl.toggle()
+        case .dictation:
+            actions.close()
+            Dictation.shared.toggle()
+        case .cleanup:
+            actions.close()
+            SettingsWindow.show(.developer)
         case .readText:
             Capture.run(.text, actions: actions)
         case .download:
