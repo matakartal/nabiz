@@ -87,8 +87,13 @@ struct RecStyle: Codable, Sendable, Equatable {
     var zoomLevel = 1.8
     /// The pointer's press-and-rebound on a click.
     var clickBounce = true
-    /// A soft click sound on every click.
-    var clickSound = false
+    /// A click sound on every click, and a soft tap on every key typed.
+    var clickSound = true
+    var keySound = true
+    /// Levels, 0…1: the Mac's sound, the microphone, and the click and key sounds.
+    var soundVolume = 1.0
+    var micVolume = 1.0
+    var effectsVolume = 0.6
     /// The pointer fades out after 2 s without moving.
     var hideIdleCursor = true
     var motionBlur = true
@@ -130,6 +135,10 @@ struct RecStyle: Codable, Sendable, Equatable {
         zoomLevel = try c.decodeIfPresent(Double.self, forKey: .zoomLevel) ?? d.zoomLevel
         clickBounce = try c.decodeIfPresent(Bool.self, forKey: .clickBounce) ?? d.clickBounce
         clickSound = try c.decodeIfPresent(Bool.self, forKey: .clickSound) ?? d.clickSound
+        keySound = try c.decodeIfPresent(Bool.self, forKey: .keySound) ?? d.keySound
+        soundVolume = try c.decodeIfPresent(Double.self, forKey: .soundVolume) ?? d.soundVolume
+        micVolume = try c.decodeIfPresent(Double.self, forKey: .micVolume) ?? d.micVolume
+        effectsVolume = try c.decodeIfPresent(Double.self, forKey: .effectsVolume) ?? d.effectsVolume
         hideIdleCursor = try c.decodeIfPresent(Bool.self, forKey: .hideIdleCursor) ?? d.hideIdleCursor
         motionBlur = try c.decodeIfPresent(Bool.self, forKey: .motionBlur) ?? d.motionBlur
         aspect = try c.decodeIfPresent(String.self, forKey: .aspect) ?? d.aspect

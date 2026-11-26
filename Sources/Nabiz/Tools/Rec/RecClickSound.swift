@@ -1,31 +1,45 @@
 import AVFoundation
 
-/// A short, soft mouse click, made once (no sound file shipped): a tiny bright transient with a quick decay.
+/// The sounds a recording can add: a mouse click (press and release) and a soft key tap. Made once from
+/// scratch (no sound files shipped) and kept in the caches folder.
 enum RecClickSound {
-    static let file: URL? = {
-        let url = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("Nabiz/click.caf")
+    static var file: URL? { click }
+
+    static let click: URL? = make("click-2.caf", length: 0.11) { t in
+        // Press: a bright, sharp transient; release 55 ms later: a softer one.
+        transient(t, at: 0, brightness: 3200, decay: 0.006, level: 0.9) + transient(t, at: 0.055, brightness: 2600, decay: 0.005, level: 0.45)
+    }
+
+    static let key: URL? = make("key-1.caf", length: 0.07) { t in
+        // A low, muffled tap: a laptop key bottoming out.
+        transient(t, at: 0, brightness: 1300, decay: 0.008, level: 0.55)
+    }
+
+    private static func transient(_ t: Double, at start: Double, brightness: Double, decay: Double, level: Double) -> Double {
+        let u = t - start
+        guard u >= 0 else { return 0 }
+        let envelope = min(u / 0.0003, 1) * exp(-u / decay)
+        // A damped tone plus a pinch of noise from a fixed sine mix (no randomness: always the same sound).
+        let tone = sin(2 * .pi * brightness * u) * 0.6 + sin(2 * .pi * brightness * 2.7 * u) * 0.25
+        let grit = sin(2 * .pi * 9_100 * u + sin(2 * .pi * 430 * u) * 4) * 0.35
+        return (tone + grit) * envelope * level
+    }
+
+    private static func make(_ name: String, length: Double, _ sample: (Double) -> Double) -> URL? {
+        let url = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("Nabiz/\(name)")
         if FileManager.default.fileExists(atPath: url.path) { return url }
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let rate = 48_000.0
         guard let format = AVAudioFormat(standardFormatWithSampleRate: rate, channels: 2),
-              let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(rate * 0.06)) else { return nil }
+              let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(rate * length)) else { return nil }
         buffer.frameLength = buffer.frameCapacity
-        var seed: UInt32 = 7
-        var low = 0.0
         for i in 0..<Int(buffer.frameLength) {
-            let t = Double(i) / rate
-            seed = seed &* 1_664_525 &+ 1_013_904_223
-            let noise = Double(seed >> 8) / Double(1 << 24) * 2 - 1
-            low += (noise - low) * 0.35
-            // A sharp attack, a 9 ms decay, and a faint body at 2.4 kHz.
-            let envelope = min(t / 0.0004, 1) * exp(-t / 0.009)
-            let body = sin(2 * .pi * 2400 * t) * exp(-t / 0.006) * 0.35
-            let sample = Float((noise - low) * 0.55 * envelope + body * envelope) * 0.6
-            buffer.floatChannelData?[0][i] = sample
-            buffer.floatChannelData?[1][i] = sample
+            let value = Float(max(-1, min(1, sample(Double(i) / rate))))
+            buffer.floatChannelData?[0][i] = value
+            buffer.floatChannelData?[1][i] = value
         }
         guard let out = try? AVAudioFile(forWriting: url, settings: format.settings) else { return nil }
         try? out.write(from: buffer)
         return url
-    }()
+    }
 }

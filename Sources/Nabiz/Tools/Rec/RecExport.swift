@@ -43,7 +43,7 @@ enum RecExport {
     }
 
     static func run(_ meta: RecMeta, edit: RecEdit, kind: Kind, to url: URL? = nil, progress: @escaping @MainActor (Double) -> Void) async -> URL? {
-        guard let built = await RecPlan.build(meta: meta, speeds: RecTimeMap(edit.timeSegments, duration: meta.duration).speeds, clickSound: edit.style.clickSound) else { return nil }
+        guard let built = await RecPlan.build(meta: meta, speeds: RecTimeMap(edit.timeSegments, duration: meta.duration).speeds, clickSound: edit.style.clickSound, keySound: edit.style.keySound) else { return nil }
         let plan = RecPlan(meta: meta, edit: edit, maxWidth: kind.maxWidth)
         // The kept part, moved onto the sped-up timeline.
         let start = plan.map.played(max(0, edit.trimStart))
@@ -56,6 +56,7 @@ enum RecExport {
         guard let session = AVAssetExportSession(asset: built.asset, presetName: AVAssetExportPresetHighestQuality) else { return nil }
         session.videoComposition = plan.composition(for: built)
         session.audioTimePitchAlgorithm = .spectral
+        session.audioMix = built.audioMix(edit.style)
         session.outputURL = output
         session.outputFileType = .mp4
         session.timeRange = range

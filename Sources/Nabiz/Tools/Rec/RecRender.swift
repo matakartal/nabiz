@@ -444,19 +444,41 @@ final class RecPlan: @unchecked Sendable {
         let asset: AVMutableComposition
         let screen: CMPersistentTrackID
         let camera: CMPersistentTrackID?
+        /// The Mac's sound, the microphone, and the added click/key sounds.
+        var sound: CMPersistentTrackID?
+        var mic: CMPersistentTrackID?
+        var effects: CMPersistentTrackID?
+
+        /// Each track at its level from the style.
+        func audioMix(_ style: RecStyle) -> AVAudioMix {
+            let mix = AVMutableAudioMix()
+            mix.inputParameters = [(sound, style.soundVolume), (mic, style.micVolume), (effects, style.effectsVolume)].compactMap { id, volume in
+                guard let id else { return nil }
+                let parameters = AVMutableAudioMixInputParameters()
+                parameters.trackID = id
+                parameters.setVolume(Float(volume), at: .zero)
+                return parameters
+            }
+            return mix
+        }
     }
 
     /// `segments`: speed-ups and cuts (`RecEdit.timeSegments`); `clickSound` adds a click on every click.
-    static func build(meta: RecMeta, speeds: [RecSpeed], clickSound: Bool = false) async -> Built? {
+    static func build(meta: RecMeta, speeds: [RecSpeed], clickSound: Bool = false, keySound: Bool = false) async -> Built? {
         let source = AVURLAsset(url: RecStore.video(for: meta.id))
         guard let duration = try? await source.load(.duration), let video = try? await source.loadTracks(withMediaType: .video).first else { return nil }
         let composition = AVMutableComposition()
         let all = CMTimeRange(start: .zero, duration: duration)
         guard let screen = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid),
               (try? screen.insertTimeRange(all, of: video, at: .zero)) != nil else { return nil }
+        var soundID: CMPersistentTrackID?, micID: CMPersistentTrackID?
         for audio in (try? await source.loadTracks(withMediaType: .audio)) ?? [] {
-            let track = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
-            try? track?.insertTimeRange(all, of: audio, at: .zero)
+            guard let track = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid),
+                  (try? track.insertTimeRange(all, of: audio, at: .zero)) != nil else { continue }
+            // The microphone is written in mono, the Mac's sound in stereo.
+            let formats = (try? await audio.load(.formatDescriptions)) ?? []
+            let channels = formats.first.flatMap { CMAudioFormatDescriptionGetStreamBasicDescription($0)?.pointee.mChannelsPerFrame } ?? 2
+            if channels == 1 { micID = track.trackID } else { soundID = track.trackID }
         }
         var cameraID: CMPersistentTrackID?
         if let offset = meta.cameraOffset {
@@ -472,15 +494,32 @@ final class RecPlan: @unchecked Sendable {
                 }
             }
         }
-        if clickSound, !meta.track.clicks.isEmpty, let click = RecClickSound.file,
-           let sound = try? await AVURLAsset(url: click).loadTracks(withMediaType: .audio).first,
-           let length = try? await AVURLAsset(url: click).load(.duration),
-           let track = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) {
-            var free = 0.0
-            for click in meta.track.clicks.sorted(by: { $0.t < $1.t }) where click.t >= free && click.t < duration.seconds - length.seconds {
-                try? track.insertTimeRange(CMTimeRange(start: .zero, duration: length), of: sound, at: CMTime(seconds: click.t, preferredTimescale: 6000))
-                free = click.t + length.seconds
+        // Click and key sounds on a track of their own, one after another, never overlapping.
+        var effectsID: CMPersistentTrackID?
+        var events: [(Double, URL)] = []
+        if clickSound, let click = RecClickSound.click { events += meta.track.clicks.map { ($0.t, click) } }
+        if keySound, let key = RecClickSound.key { events += (meta.track.typing + meta.track.keys.map(\.t)).map { ($0, key) } }
+        if !events.isEmpty, let track = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) {
+            // The assets are kept alive until the inserts are done: a track whose asset is gone inserts nothing.
+            var sounds: [URL: (AVURLAsset, AVAssetTrack, CMTimeRange)] = [:]
+            for url in Set(events.map(\.1)) {
+                let asset = AVURLAsset(url: url)
+                if let audio = try? await asset.loadTracks(withMediaType: .audio).first, let range = try? await audio.load(.timeRange) {
+                    sounds[url] = (asset, audio, range)
+                }
             }
+            var free = 0.0
+            for (time, url) in events.sorted(by: { $0.0 < $1.0 }) {
+                guard let (_, audio, range) = sounds[url], time >= free, time + range.duration.seconds < duration.seconds else { continue }
+                do {
+                    try track.insertTimeRange(range, of: audio, at: CMTime(seconds: time, preferredTimescale: 48_000))
+                    free = time + range.duration.seconds
+                } catch {
+                    ShotLog.write("sound insert failed: \(error)")
+                }
+            }
+            withExtendedLifetime(sounds) {}
+            effectsID = track.trackID
         }
         // Latest first, so earlier times stay where they were. A cut is removed, a speed-up squeezed.
         for speed in speeds.sorted(by: { $0.start > $1.start }) where speed.rate > 1 && speed.end > speed.start {
@@ -492,7 +531,7 @@ final class RecPlan: @unchecked Sendable {
                 composition.scaleTimeRange(range, toDuration: CMTime(seconds: range.duration.seconds / speed.rate, preferredTimescale: 6000))
             }
         }
-        return Built(asset: composition, screen: screen.trackID, camera: cameraID)
+        return Built(asset: composition, screen: screen.trackID, camera: cameraID, sound: soundID, mic: micID, effects: effectsID)
     }
 
     /// A video composition that draws every frame through this plan, 60 a second (also while the screen was still).

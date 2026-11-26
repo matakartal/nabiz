@@ -50,15 +50,25 @@ enum Entry {
                     try await RecRecorder.shared.start(screen: screen, rect: CGRect(x: 80, y: 80, width: 640, height: 400), sound: true, microphone: false)
                 } catch { print("start failed: \(error)"); exit(1) }
                 try? await Task.sleep(for: .seconds(3))
-                guard let meta = await RecRecorder.shared.stop() else { print("nothing recorded"); exit(1) }
+                guard var meta = await RecRecorder.shared.stop() else { print("nothing recorded"); exit(1) }
                 print("recorded \(String(format: "%.2f", meta.duration)) s, \(meta.width)×\(meta.height), \(meta.track.moves.count) moves, \(meta.cursors.count) cursor shapes")
                 let video = AVURLAsset(url: RecStore.video(for: meta.id))
                 let tracks = (try? await video.load(.tracks)) ?? []
                 print("source tracks: \(tracks.map(\.mediaType.rawValue))")
-                // Exercise the speed-ups and a fixed shape too.
+                // Exercise the speed-ups, a fixed shape and the added sounds too (made-up clicks and keys).
+                meta.track.clicks = [RecTrack.Point(t: 0.6, x: 10, y: 10), RecTrack.Point(t: 2.4, x: 10, y: 10)]
+                meta.track.typing = [1.4, 1.6, 1.8]
                 var edit = meta.edit
+                edit.style.clickSound = true
+                edit.style.keySound = true
                 edit.speeds = [RecSpeed(start: 0.5, end: 2.5, rate: 2)]
                 edit.style.aspect = "16:9"
+                if let built = await RecPlan.build(meta: meta, speeds: [], clickSound: true, keySound: true) {
+                    for track in built.asset.tracks(withMediaType: .audio) {
+                        let segments = track.segments.filter { !$0.isEmpty }.map { String(format: "%.2f", $0.timeMapping.target.start.seconds) }
+                        print("audio track \(track.trackID)\(track.trackID == built.effects ? " (effects)" : ""): \(segments.count) segments \(segments.prefix(6))")
+                    }
+                }
                 for kind in [RecExport.Kind.hd, .gif] {
                     let out = folder.appendingPathComponent("test.\(kind == .gif ? "gif" : "mp4")")
                     try? FileManager.default.removeItem(at: out)
@@ -69,6 +79,9 @@ enum Entry {
                         let seconds = (try? await asset.load(.duration).seconds) ?? 0
                         let natural = (try? await asset.loadTracks(withMediaType: .video).first?.load(.naturalSize)) ?? .zero
                         print("mp4: \(String(format: "%.2f", seconds)) s, \(Int(natural.width))×\(Int(natural.height)), \(size / 1024) KB")
+                        // Loudness in 50 ms steps: the clicks and keys should stand out.
+                        let levels = RecWaveform.read(out, bins: Int(seconds * 20))
+                        print("loudness: " + levels.map { $0 > 0.5 ? "█" : $0 > 0.15 ? "▄" : "·" }.joined())
                     } else {
                         print("\(kind.rawValue): \(url == nil ? "FAILED" : "\(size / 1024) KB")")
                     }
