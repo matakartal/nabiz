@@ -515,7 +515,7 @@ private struct GeneralPage: View {
                     Text(verbatim: "Türkçe").tag("tr")
                     Text(verbatim: "English").tag("en")
                 }
-                Toggle(L("Girişte aç", "Open at login"), isOn: Binding(get: { login }, set: setLogin))
+                Toggle(L("Girişte aç", "Open at login"), isOn: Binding(get: { login }, set: { setLogin($0) }))
                 Toggle(L("Dock'ta göster", "Show in Dock"), isOn: $dock)
             } footer: {
                 Footnote(L("Dock'ta gösterince Nabız ⌘⇥ listesinde ve menü çubuğunda da kendi menüsüyle çıkar. Dock simgesine tıklamak paneli açar, sağ tıklamak kısayolları gösterir.",

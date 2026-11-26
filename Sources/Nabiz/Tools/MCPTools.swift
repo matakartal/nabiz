@@ -126,7 +126,8 @@ enum MCPTools {
                     return item
                 }]
                 if let port {
-                    result["first_free_port"] = await Task.detached(priority: .userInitiated) { Ports.firstFree(from: port).map(Int.init) }.value ?? NSNull()
+                    let free: Int? = await Task.detached(priority: .userInitiated) { Ports.firstFree(from: port).map(Int.init) }.value
+                    result["first_free_port"] = free ?? NSNull()
                 }
                 return json(result)
             },
