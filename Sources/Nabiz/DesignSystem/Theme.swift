@@ -240,6 +240,8 @@ struct MenuMaterial: NSViewRepresentable {
         view.material = .menu
         view.blendingMode = blending
         view.state = .active
+        // `--snapshot … --clear`: no material, so a picture can lay its own frosted glass under the content.
+        view.isHidden = Snapshot.clear
         return view
     }
 

@@ -551,7 +551,10 @@ final class StatusPanel {
 @MainActor
 enum Snapshot {
     static var shotDoc: ShotDocument?
+    /// `--clear`: windows and panels drawn without their material or fill (for README pictures over a wallpaper).
+    nonisolated(unsafe) static var clear = false
     static func render(to path: String, dark: Bool, settings: Bool) async -> Bool {
+        clear = CommandLine.arguments.contains("--clear")
         let monitor = Monitor(autostart: false)
         RateStore.shared.refreshIfNeeded()
         MarketStore.shared.refreshWatched(maxAge: 0)
@@ -747,12 +750,13 @@ enum Snapshot {
             return (try? data.write(to: URL(fileURLWithPath: path))) != nil
         }
         let host = NSHostingView(rootView: root
-            .background(settings ? Color.clear : Theme.surfaceRaised)
+            .background(settings || clear ? Color.clear : Theme.surfaceRaised)
             .clipShape(RoundedRectangle(cornerRadius: settings ? 0 : Theme.radius, style: .continuous))
             .environment(\.colorScheme, dark ? .dark : .light))
         host.appearance = appearance
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 900), styleMask: [.borderless], backing: .buffered, defer: false)
         window.appearance = appearance
+        if clear { window.isOpaque = false; window.backgroundColor = .clear }
         window.contentView = host
         try? await Task.sleep(for: .milliseconds(300))
         let size = host.fittingSize
