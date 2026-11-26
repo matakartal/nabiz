@@ -7,9 +7,10 @@
 **Your Mac's pulse in the menu bar — and the tools you reach for all day.**
 
 A small, native menu bar app for macOS — free to use, with its source open to read: a system monitor with one-tap fixes, AI chat with your own
-subscriptions, a launcher, screenshots and Screen Studio–style recordings, and tools made for developers.
+subscriptions or Apple's free on-device model, a launcher, screenshots and Screen Studio–style recordings, the weather,
+and tools made for developers.
 
-<a href="../../releases/latest"><img src="https://img.shields.io/badge/Download-Nab%C4%B1z%201.9.0-1DB954?style=for-the-badge&logo=apple&logoColor=white" alt="Download Nabız"></a>
+<a href="../../releases/latest"><img src="https://img.shields.io/badge/Download-Nab%C4%B1z%201.10.0-1DB954?style=for-the-badge&logo=apple&logoColor=white" alt="Download Nabız"></a>
 
 <img src="https://img.shields.io/badge/macOS-14%2B-111?logo=apple&logoColor=white" alt="macOS 14+">
 <img src="https://img.shields.io/badge/Apple%20silicon%20%2B%20Intel-universal-111" alt="Universal">
@@ -33,7 +34,7 @@ subscriptions, a launcher, screenshots and Screen Studio–style recordings, and
 <tr>
 <td width="25%" valign="top"><b>Native and light</b><br>SwiftUI + AppKit, the system's own menu material and grid. Idle at 0–1% CPU.</td>
 <td width="25%" valign="top"><b>Fixes, not just numbers</b><br>When memory runs out it says why and offers the one step that frees the most.</td>
-<td width="25%" valign="top"><b>Your AI, your plans</b><br>Claude, Codex, Grok and Gemini through their own CLIs, or Apple's free on-device model.</td>
+<td width="25%" valign="top"><b>AI that can stay on your Mac</b><br>Apple's on-device model is free, private and works offline — or bring Claude, Codex, Grok or Gemini.</td>
 <td width="25%" valign="top"><b>Private and readable</b><br>No analytics, no account. The source is public, so you can see exactly what it does.</td>
 </tr>
 </table>
@@ -52,6 +53,8 @@ subscriptions, a launcher, screenshots and Screen Studio–style recordings, and
 - **Live meters** with a two-minute graph; memory pressure, swap, battery health, heat and security.
 - **Suggestions with one-tap fixes:** shut down idle simulators, quit the biggest app, push forgotten commits, clear
   gigabytes of developer leftovers.
+- **Weather** for your city — now, rain on the way, sunrise or sunset and the coming days — with no location
+  permission; the temperature can sit in the menu bar too.
 - **Top apps**, a week of **history**, **external display brightness**, **calendar** with one-click join,
   **Hyperliquid markets** and **exchange rates**.
 - Sections fold to a one-line summary; hide crowded menu bar icons; optionally show in the Dock.
@@ -64,10 +67,12 @@ subscriptions, a launcher, screenshots and Screen Studio–style recordings, and
 <tr>
 <td valign="top">
 
-### AI chat with your own subscriptions
+### AI chat — on your Mac or on your own subscriptions
 
-- **⌃⌥I** opens a chat window like the providers' own apps: Claude, Codex, Grok, Gemini or Apple's on-device model,
-  each with its real models and thinking levels.
+- **Apple's on-device model** is the default: free, no account, nothing leaves the Mac, and it works offline
+  (Apple Intelligence, macOS 26). It also names your chats and suggests your next message.
+- **⌃⌥I** opens a chat window like the providers' own apps. Switch to Claude, Codex, Grok or Gemini through the
+  CLIs you already use — each with its real models and thinking levels, on your own plan.
 - **Web search** with sources for Claude, Codex and Grok — and no other tools, no files, no commands.
 - Pinned chats, folders, search (⌘K), images and PDFs, side chats (⌥⌘S), quoting, branching, a queue while it
   writes, "Summarize and continue", and a ring that shows how full the chat is.
@@ -177,6 +182,7 @@ Everything about your Mac is measured locally. Nabız has no analytics and no ac
 | --- | --- | --- |
 | Exchange rates | [frankfurter.dev](https://frankfurter.dev) (ECB daily rates) | When rates are shown |
 | Market prices | `api.hyperliquid.xyz` | When markets are shown or alerts are set |
+| Weather | `open-meteo.com` — only the chosen city's coordinates | When the weather is shown |
 | Updates | GitHub releases | Periodically |
 | AI limits | Each provider's own usage endpoint, with the sign-in its CLI already keeps | Only for providers you turn on |
 | AI chat | The provider you pick, through its own CLI | When you chat; Apple's on-device model never leaves the Mac |

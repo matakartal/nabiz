@@ -1,7 +1,24 @@
 # Changelog
 
-## Unreleased
+## 1.10.0
 
+- **Weather** (Settings → Weather): your city's weather in the panel — now with how it feels, rain on the way, the
+  next sunrise or sunset and the coming four days — with no location permission (the city comes from your time zone
+  until you pick another; only its coordinates go to Open-Meteo). The temperature can sit in the menu bar, `hava` /
+  `weather` answers in the launcher, and every row opens the Weather app. Celsius unless your Mac says otherwise.
+- Sections added in a new version now appear in their natural place in the panel, even if you reordered it.
+- **Safer developer clean-up:** build folders inside projects lose only their Build, Logs and cache folders, never
+  the folder itself; nothing is cleaned while Xcode or a build runs; worktrees are only agents' ones, keep any
+  ignored file that doesn't rebuild itself (.env, a local database), and are checked again right before removal, as
+  are merged branches; node_modules stay for projects with uncommitted changes or a running server; Docker volumes are
+  listed and removed by name; unavailable simulators are no longer removed unattended. Anything that changed since the
+  scan is left alone, and the message says so.
+- **MCP and AI hardening:** a bad `recording_list` request can no longer crash Nabız; exports go only into Desktop,
+  Movies, Downloads or Documents and never replace a file; recordings can't be pointed at an image elsewhere on disk;
+  turning MCP off and on quickly keeps its socket. Codex runs without its browser, computer-use, plugins and
+  sub-agents; every AI is told that pasted or attached text is material, not instructions; Grok's prompt file is
+  private and swept after a crash; a stuck CLI is stopped for sure; Gemini's Turkish letters no longer break across
+  reads.
 - **License:** Nabız is now source-available, not open source. The app stays free to use; the code may be read
   but not copied, reused, built or redistributed without written permission (see LICENSE).
 

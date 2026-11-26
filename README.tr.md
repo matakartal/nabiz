@@ -7,9 +7,10 @@
 **Mac'inin nabzı menü çubuğunda — gün boyu elinin altında olan araçlarla.**
 
 macOS için küçük, yerel ve ücretsiz bir menü çubuğu uygulaması; kaynak kodu okunmaya açık: tek tuşla çözüm sunan sistem izleyici, kendi
-aboneliklerinle AI sohbeti, başlatıcı, ekran görüntüsü ve ekran kaydı, geliştirici araçları.
+aboneliklerinle ya da Apple'ın ücretsiz cihaz içi modeliyle AI sohbeti, başlatıcı, ekran görüntüsü ve ekran kaydı, hava
+durumu, geliştirici araçları.
 
-<a href="../../releases/latest"><img src="https://img.shields.io/badge/%C4%B0ndir-Nab%C4%B1z%201.9.0-1DB954?style=for-the-badge&logo=apple&logoColor=white" alt="Nabız'ı indir"></a>
+<a href="../../releases/latest"><img src="https://img.shields.io/badge/%C4%B0ndir-Nab%C4%B1z%201.10.0-1DB954?style=for-the-badge&logo=apple&logoColor=white" alt="Nabız'ı indir"></a>
 
 [English](README.md)
 
@@ -24,7 +25,11 @@ aboneliklerinle AI sohbeti, başlatıcı, ekran görüntüsü ve ekran kaydı, g
 - **Panel:** menü çubuğunda CPU, RAM, GPU, ağ, disk, pil, AI limiti, piyasa ya da döviz. Canlı grafikler. Bellek
   dolunca neyin doldurduğunu söyler ve en çok yer açan adımı tek tuşla yapar. Geçmiş, harici ekran parlaklığı,
   takvim, Hyperliquid piyasaları ve döviz kurları da burada. İstersen Dock'ta da görünür.
-- **AI sohbet (⌃⌥I):** Claude, Codex, Grok, Gemini ya da Apple'ın ücretsiz cihaz içi modeli. Claude, Codex ve Grok
+- **Hava durumu:** şehrinde şu an, yaklaşan yağmur, gün doğumu/batımı ve önümüzdeki günler. Konum izni istemez;
+  sıcaklık istersen menü çubuğunda da durur.
+- **Cihaz içi AI:** varsayılan olarak Apple'ın modeli çalışır: ücretsiz, hesap istemez, hiçbir şey Mac'ten çıkmaz,
+  internetsiz de çalışır (Apple Intelligence, macOS 26). Sohbetlere ad verir ve sıradaki mesajını önerir.
+- **AI sohbet (⌃⌥I):** istersen Claude, Codex, Grok ya da Gemini'ye kendi aboneliğinle geç. Claude, Codex ve Grok
   gerekince web'de arar ve kaynak gösterir. Sabitlenmiş sohbetler, klasörler, arama (⌘K), görsel ve PDF, yan sohbet,
   alıntı, dallanma. Sohbetler şifreli saklanır. Hızlı soru (⌃⌥A), dikte (⌃⌥D) ve AI limitleri.
 - **Ekran görüntüsü (⌃⌥S):** ok, kutu, yazı, numara, bulanıklaştırma, kırpma ve renkli çerçeve.
@@ -55,7 +60,7 @@ macOS 14 veya üstü gerekir; Apple Silicon ve Intel'de çalışır.
 ## Gizlilik
 
 Mac'inle ilgili her şey Mac'in içinde ölçülür; analitik ve hesap yoktur. İnternete yalnızca şunlar için çıkar:
-döviz kurları, Hyperliquid fiyatları, güncelleme kontrolü, açtığın AI sağlayıcılarının kendi sunucuları ve senin
+döviz kurları, Hyperliquid fiyatları, hava durumu (yalnızca şehrin koordinatları), güncelleme kontrolü, açtığın AI sağlayıcılarının kendi sunucuları ve senin
 istediğin işler (web araması, video indirme, hız testi). Apple'ın cihaz içi modeli Mac'ten hiç çıkmaz. Pano geçmişi
 ve AI sohbetleri diskte şifrelidir.
 
