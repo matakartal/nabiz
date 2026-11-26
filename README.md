@@ -4,7 +4,7 @@
 
 <p align="center">Your Mac's pulse in the menu bar. A small, native, open-source system monitor for macOS, with the tools you reach for every day: a launcher, AI chat with your own subscriptions, screenshots and screen recordings, clipboard history, notes and developer tools.</p>
 
-<p align="center"><img src="docs/menubar.png" width="131" alt="Nabız in the menu bar: CPU, RAM and Claude limit, two lines"></p>
+<p align="center"><img src="docs/menubar.png" width="166" alt="Nabız in the menu bar: CPU, RAM, Claude limit and BTC price, two lines"></p>
 
 <p align="center">
   <img src="docs/panel.png" width="320" alt="The panel: meters, system, markets and exchange rates">
