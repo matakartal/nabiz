@@ -141,6 +141,8 @@ final class RecRecorder {
     private var area = CGRect.zero
     private var scale: CGFloat = 2
     private var size = CGSize.zero
+    /// Recording one window (its corners are transparent).
+    private var isWindow = false
     private var timer: Timer?
     private var monitors: [Any] = []
     /// Pointer samples and clicks in host-clock seconds, converted when the recording ends.
@@ -184,6 +186,7 @@ final class RecRecorder {
         let config = SCStreamConfiguration()
         config.width = width
         config.height = height
+        isWindow = picked != nil
         if picked != nil {
             config.ignoreShadowsSingleWindow = true
             config.scalesToFit = true
@@ -279,6 +282,8 @@ final class RecRecorder {
         var meta = RecMeta(id: id, created: startedAt ?? Date(), duration: duration, width: Int(size.width), height: Int(size.height),
                            scale: scale, track: track, edit: edit, cursors: cursors)
         meta.cameraOffset = cameraStart.map { $0 - first }
+        // macOS window corners are about 16 pt; a little more covers the antialiased edge.
+        if isWindow { meta.windowCorner = 17 * scale }
         RecStore.save(meta)
         return meta
     }
@@ -300,6 +305,11 @@ final class RecRecorder {
             MainActor.assumeIsolated { RecRecorder.shared.key(code, flags, characters, repeated: repeated) }
         }
         if let global = NSEvent.addGlobalMonitorForEvents(matching: .keyDown, handler: key) { monitors.append(global) }
+        // A global monitor never sees Nabız's own windows (Settings, the panel): those come through a local one.
+        if let local = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { event in click(event); return event }) {
+            monitors.append(local)
+        }
+        if let local = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { event in key(event); return event }) { monitors.append(local) }
         sample()
     }
 

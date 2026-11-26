@@ -117,7 +117,7 @@ final class RecPlan: @unchecked Sendable {
             default:
                 break
             }
-            let radius = CGFloat(style.radius) * source.width * k
+            let radius = max(CGFloat(style.radius) * source.width, CGFloat(meta.windowCorner ?? 0)) * k
             if style.shadow {
                 let shape = CIFilter.roundedRectangleGenerator()
                 shape.extent = content.offsetBy(dx: 0, dy: -source.width * k * 0.008)

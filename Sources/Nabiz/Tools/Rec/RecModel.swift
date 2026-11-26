@@ -77,6 +77,9 @@ struct RecMeta: Codable, Sendable {
     var cursors: [RecCursor] = []
     /// The camera's own file starts this many seconds after the screen's first frame (nil: no camera).
     var cameraOffset: Double?
+    /// A recorded window's own corner radius in video pixels: the frame's corners never round less than this, or
+    /// the window's transparent corners would show black.
+    var windowCorner: Double?
 }
 
 /// The look of a recording: frame, pointer, zoom. Saved with it and remembered for the next one.
