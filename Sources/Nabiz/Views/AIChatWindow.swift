@@ -1315,6 +1315,11 @@ struct AITranscriptView: View {
     var compact = false
     @State private var atBottom = true
     @State private var viewport: CGFloat = 0
+    /// The question you're reading now (the last one whose top has scrolled past the upper third).
+    @State private var current: UUID?
+
+    private var questions: [AIMessage] { conversation.messages.filter { $0.role == .user } }
+    private var showsNavigator: Bool { !compact && questions.count > 1 }
 
     var body: some View {
         let size: CGFloat = compact ? 13 : 15
@@ -1324,6 +1329,11 @@ struct AITranscriptView: View {
                     ForEach(conversation.messages) { message in
                         if message.role == .user {
                             UserBubble(message: message, size: size, edit: state.map { state in { state.edit(message) } })
+                                .background(GeometryReader { geometry in
+                                    Color.clear.preference(key: MessageOffsets.self,
+                                                           value: [message.id: geometry.frame(in: .named("transcript")).minY])
+                                })
+                                .id(message.id)
                                 .transition(.opacity.combined(with: .move(edge: .bottom)))
                         } else {
                             AIAnswer(message: message, conversation: conversation, size: size, compact: compact,
@@ -1337,13 +1347,15 @@ struct AITranscriptView: View {
                         })
                 }
                 .frame(maxWidth: compact ? .infinity : 740, alignment: .leading)
-                .padding(.horizontal, compact ? Theme.Spacing.l : Theme.Spacing.xl)
+                // Room for the navigator on the left (and the same on the right, so the column stays centred).
+                .padding(.horizontal, compact ? Theme.Spacing.l : (showsNavigator ? 48 : Theme.Spacing.xl))
                 .padding(.vertical, compact ? Theme.Spacing.m : Theme.Spacing.l)
                 .frame(maxWidth: .infinity)
                 .animation(.easeOut(duration: 0.25), value: conversation.messages.count)
             }
             .coordinateSpace(name: "transcript")
-            .scrollIndicators(.automatic)
+            // The navigator replaces the scroll bar in the window; the launcher keeps the system one.
+            .scrollIndicators(compact ? .automatic : .never)
             .background(GeometryReader { geometry in
                 Color.clear
                     .onAppear { viewport = geometry.size.height }
@@ -1353,6 +1365,16 @@ struct AITranscriptView: View {
                 let bottom = offset <= viewport + 60
                 if bottom != atBottom { atBottom = bottom }
             }
+            .onPreferenceChange(MessageOffsets.self) { offsets in
+                guard showsNavigator else { return }
+                var pick = questions.first?.id
+                if atBottom {
+                    pick = questions.last?.id
+                } else {
+                    for question in questions { if let top = offsets[question.id], top <= viewport * 0.33 { pick = question.id } }
+                }
+                if pick != current { current = pick }
+            }
             .onAppear { proxy.scrollTo("bottom", anchor: .bottom) }
             .onChange(of: conversation.id) { _, _ in proxy.scrollTo("bottom", anchor: .bottom) }
             .onChange(of: conversation.messages.count) { _, _ in
@@ -1361,6 +1383,15 @@ struct AITranscriptView: View {
             .onChange(of: conversation.messages.last?.text.count) { _, _ in
                 // Follow the answer only while you're at the bottom; scrolling up to read stops it.
                 if conversation.isRunning && atBottom { proxy.scrollTo("bottom", anchor: .bottom) }
+            }
+            .overlay(alignment: .leading) {
+                if showsNavigator {
+                    ChatNavigator(questions: questions, current: current ?? questions.last?.id, height: viewport) { id in
+                        jump(to: id, proxy)
+                    }
+                    .padding(.leading, Theme.Spacing.m)
+                    .transition(.opacity)
+                }
             }
             .overlay(alignment: .bottom) {
                 if !atBottom {
@@ -1379,8 +1410,146 @@ struct AITranscriptView: View {
                     .help(L("En alta in", "Jump to the latest"))
                 }
             }
+            .background {
+                if showsNavigator {
+                    // ⌥⌘↑ / ⌥⌘↓: previous / next question (⌘↑ alone moves the caret in the composer).
+                    Group {
+                        Button("") { step(-1, proxy) }.keyboardShortcut(.upArrow, modifiers: [.command, .option])
+                        Button("") { step(1, proxy) }.keyboardShortcut(.downArrow, modifiers: [.command, .option])
+                    }
+                    .hidden()
+                }
+            }
             .animation(.easeOut(duration: 0.18), value: atBottom)
         }
+    }
+
+    private func jump(to id: UUID, _ proxy: ScrollViewProxy) {
+        current = id
+        withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo(id, anchor: UnitPoint(x: 0.5, y: 0.03)) }
+    }
+
+    private func step(_ by: Int, _ proxy: ScrollViewProxy) {
+        let list = questions
+        guard let index = list.firstIndex(where: { $0.id == (current ?? list.last?.id) }) else { return }
+        let next = index + by
+        if next >= list.count {
+            withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo("bottom", anchor: .bottom) }
+        } else if next >= 0 {
+            jump(to: list[next].id, proxy)
+        }
+    }
+}
+
+private struct MessageOffsets: PreferenceKey {
+    static let defaultValue: [UUID: CGFloat] = [:]
+    static func reduce(value: inout [UUID: CGFloat], nextValue: () -> [UUID: CGFloat]) {
+        value.merge(nextValue()) { $1 }
+    }
+}
+
+/// Quick travel through a long chat, in place of the scroll bar: a short line per question, the one you're reading
+/// longer and darker. Hover for the questions themselves; click one to jump to it.
+private struct ChatNavigator: View {
+    let questions: [AIMessage]
+    let current: UUID?
+    let height: CGFloat
+    let jump: (UUID) -> Void
+    @State private var open = false
+    @State private var hovered: UUID?
+
+    /// Room per line: roomy for a few questions, tighter for many, never taller than about half the view.
+    private var step: CGFloat {
+        guard !questions.isEmpty else { return 8 }
+        return max(3, min(8, (height * 0.5) / CGFloat(questions.count)))
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: Theme.Spacing.xs) {
+            lines
+            if open {
+                list.transition(.opacity.combined(with: .offset(x: -6)))
+            }
+        }
+        .onHover { over in withAnimation(.easeOut(duration: 0.15)) { open = over } }
+    }
+
+    private var lines: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(questions) { question in
+                let active = question.id == current
+                let lit = active || hovered == question.id
+                Button { jump(question.id) } label: {
+                    Capsule()
+                        .fill(lit ? Theme.text : Theme.textMuted.opacity(0.45))
+                        .frame(width: active ? 14 : 8, height: 2)
+                        .frame(width: 18, height: step, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .onHover { over in hovered = over ? question.id : (hovered == question.id ? nil : hovered) }
+            }
+        }
+        .padding(.vertical, Theme.Spacing.s)
+        .padding(.horizontal, Theme.Spacing.xs)
+        .contentShape(Rectangle())
+        .animation(.easeOut(duration: 0.15), value: current)
+    }
+
+    private var list: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 1) {
+                    ForEach(questions) { question in
+                        NavigatorRow(title: Self.title(of: question), active: question.id == current,
+                                     hovered: hovered == question.id) { jump(question.id) }
+                            .onHover { over in hovered = over ? question.id : (hovered == question.id ? nil : hovered) }
+                            .id(question.id)
+                    }
+                }
+                .padding(Theme.Spacing.xs)
+            }
+            .scrollIndicators(.never)
+            .frame(width: 260)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxHeight: max(120, height * 0.7))
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay { RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Theme.hairline) }
+            .shadow(color: .black.opacity(0.14), radius: 12, y: 4)
+            .onAppear { if let current { proxy.scrollTo(current, anchor: .center) } }
+        }
+    }
+
+    /// A question's first line; an attachment's name when it was only an attachment.
+    static func title(of message: AIMessage) -> String {
+        let line = message.text.split(whereSeparator: \.isNewline).first.map(String.init)?
+            .trimmingCharacters(in: .whitespaces) ?? ""
+        if !line.isEmpty { return line }
+        return message.attachmentName ?? L("Ek", "Attachment")
+    }
+}
+
+private struct NavigatorRow: View {
+    let title: String
+    let active: Bool
+    let hovered: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(verbatim: title)
+                .font(.system(size: 12.5, weight: active ? .medium : .regular))
+                .foregroundStyle(active || hovered ? Theme.text : Theme.textMuted)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, Theme.Spacing.s)
+                .frame(height: 26)
+                .background(hovered ? Theme.hover : (active ? Theme.hover.opacity(0.6) : .clear),
+                            in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 

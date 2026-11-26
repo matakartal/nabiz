@@ -149,41 +149,71 @@ final class RecPickerView: NSView {
 
     func update(animated: Bool) {
         let rect = hole()
+        let mode = RecPicker.mode
         // Nothing moved (the pointer stayed over the same window): leave the running glide alone.
-        if rect == lastHole, lastMode == RecPicker.mode, animated { return }
+        if rect == lastHole, lastMode == mode, animated { return }
+        let modeChanged = lastMode != nil && lastMode != mode
+        let glide = animated && !modeChanged && mode == .window && rect != nil && lastHole != nil
+            && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         lastHole = rect
-        // Always "screen + one rect" (an empty one in the middle when there's no hole), so the paths animate.
+        lastMode = mode
+
+        // Always "screen + one rect" for the shade, so a glide between two windows can animate its path.
         let gap = rect ?? NSRect(x: bounds.midX, y: bounds.midY, width: 0, height: 0)
         let shadePath = CGMutablePath()
         shadePath.addRect(bounds)
         shadePath.addRect(gap)
-        let mode = RecPicker.mode
-        let ring = mode == .area ? gap.insetBy(dx: -0.5, dy: -0.5) : gap.insetBy(dx: 2, dy: 2)
-        let outlinePath = CGPath(roundedRect: ring, cornerWidth: mode == .window ? 8 : 0, cornerHeight: mode == .window ? 8 : 0, transform: nil)
-        let modeChanged = lastMode != mode
-        lastMode = mode
         CATransaction.begin()
-        if animated, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-            CATransaction.setAnimationDuration(modeChanged ? 0.24 : 0.16)
+        if modeChanged {
+            // A new mode fades in; shapes never bend from one kind into another.
+            let fade = CATransition()
+            fade.type = .fade
+            fade.duration = 0.18
+            fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            shade.add(fade, forKey: "fade")
+            outline.add(fade, forKey: "fade")
+            CATransaction.setDisableActions(true)
+        } else if glide {
+            CATransaction.setAnimationDuration(0.18)
             CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.3, 1))
-            for (layer, path) in [(shade, shadePath as CGPath), (outline, outlinePath)] {
-                let move = CABasicAnimation(keyPath: "path")
-                move.fromValue = layer.presentation()?.path ?? layer.path
-                move.toValue = path
-                layer.add(move, forKey: "path")
-            }
         } else {
             CATransaction.setDisableActions(true)
         }
         shade.frame = bounds
         outline.frame = bounds
+        let shadeAlpha: CGFloat = switch mode {
+        case .screen: rect == nil ? 0.32 : 0
+        case .window: 0.4
+        case .area: 0.42
+        }
+        shade.fillColor = CGColor(gray: 0, alpha: shadeAlpha)
+        if let rect {
+            let ring: CGRect
+            let radius: CGFloat
+            switch mode {
+            case .screen: ring = rect.insetBy(dx: 1.5, dy: 1.5); radius = 0
+            case .window: ring = rect.insetBy(dx: 1.5, dy: 1.5); radius = min(10, ring.width / 2, ring.height / 2)
+            case .area: ring = rect.insetBy(dx: -0.5, dy: -0.5); radius = 0
+            }
+            let outlinePath = CGPath(roundedRect: ring, cornerWidth: radius, cornerHeight: radius, transform: nil)
+            if glide {
+                for (layer, path) in [(shade, shadePath as CGPath), (outline, outlinePath)] {
+                    let move = CABasicAnimation(keyPath: "path")
+                    move.fromValue = layer.presentation()?.path ?? layer.path
+                    move.toValue = path
+                    layer.add(move, forKey: "path")
+                }
+            }
+            outline.path = outlinePath
+            outline.opacity = 1
+        } else {
+            // Nothing to outline: keep the old shape and let it fade, never squeeze it to a point.
+            outline.opacity = 0
+        }
         shade.path = shadePath
-        outline.path = outlinePath
-        shade.fillColor = CGColor(gray: 0, alpha: mode == .screen ? (rect == nil ? 0.3 : 0) : 0.38)
         outline.strokeColor = mode == .area ? CGColor(gray: 1, alpha: 0.95) : accent.cgColor
-        outline.lineWidth = mode == .area ? 1 : (mode == .screen ? 6 : 4)
+        outline.lineWidth = mode == .area ? 1 : 3
         outline.lineDashPattern = mode == .area ? [6, 4] : nil
-        outline.opacity = rect == nil ? 0 : 1
         CATransaction.commit()
         needsDisplay = true
     }
