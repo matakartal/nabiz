@@ -4,7 +4,7 @@ import Security
 
 /// The one-tap tools in the panel's grid. Each does its job directly; nothing sends the user to another app to finish.
 enum ToolKind: String, CaseIterable, Identifiable {
-    case calculator, clipboard, note, pomodoro, focus, keepAwake, timer, color, screenshot, readText, download, mic
+    case calculator, clipboard, note, pomodoro, focus, keepAwake, timer, sleepTimer, color, screenshot, readText, download, mic
     case displayOff, darkMode, speedTest, ip, password, uuid, eject, xcode, rust, hiddenFiles, desktop, clearClipboard, activity
 
     var id: String { rawValue }
@@ -20,6 +20,7 @@ enum ToolKind: String, CaseIterable, Identifiable {
         case .readText: L("Metin oku", "Read text")
         case .download: L("Video indir", "Download")
         case .mic: L("Mikrofon", "Mic")
+        case .sleepTimer: L("Uyku", "Sleep timer")
         case .keepAwake: L("Uyanık kal", "Keep awake")
         case .timer: L("Zamanlayıcı", "Timer")
         case .color: L("Renk al", "Pick color")
@@ -50,6 +51,7 @@ enum ToolKind: String, CaseIterable, Identifiable {
         case .readText: "text.viewfinder"
         case .download: "arrow.down.circle"
         case .mic: "mic.slash"
+        case .sleepTimer: "powersleep"
         case .keepAwake: "cup.and.saucer"
         case .timer: "timer"
         case .color: "eyedropper"
@@ -84,6 +86,7 @@ enum ToolKind: String, CaseIterable, Identifiable {
         case .download: L("Panodaki YouTube, X, Instagram, TikTok… bağlantısından video ya da ses indirir.",
                           "Saves the video or sound from a YouTube, X, Instagram, TikTok… link you copied.")
         case .mic: L("Mikrofonu kapatır ya da açar.", "Mutes or unmutes the microphone.")
+        case .sleepTimer: L("Mac'i 15–90 dakika sonra uyutur; film ya da müzikle uyurken.", "Puts the Mac to sleep in 15–90 minutes, for falling asleep to a film or music.")
         case .note: L("Her uygulamanın üstünde duran notlar; listeler ve yapılacaklar (⌃⌥M).", "Notes that float over every app, with lists and checklists (⌃⌥M).")
         case .keepAwake: L("Mac'in ve ekranın uyumasını bir süre engeller.", "Stops the Mac and display from sleeping for a while.")
         case .timer: L("Geri sayım; bitince ses ve bildirim. Kalan süre menü çubuğunda görünür.",
@@ -223,6 +226,8 @@ final class Toolbox {
             let pomodoro = Pomodoro.shared
             if let left = pomodoro.remainingText { return (pomodoro.isRunning ? "" : "⏸ ") + left }
             return pomodoro.today.count > 0 ? "\(pomodoro.today.count)" : nil
+        case .sleepTimer:
+            return SleepTimer.shared.at.map { $0.formatted(date: .omitted, time: .shortened) }
         case .focus:
             return FocusMode.shared.isOn ? (FocusMode.shared.remainingText ?? L("açık", "on")) : nil
         case .download:
@@ -256,6 +261,7 @@ final class Toolbox {
         case .pomodoro: Pomodoro.shared.isActive
         case .focus: FocusMode.shared.isOn
         case .mic: micMuted
+        case .sleepTimer: SleepTimer.shared.at != nil
         case .download: Downloader.shared.running != nil
         default: false
         }
@@ -289,7 +295,7 @@ final class Toolbox {
         case .note:
             actions.close()
             NoteWindow.toggle()
-        case .keepAwake, .timer, .pomodoro, .focus, .screenshot:
+        case .keepAwake, .timer, .pomodoro, .focus, .screenshot, .sleepTimer:
             break // the grid opens their chips
         case .readText:
             Capture.run(.text, actions: actions)

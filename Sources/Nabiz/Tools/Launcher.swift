@@ -566,7 +566,7 @@ final class LauncherModel {
         }
         // These already exist as commands above (or open the launcher itself).
         let skip: Set<ToolKind> = [.calculator, .keepAwake, .timer, .clipboard, .note, .displayOff, .pomodoro, .focus, .screenshot,
-                                   .readText, .download, .mic]
+                                   .readText, .download, .mic, .sleepTimer]
         for tool in ToolKind.allCases where !skip.contains(tool) {
             items.append(LauncherItem(id: "tool:\(tool.rawValue)", icon: .symbol(tool.symbol), title: tool.title, subtitle: tool.help,
                                       accessory: L("Araç", "Tool"), primaryTitle: L("Çalıştır", "Run"),

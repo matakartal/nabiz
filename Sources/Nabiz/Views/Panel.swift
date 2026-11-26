@@ -491,21 +491,36 @@ private struct ToolsSection: View {
     var body: some View {
         let hiddenSet = Set(hidden.split(separator: ",").map(String.init))
         let tools = ToolKind.allCases.filter { !hiddenSet.contains($0.rawValue) }
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Theme.Spacing.xs), count: Theme.toolColumns),
-                  spacing: Theme.Spacing.xs) {
-            ForEach(tools) { kind in
-                ToolTile(kind: kind, detail: toolbox.detail(kind), active: toolbox.isActive(kind),
-                         enabled: toolbox.isEnabled(kind), busy: toolbox.isBusy(kind)) {
-                    if [.keepAwake, .timer, .pomodoro, .focus, .screenshot].contains(kind) {
-                        chips = chips == kind ? nil : kind
-                    } else {
-                        toolbox.run(kind, actions: actions, monitor: monitor)
+        let rows = stride(from: 0, to: tools.count, by: Theme.toolColumns).map { Array(tools[$0..<min($0 + Theme.toolColumns, tools.count)]) }
+        VStack(spacing: Theme.Spacing.xs) {
+            ForEach(rows, id: \.first) { row in
+                HStack(spacing: Theme.Spacing.xs) {
+                    ForEach(row) { kind in
+                        ToolTile(kind: kind, detail: toolbox.detail(kind), active: toolbox.isActive(kind),
+                                 enabled: toolbox.isEnabled(kind), busy: toolbox.isBusy(kind)) {
+                            if Self.withChips.contains(kind) {
+                                chips = chips == kind ? nil : kind
+                            } else {
+                                toolbox.run(kind, actions: actions, monitor: monitor)
+                            }
+                        }
                     }
+                    // An odd last row keeps its tile half wide.
+                    if row.count < Theme.toolColumns { Color.clear.frame(maxWidth: .infinity, maxHeight: 1) }
+                }
+                // The choices open right under the tile that was tapped.
+                if let chips, row.contains(chips) {
+                    chipsView.padding(.horizontal, -Theme.menuInset).transition(.opacity)
                 }
             }
         }
         .padding(.horizontal, Theme.menuInset)
         .padding(.vertical, Theme.Spacing.xs)
+    }
+
+    private static let withChips: Set<ToolKind> = [.keepAwake, .timer, .pomodoro, .focus, .screenshot, .sleepTimer]
+
+    @ViewBuilder private var chipsView: some View {
         if chips == .timer {
             HStack(spacing: Theme.Spacing.xs) {
                 Text(L("Zamanlayıcı:", "Timer:")).font(Theme.small).foregroundStyle(Theme.textMuted)
@@ -547,6 +562,15 @@ private struct ToolsSection: View {
                 ForEach([CaptureMode.area, .window, .screenFile, .toolbar]) { mode in
                     Chip(mode.chip) { chips = nil; Capture.run(mode, actions: actions) }
                 }
+            }
+        }
+        if chips == .sleepTimer {
+            let sleep = SleepTimer.shared
+            ChipRow(L("Uyut:", "Sleep in:")) {
+                ForEach([15, 30, 60, 90], id: \.self) { minutes in
+                    Chip(L("\(minutes) dk", "\(minutes)m")) { sleep.start(minutes: minutes); chips = nil }
+                }
+                if sleep.at != nil { Chip(L("İptal", "Cancel")) { sleep.cancel(); chips = nil } }
             }
         }
         if chips == .keepAwake {

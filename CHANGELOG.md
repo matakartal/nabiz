@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.7.1
+
+- Tool choices (timer, keep awake, Pomodoro, focus, screenshot, sleep) open right under the tile you tapped.
+- **Sleep timer** tool: put the Mac to sleep in 15, 30, 60 or 90 minutes; the tile shows when.
+
 ## 1.7.0
 
 - **Calculator, much stronger** (in the launcher; start with `=` for the calculator alone and its history):
