@@ -231,7 +231,7 @@ crash reports stay on your Mac until you choose to send one.
 
 ## Build
 
-macOS 14 or later and Swift 6 (Xcode 16 or later).
+Xcode 27 or later (Swift 6.4) to build; the app itself runs on macOS 14 or later.
 
 ```bash
 ./build.sh            # build/Nabiz.app, universal

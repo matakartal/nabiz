@@ -53,7 +53,7 @@ screenshots in light and dark mode.
 
 ## Code
 
-- **Swift 6, SwiftUI + AppKit, macOS 14+.** No third-party dependencies: no Swift packages, no CocoaPods, no
+- **Swift 6.4 (Xcode 27+), SwiftUI + AppKit; the app runs on macOS 14+.** No third-party dependencies: no Swift packages, no CocoaPods, no
   bundled binaries. Use what macOS ships.
 - **Layout:** `Monitor/` reads the Mac, `Tools/` holds features, `Views/` the UI, `Support/` settings keys and helpers,
   `DesignSystem/Theme.swift` every colour, size and spacing. Put code where its neighbours are.
