@@ -28,6 +28,8 @@ struct RecTrack: Codable, Sendable {
     var keys: [Key] = []
     /// When ordinary keys were typed, without what they were: lets the editor speed up typing.
     var typing: [Double] = []
+    /// For each moment in `typing`: 0 a letter, 1 delete, 2 space / return / tab (for the iPhone-like key sounds).
+    var typingKinds: [Int] = []
 
     init() {}
 
@@ -43,6 +45,7 @@ struct RecTrack: Codable, Sendable {
         shapes = try c.decodeIfPresent([Shape].self, forKey: .shapes) ?? []
         keys = try c.decodeIfPresent([Key].self, forKey: .keys) ?? []
         typing = try c.decodeIfPresent([Double].self, forKey: .typing) ?? []
+        typingKinds = try c.decodeIfPresent([Int].self, forKey: .typingKinds) ?? []
     }
 }
 
@@ -93,7 +96,7 @@ struct RecStyle: Codable, Sendable, Equatable {
     /// Levels, 0…1: the Mac's sound, the microphone, and the click and key sounds.
     var soundVolume = 1.0
     var micVolume = 1.0
-    var effectsVolume = 0.6
+    var effectsVolume = 0.8
     /// The pointer fades out after 2 s without moving.
     var hideIdleCursor = true
     var motionBlur = true

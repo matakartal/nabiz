@@ -494,11 +494,33 @@ final class RecPlan: @unchecked Sendable {
                 }
             }
         }
-        // Click and key sounds on a track of their own, one after another, never overlapping.
+        // Latest first, so earlier times stay where they were. A cut is removed, a speed-up squeezed.
+        for speed in speeds.sorted(by: { $0.start > $1.start }) where speed.rate > 1 && speed.end > speed.start {
+            let range = CMTimeRange(start: CMTime(seconds: speed.start, preferredTimescale: 6000),
+                                    end: CMTime(seconds: min(speed.end, duration.seconds), preferredTimescale: 6000))
+            if speed.rate.isInfinite {
+                composition.removeTimeRange(range)
+            } else {
+                composition.scaleTimeRange(range, toDuration: CMTime(seconds: range.duration.seconds / speed.rate, preferredTimescale: 6000))
+            }
+        }
+        // Click and key sounds on a track of their own, added after the speed-ups at the moments they land in the
+        // result, so they stay crisp at normal speed even inside a faster part (and drop out with a cut).
+        let map = RecTimeMap(speeds, duration: duration.seconds)
+        let playedLength = composition.duration.seconds
         var effectsID: CMPersistentTrackID?
         var events: [(Double, URL)] = []
-        if clickSound, let click = RecClickSound.click { events += meta.track.clicks.map { ($0.t, click) } }
-        if keySound, let key = RecClickSound.key { events += (meta.track.typing + meta.track.keys.map(\.t)).map { ($0, key) } }
+        if clickSound, let click = RecClickSound.url(.click) { events += meta.track.clicks.map { ($0.t, click) } }
+        if keySound {
+            let kinds: [RecClickSound.Kind] = [.key, .delete, .modifier]
+            for (i, t) in meta.track.typing.enumerated() {
+                let kind = i < meta.track.typingKinds.count ? kinds[min(max(meta.track.typingKinds[i], 0), 2)] : .key
+                if let url = RecClickSound.url(kind) { events.append((t, url)) }
+            }
+            for key in meta.track.keys {
+                if let url = RecClickSound.url(key.text == "↩" || key.text == "⇥" ? .modifier : .key) { events.append((key.t, url)) }
+            }
+        }
         if !events.isEmpty, let track = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) {
             // The assets are kept alive until the inserts are done: a track whose asset is gone inserts nothing.
             var sounds: [URL: (AVURLAsset, AVAssetTrack, CMTimeRange)] = [:]
@@ -509,8 +531,12 @@ final class RecPlan: @unchecked Sendable {
                 }
             }
             var free = 0.0
-            for (time, url) in events.sorted(by: { $0.0 < $1.0 }) {
-                guard let (_, audio, range) = sounds[url], time >= free, time + range.duration.seconds < duration.seconds else { continue }
+            let placed = events.compactMap { time, url -> (Double, URL)? in
+                if map.speeds.contains(where: { $0.rate.isInfinite && time >= $0.start && time < $0.end }) { return nil }
+                return (map.played(time), url)
+            }
+            for (time, url) in placed.sorted(by: { $0.0 < $1.0 }) {
+                guard let (_, audio, range) = sounds[url], time >= free, time + range.duration.seconds < playedLength else { continue }
                 do {
                     try track.insertTimeRange(range, of: audio, at: CMTime(seconds: time, preferredTimescale: 48_000))
                     free = time + range.duration.seconds
@@ -520,16 +546,6 @@ final class RecPlan: @unchecked Sendable {
             }
             withExtendedLifetime(sounds) {}
             effectsID = track.trackID
-        }
-        // Latest first, so earlier times stay where they were. A cut is removed, a speed-up squeezed.
-        for speed in speeds.sorted(by: { $0.start > $1.start }) where speed.rate > 1 && speed.end > speed.start {
-            let range = CMTimeRange(start: CMTime(seconds: speed.start, preferredTimescale: 6000),
-                                    end: CMTime(seconds: min(speed.end, duration.seconds), preferredTimescale: 6000))
-            if speed.rate.isInfinite {
-                composition.removeTimeRange(range)
-            } else {
-                composition.scaleTimeRange(range, toDuration: CMTime(seconds: range.duration.seconds / speed.rate, preferredTimescale: 6000))
-            }
         }
         return Built(asset: composition, screen: screen.trackID, camera: cameraID, sound: soundID, mic: micID, effects: effectsID)
     }
@@ -613,11 +629,24 @@ final class RecCompositor: NSObject, AVVideoCompositing, @unchecked Sendable {
 
     func renderContextChanged(_ newRenderContext: AVVideoCompositionRenderContext) {}
 
+    /// The last screen frame seen: the sound can run a moment past the last video frame, and those moments show it.
+    private let lock = NSLock()
+    private var lastScreen: CVPixelBuffer?
+
     func startRequest(_ request: AVAsynchronousVideoCompositionRequest) {
         guard let instruction = request.videoCompositionInstruction as? RecInstruction,
-              let screen = request.sourceFrame(byTrackID: instruction.screen),
               let output = request.renderContext.newPixelBuffer() else {
             request.finish(with: NSError(domain: "Nabiz.Rec", code: 1))
+            return
+        }
+        let screen: CVPixelBuffer
+        if let frame = request.sourceFrame(byTrackID: instruction.screen) {
+            screen = frame
+            lock.withLock { lastScreen = frame }
+        } else if let last = lock.withLock({ lastScreen }) {
+            screen = last
+        } else {
+            request.finish(with: NSError(domain: "Nabiz.Rec", code: 2))
             return
         }
         let face = instruction.camera.flatMap { request.sourceFrame(byTrackID: $0) }.map { CIImage(cvPixelBuffer: $0) }

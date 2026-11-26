@@ -139,6 +139,7 @@ final class RecRecorder {
     private var camera: RecCamera?
     private var keys: [RecTrack.Key] = []
     private var typing: [Double] = []
+    private var typingKinds: [Int] = []
 
     private static var hostNow: Double { CMClockGetTime(CMClockGetHostTimeClock()).seconds }
 
@@ -199,7 +200,7 @@ final class RecRecorder {
         self.area = area
         self.scale = scale
         self.size = CGSize(width: width, height: height)
-        moves = []; clicks = []; shapes = []; cursors = []; cursorKeys = []; keys = []; typing = []
+        moves = []; clicks = []; shapes = []; cursors = []; cursorKeys = []; keys = []; typing = []; typingKinds = []
         try await stream.startCapture()
         if wantsCamera {
             let camera = RecCamera()
@@ -243,7 +244,9 @@ final class RecRecorder {
         var track = RecTrack(moves: moves.map(shift), clicks: clicks.map(shift).filter { $0.t >= 0 })
         track.shapes = shapes.map { RecTrack.Shape(t: max(0, $0.t - first), index: $0.index) }
         track.keys = keys.map { RecTrack.Key(t: $0.t - first, text: $0.text) }.filter { $0.t >= 0 }
-        track.typing = typing.map { $0 - first }.filter { $0 >= 0 }
+        let typed = zip(typing, typingKinds).map { ($0 - first, $1) }.filter { $0.0 >= 0 }
+        track.typing = typed.map(\.0)
+        track.typingKinds = typed.map(\.1)
         let duration = max(0.1, end.seconds - first)
         var edit = RecEdit()
         if edit.style.autoZoom {
@@ -320,6 +323,7 @@ final class RecRecorder {
             keys.append(RecTrack.Key(t: now, text: name))
         } else {
             typing.append(now)
+            typingKinds.append(RecClickSound.kind(forKeyCode: code))
         }
     }
 
