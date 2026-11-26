@@ -11,6 +11,9 @@ final class ShotSelector {
     struct Result {
         let image: CGImage
         let scale: CGFloat
+        /// The picked part, in points, top-left origin, on `screen`.
+        let rect: CGRect
+        let screen: NSScreen
     }
 
     /// One screen's frozen picture.
@@ -194,7 +197,7 @@ final class ShotSelector {
         guard pixels.width >= 1, pixels.height >= 1, let cropped = shot.image.cropping(to: pixels) else { cancel(); return }
         close()
         ShotLog.write("picked \(cropped.width)×\(cropped.height)")
-        done(Result(image: cropped, scale: shot.scale))
+        done(Result(image: cropped, scale: shot.scale, rect: rect, screen: screen))
     }
 
     func cancel() {
