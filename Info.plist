@@ -19,7 +19,7 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.8.1</string>
+	<string>1.9.0</string>
 	<key>CFBundleVersion</key>
 	<string>13</string>
 	<key>LSApplicationCategoryType</key>
@@ -36,18 +36,18 @@
 	<string>Nabız shows today's meetings in its panel and launcher, reminds you a minute before, and joins their calls with one click. Your calendar is read only on this Mac.</string>
 	<key>NSCalendarsUsageDescription</key>
 	<string>Nabız shows today's meetings in its panel and launcher, reminds you a minute before, and joins their calls with one click. Your calendar is read only on this Mac.</string>
-	<key>NSScreenCaptureUsageDescription</key>
-	<string>Nabız takes screenshots you ask for and lets you mark them up. Nothing leaves your Mac.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Nabız shows your camera in a corner of a screen recording, only when you turn it on.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Nabız listens only while you dictate, after you press its dictation shortcut, and types your words where the cursor is.</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Nabız turns your speech into text while you dictate. When macOS has your language on this Mac, it stays on this Mac.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>
 	<string>© 2026 Nabız contributors. MIT License.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Nabız listens only while you dictate, after you press its dictation shortcut, and types your words where the cursor is.</string>
+	<key>NSScreenCaptureUsageDescription</key>
+	<string>Nabız takes screenshots you ask for and lets you mark them up. Nothing leaves your Mac.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Nabız turns your speech into text while you dictate. When macOS has your language on this Mac, it stays on this Mac.</string>
 	<key>NSSupportsAutomaticTermination</key>
 	<false/>
 	<key>NSSupportsSuddenTermination</key>

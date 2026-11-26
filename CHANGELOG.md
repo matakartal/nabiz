@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.9.0
 
 - **Made for developers** (Settings → Developer):
   - **Ports:** type `:3000` (or `port 3000`) in the launcher to see who holds it — your server with its project, Docker,
