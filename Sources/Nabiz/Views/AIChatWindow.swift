@@ -1852,9 +1852,14 @@ private struct LimitBanner: View {
 /// "+": a text file, or what you copied.
 private struct AddMenu: View {
     let state: AIChatState
+    @AppStorage(Prefs.aiWebSearch) private var web = true
 
     var body: some View {
         Menu {
+            if (state.conversation?.engine ?? state.engine).searchesWeb {
+                Toggle(isOn: $web) { Label(L("Web araması", "Web search"), systemImage: "globe") }
+                Divider()
+            }
             Button(L("Dosya ekle…", "Add a file…"), systemImage: "doc.badge.plus") { pickFile() }
             Button(L("Ekran görüntüsü ekle", "Add a screenshot"), systemImage: "camera.viewfinder") { screenshot() }
             if NSPasteboard.general.availableType(from: [.fileURL]) == nil,
@@ -2510,8 +2515,11 @@ private struct AIAnswer: View {
             if !message.thinking.isEmpty {
                 ThinkingDisclosure(message: message, engine: engine, size: size)
             }
+            if message.streaming && message.searching {
+                AIThinkingLabel(engine: engine, text: L("Web'de arıyor…", "Searching the web…"), size: size)
+            }
             if message.text.isEmpty && message.streaming {
-                if message.thinking.isEmpty { AIThinkingLabel(engine: engine, size: size) }
+                if message.thinking.isEmpty && !message.searching { AIThinkingLabel(engine: engine, size: size) }
                 if !compact { AISkeleton(color: engine.brand.tint).frame(maxWidth: 480) }
             } else if !message.text.isEmpty {
                 MarkdownView(text: message.text, size: size, tint: engine.brand.multicolor ? engine.brand.colors[1] : engine.brand.tint)

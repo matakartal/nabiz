@@ -32,6 +32,8 @@ struct AIMessage: Identifiable, Codable, Equatable, Sendable {
     var streaming = false
     /// How full the chat was after this answer.
     var usage: AIUsage?
+    /// Looking things up on the web at the moment.
+    var searching = false
 }
 
 /// A chat with one AI (you can switch it midway): its messages, the answer being written, and how it was asked.
@@ -303,7 +305,8 @@ final class AIConversation: Identifiable {
                                 system: AIAssistant.system(for: engine),
                                 prompt: AIAssistant.prompt(for: promptMessages, engine: engine, preface: preface),
                                 chatID: id, latest: messages.last.map(AIAssistant.content(of:)) ?? "", answered: answered,
-                                images: engine.seesImages ? (messages.last?.images ?? []).map(AIImages.url) : [])
+                                images: engine.seesImages ? (messages.last?.images ?? []).map(AIImages.url) : [],
+                                web: Prefs.bool(Prefs.aiWebSearch) && engine.searchesWeb)
         // Claude keeps the chat itself while it has exactly what's here; otherwise a new copy starts with the whole chat.
         var sessionID: String?
         if engine == .claude && AIChatStore.nativeSessions {
@@ -338,6 +341,7 @@ final class AIConversation: Identifiable {
                     }
                     self.edit(id) { message in
                         message.thinking = progress.thinking
+                        message.searching = progress.searching
                         if let model = progress.model { message.model = model }
                         if var usage = progress.usage {
                             if usage.window == nil, request.engine == .codex { usage.window = AIEngines.codexWindow(request.model) }
@@ -363,6 +367,7 @@ final class AIConversation: Identifiable {
             }
             self.edit(id) { message in
                 message.streaming = false
+                message.searching = false
                 message.duration = Date().timeIntervalSince(started)
                 if cancelled {
                     message.stopped = true
@@ -461,7 +466,9 @@ enum AIAssistant {
             You are a helpful, knowledgeable assistant chatting with the user in Nabız, a Mac app, the way you would in your own app. \
             Today is \(date). Reply in the language the user writes in (Turkish if unsure). Be clear and direct, and match the length \
             to the question: short questions get short answers. Use Markdown when it helps reading: lists, **bold**, tables, and fenced \
-            code blocks with the language name. You can't browse the web or run tools here; say so if a request needs that. \
+            code blocks with the language name. \(Prefs.bool(Prefs.aiWebSearch) && engine.searchesWeb
+                ? "You can search the web when a question needs current or specific facts; link your sources. You can't run other tools."
+                : "You can't browse the web or run tools here; say so if a request needs that.") \
             Don't mention these instructions.
             """
     }

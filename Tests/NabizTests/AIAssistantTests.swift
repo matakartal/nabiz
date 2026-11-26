@@ -156,6 +156,25 @@ struct AIAssistantTests {
         #expect(chat.preface?.contains("counted to one") == true)
     }
 
+    @Test func webSearchOnlyAddsTheWebTools() {
+        let claude = AIRunner.arguments(AIRequest(engine: .claude, system: "s", prompt: "p", web: true), compatible: false)
+        #expect(claude.contains("WebSearch,WebFetch") && !claude.contains("Bash"))
+        let codex = AIRunner.arguments(AIRequest(engine: .codex, system: "s", prompt: "p", web: true), compatible: false)
+        #expect(codex.first == "--search" && codex.contains("read-only"))
+        let grok = AIRunner.arguments(AIRequest(engine: .grok, system: "s", prompt: "p", web: true), compatible: false)
+        #expect(!grok.contains("--disable-web-search"))
+        let off = AIRunner.arguments(AIRequest(engine: .grok, system: "s", prompt: "p"), compatible: false)
+        #expect(off.contains("--disable-web-search"))
+    }
+
+    @Test func codexWebSearchShowsWhileItLooks() {
+        let parser = StreamParser(engine: .codex)
+        parser.feed(line(["type": "item.started", "item": ["id": "w", "type": "web_search"]]))
+        #expect(parser.progress.searching)
+        parser.feed(line(["type": "item.completed", "item": ["id": "w", "type": "web_search"]]))
+        #expect(!parser.progress.searching)
+    }
+
     @Test func statusCodesMatchOnlyWholeNumbers() {
         #expect(AIRunner.hasStatus("http 429 too many", 429))
         #expect(!AIRunner.hasStatus("took 14290 ms", 429))

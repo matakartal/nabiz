@@ -27,6 +27,8 @@ enum AIEngine: String, CaseIterable, Identifiable, Codable, Sendable {
 
     /// Claude and Codex look at attached images themselves; the others get the text read from them.
     var seesImages: Bool { self == .claude || self == .codex }
+    /// Claude, Codex and Grok can search the web themselves.
+    var searchesWeb: Bool { self == .claude || self == .codex || self == .grok }
 
     /// For "Ask Claude…".
     var shortName: String { self == .onDevice ? "Apple" : title }
@@ -410,6 +412,8 @@ struct AIRequest: Sendable {
     var session: String?
     var resume = false
     var fallback = ""
+    /// It may search the web (Claude, Codex, Grok).
+    var web = false
 }
 
 /// An answer so far: the CLIs report the whole text each time, so updates never need ordering.
@@ -420,6 +424,8 @@ struct AIProgress: Sendable, Equatable {
     var model: String?
     /// How full the conversation is after this answer, when the CLI says.
     var usage: AIUsage?
+    /// Searching the web right now.
+    var searching = false
     /// The plan's limit, when the CLI reports it during the answer (Claude does).
     var limit: AILiveLimit?
 }
@@ -512,7 +518,8 @@ enum AIRunner {
         case .claude:
             // No tools, so it only writes. Its own chat prompt replaces Claude Code's coding one, so it answers like
             // the Claude app; safe mode skips your CLAUDE.md, hooks and plugins.
-            list = ["-p", "--tools", ""]
+            // Only the web tools when web search is on (no files, no commands); none otherwise.
+            list = request.web ? ["-p", "--tools", "WebSearch,WebFetch", "--allowedTools", "WebSearch,WebFetch"] : ["-p", "--tools", ""]
             if let session = request.session {
                 list += request.resume ? ["--resume", session] : ["--session-id", session]
             } else {
@@ -524,7 +531,7 @@ enum AIRunner {
             if !request.effort.isEmpty, !compatible { list += ["--effort", request.effort] }
             if !request.images.isEmpty { list += ["--input-format", "stream-json"] }
         case .codex:
-            list = ["exec"] + request.images.flatMap { ["-i", $0.path] } + ["--json", "--skip-git-repo-check", "--sandbox", "read-only", "--color", "never"]
+            list = (request.web ? ["--search"] : []) + ["exec"] + request.images.flatMap { ["-i", $0.path] } + ["--json", "--skip-git-repo-check", "--sandbox", "read-only", "--color", "never"]
             if !compatible { list += ["--ephemeral", "--ignore-user-config", "--ignore-rules"] }
             if !request.model.isEmpty { list += ["-m", request.model] }
             if !request.effort.isEmpty { list += ["-c", "model_reasoning_effort=\"\(request.effort)\""] }
@@ -532,7 +539,8 @@ enum AIRunner {
         case .grok:
             // One turn, read-only, no web or helpers: it only writes. The prompt comes from a file (Grok has no stdin).
             list = ["--prompt-file", grokPromptFile(request).path, "--output-format", "streaming-json", "--max-turns", "1",
-                    "--permission-mode", "plan", "--disable-web-search", "--no-subagents", "--system-prompt-override", request.system]
+                    "--permission-mode", "plan"] + (request.web ? [] : ["--disable-web-search"])
+                + ["--no-subagents", "--system-prompt-override", request.system]
             if !request.model.isEmpty { list += ["-m", request.model] }
             if !request.effort.isEmpty { list += ["--reasoning-effort", request.effort] }
         case .gemini:
@@ -761,6 +769,11 @@ final class StreamParser: @unchecked Sendable {
         case "stream_event":
             guard let event = object["event"] as? [String: Any] else { return false }
             if event["type"] as? String == "content_block_start", let block = event["content_block"] as? [String: Any],
+               let kind = block["type"] as? String, kind == "server_tool_use" || kind == "tool_use" {
+                _progress.searching = true
+                return true
+            }
+            if event["type"] as? String == "content_block_start", let block = event["content_block"] as? [String: Any],
                block["type"] as? String == "text", !_progress.text.isEmpty, !_progress.text.hasSuffix("\n") {
                 // A second text block (after thinking or a pause) starts a new paragraph.
                 _progress.text += "\n\n"
@@ -770,6 +783,7 @@ final class StreamParser: @unchecked Sendable {
             switch delta["type"] as? String {
             case "text_delta":
                 _progress.text += delta["text"] as? String ?? ""
+                _progress.searching = false
                 streamed = true
                 return true
             case "thinking_delta":
@@ -839,8 +853,12 @@ final class StreamParser: @unchecked Sendable {
     private func codex(_ object: [String: Any]) -> Bool {
         switch object["type"] as? String {
         case "item.started", "item.updated", "item.completed":
-            guard let item = object["item"] as? [String: Any], let kind = item["type"] as? String,
-                  kind == "agent_message" || kind == "reasoning" else { return false }
+            guard let item = object["item"] as? [String: Any], let kind = item["type"] as? String else { return false }
+            if kind == "web_search" {
+                _progress.searching = object["type"] as? String != "item.completed"
+                return true
+            }
+            guard kind == "agent_message" || kind == "reasoning" else { return false }
             let id = item["id"] as? String ?? UUID().uuidString
             let text = item["text"] as? String ?? ""
             if let index = items.firstIndex(where: { $0.id == id }) { items[index].text = text } else { items.append((id, kind, text)) }
