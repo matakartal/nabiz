@@ -78,6 +78,9 @@ enum Theme {
     static let toolColumns = 2
     /// Settings sidebar icon tile.
     static let settingsIcon: CGFloat = 22
+    /// The sidebar list's own row inset, so the search field lines up with the selection highlight.
+    static let sidebarInset: CGFloat = 10
+    static let sidebarSearch: CGFloat = 28
     /// The icon tile in a Settings page's header.
     static let settingsHeaderIcon: CGFloat = 40
     /// One chart in the History window.

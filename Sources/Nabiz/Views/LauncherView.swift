@@ -21,6 +21,13 @@ final class LauncherPanel {
         RateStore.shared.refreshIfNeeded()
         AppIndex.shared.refreshIfNeeded()
         Extensions.shared.refreshIfNeeded()
+        AIEngines.shared.refreshIfNeeded()
+        if !isVisible {
+            // An answer still being written keeps going; it's in the chat history.
+            model.ai = nil
+            // Read before the launcher takes the keyboard, while the app in front still has its selection.
+            model.selectedText = Prefs.bool(Prefs.aiAsk) ? SelectedText.read() : nil
+        }
         model.reset(mode: mode, text: text)
         model.cameFromLauncher = false
         model.close = { [weak self] in self?.close() }
@@ -52,6 +59,21 @@ final class LauncherPanel {
     }
 
     func close() { panel?.orderOut(nil) }
+
+    /// Runs a row from its own global shortcut, without opening the launcher (unless the row lives in it).
+    func run(itemID: String) {
+        AppIndex.shared.refreshIfNeeded()
+        Extensions.shared.refreshIfNeeded()
+        if itemID == "cmd:clipboard" { show(.clipboard); return }
+        if !isVisible { model.close = {} }
+        guard let item = model.item(id: itemID) else {
+            Monitor.panelActions.flash(L("Kısayolun hedefi bulunamadı", "That shortcut's target is gone"))
+            return
+        }
+        // These run inside the launcher (an AI answer, a pasted link).
+        if itemID == "cmd:download" || itemID.hasPrefix("aicmd:") { show(.all) }
+        item.primary()
+    }
 
     /// Arrows, Return and the ⌘ shortcuts, read before the text field sees them. The app has no Edit menu while
     /// another app is in front, so ⌘C, ⌘V, ⌘X, ⌘A and ⌘Z are passed to the field here too.
@@ -90,12 +112,31 @@ final class LauncherPanel {
             }
             return true
         }
+        if model.mode == .ai, model.ai != nil {
+            switch Int(keyCode) {
+            case 36, 76: command ? model.aiPaste() : model.aiReturn()
+            case 53: model.aiEscape()
+            case 125, 126: break
+            default:
+                guard command else { return false }
+                switch key {
+                case "w": close()
+                case "o": model.openInWindow()
+                case "r": model.ai?.regenerate()
+                case "n":
+                    model.ai = nil
+                    model.text = ""
+                default: return edit(key)
+                }
+            }
+            return true
+        }
         switch Int(keyCode) {
         case 125: model.move(1)
         case 126: model.move(-1)
         case 36, 76: command ? model.runSecondary() : model.runPrimary()
         case 53:
-            if model.mode == .clipboard && model.text.isEmpty && model.cameFromLauncher {
+            if (model.mode == .clipboard && model.cameFromLauncher || model.mode == .ai) && model.text.isEmpty {
                 model.reset(mode: .all)
             } else if model.text.isEmpty { close() } else { model.text = "" }
         case 51 where command && model.selected?.clip != nil: model.deleteSelected()
@@ -136,8 +177,14 @@ struct LauncherView: View {
         let selectedID = items.isEmpty ? nil : items[min(model.selection, items.count - 1)].id
         VStack(spacing: 0) {
             field
-            Rectangle().fill(Theme.hairline).frame(height: 1)
-            if model.mode == .clipboard {
+            if model.mode == .ai, let chat = model.ai {
+                AIProgressLine(running: chat.isRunning, color: chat.engine.brand.tint)
+            } else {
+                Rectangle().fill(Theme.hairline).frame(height: 1)
+            }
+            if model.mode == .ai, let chat = model.ai {
+                AITranscriptView(conversation: chat, compact: true)
+            } else if model.mode == .clipboard {
                 HStack(spacing: 0) {
                     list(sections, selectedID: selectedID, items: items).frame(width: Theme.launcherList)
                     Rectangle().fill(Theme.hairline).frame(width: 1)
@@ -147,10 +194,11 @@ struct LauncherView: View {
                 list(sections, selectedID: selectedID, items: items)
             }
             Rectangle().fill(Theme.hairline).frame(height: 1)
-            footer(items.first { $0.id == selectedID })
+            if model.mode == .ai, let chat = model.ai { aiFooter(chat) } else { footer(items.first { $0.id == selectedID }) }
         }
         .frame(width: Theme.launcherWidth, height: Theme.launcherHeight)
         .appearanceRoot()
+
         .overlay(alignment: .bottomTrailing) {
             if model.paletteOpen {
                 ActionPalette(model: model, focus: $focus)
@@ -164,12 +212,16 @@ struct LauncherView: View {
 
     private var field: some View {
         HStack(spacing: Theme.Spacing.m) {
-            Image(systemName: model.mode == .clipboard ? "doc.on.clipboard" : "magnifyingglass")
-                .font(Theme.input).foregroundStyle(Theme.textMuted)
-                .frame(width: Theme.launcherIcon)
-            TextField(model.mode == .clipboard ? L("Panoda ara", "Search the clipboard")
-                                               : L("Uygulama, komut, hesap ya da arama", "Apps, commands, maths or search"),
-                      text: $model.text)
+            Group {
+                if model.mode == .ai {
+                    AIBrandMark(engine: aiEngine ?? .auto, size: Theme.launcherIcon + 2, animating: model.ai?.isRunning == true)
+                } else {
+                    Image(systemName: model.mode == .clipboard ? "doc.on.clipboard" : "magnifyingglass")
+                        .font(Theme.input).foregroundStyle(Theme.textMuted)
+                }
+            }
+            .frame(width: Theme.launcherIcon)
+            TextField(placeholder, text: $model.text)
                 .textFieldStyle(.plain)
                 .font(Theme.input)
                 .foregroundStyle(Theme.text)
@@ -180,6 +232,42 @@ struct LauncherView: View {
         }
         .padding(.horizontal, Theme.Spacing.l)
         .frame(height: Theme.launcherField)
+    }
+
+    private var placeholder: String {
+        switch model.mode {
+        case .clipboard: L("Panoda ara", "Search the clipboard")
+        case .ai:
+            if model.ai != nil { L("Devamını sor…", "Ask a follow-up…") } else if let aiEngine { L("\(aiEngine.shortName)'a sor…", "Ask \(aiEngine.shortName)…") } else { L("AI'a sor…", "Ask AI…") }
+        case .all: Prefs.bool(Prefs.aiAsk) ? L("Uygulama, komut, hesap — ya da AI'a sor", "Apps, commands, maths — or ask AI")
+            : L("Uygulama, komut, hesap ya da arama", "Apps, commands, maths or search")
+        }
+    }
+
+    private var aiEngine: AIEngine? {
+        model.ai?.engine ?? AIEngines.shared.resolve(AIEngine.chosen)
+    }
+
+    private func aiFooter(_ chat: AIConversation) -> some View {
+        HStack(spacing: Theme.Spacing.l) {
+            AIModelMenu(engine: Binding(get: { chat.engine }, set: { chat.use($0, model: $0.chosenModel) }),
+                        model: Binding(get: { chat.model }, set: { chat.use(chat.engine, model: $0) }))
+            Spacer()
+            if chat.isRunning {
+                KeyHint(keys: "esc", title: L("Durdur", "Stop"), strong: false)
+            } else if !model.text.trimmingCharacters(in: .whitespaces).isEmpty {
+                KeyHint(keys: "↩", title: L("Gönder", "Send"), strong: true)
+            } else if chat.lastAnswer?.text.isEmpty == false {
+                KeyHint(keys: "↩", title: L("Kopyala", "Copy"), strong: true)
+                KeyHint(keys: "⌘↩", title: L("Yapıştır", "Paste"), strong: false)
+            }
+            KeyHint(keys: "⌘O", title: L("Pencere", "Window"), strong: false)
+            Rectangle().fill(Theme.hairline).frame(width: 1, height: Theme.Spacing.l)
+            KeyHint(keys: "⌘K", title: L("Eylemler", "Actions"), strong: model.paletteOpen)
+        }
+        .font(Theme.small)
+        .padding(.horizontal, Theme.Spacing.l)
+        .frame(height: Theme.launcherFooter)
     }
 
     private func list(_ sections: [LauncherSection], selectedID: String?, items: [LauncherItem]) -> some View {
@@ -241,7 +329,8 @@ struct LauncherView: View {
                     .buttonStyle(TextButtonStyle(font: Theme.small, color: Theme.accent))
             } else {
                 Text(model.mode == .clipboard ? L("↑↓ seç · esc geri", "↑↓ to pick · esc back")
-                                              : L("= hesap · > komut · / dosya · : emoji", "= maths · > commands · / files · : emoji"))
+                                              : (Prefs.bool(Prefs.aiAsk) ? L("= hesap · > komut · / dosya · : emoji · ? AI", "= maths · > commands · / files · : emoji · ? AI")
+                                                                         : L("= hesap · > komut · / dosya · : emoji", "= maths · > commands · / files · : emoji")))
                     .foregroundStyle(Theme.textMuted)
             }
             Spacer()

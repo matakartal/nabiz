@@ -246,6 +246,7 @@ final class FocusMode {
 
     /// Called every second by the app.
     func tick() {
+        if isOn && Prefs.bool(Prefs.focusBlockSites) { SiteBlocker.shared.check() }
         guard isOn, let until, until <= Date() else { return }
         stop()
         NSSound(named: "Glass")?.play()
@@ -260,5 +261,105 @@ final class FocusMode {
         Task.detached(priority: .utility) {
             _ = try? Process.run(URL(fileURLWithPath: "/usr/bin/shortcuts"), arguments: ["run", name])
         }
+    }
+}
+
+/// Keeps chosen websites away during focus, with no browser extension: it reads the address of the tab in front of
+/// Safari or a Chromium browser (Chrome, Arc, Brave, Edge, Vivaldi) and swaps a blocked one for a short note.
+/// macOS asks once per browser for permission to control it.
+@MainActor
+final class SiteBlocker {
+    static let shared = SiteBlocker()
+
+    static let defaultSites = ["youtube.com", "x.com", "twitter.com", "instagram.com", "facebook.com", "tiktok.com", "reddit.com"]
+
+    /// Browser bundle id → how its scripting names the tab in front.
+    private static let browsers: [String: String] = [
+        "com.apple.Safari": "current tab", "com.apple.SafariTechnologyPreview": "current tab",
+        "com.google.Chrome": "active tab", "com.google.Chrome.beta": "active tab", "company.thebrowser.Browser": "active tab",
+        "com.brave.Browser": "active tab", "com.microsoft.edgemac": "active tab", "com.vivaldi.Vivaldi": "active tab",
+        "org.chromium.Chromium": "active tab",
+    ]
+
+    private var busy = false
+    private var lastCheck = Date.distantPast
+    private var warnedDenied: Set<String> = []
+
+    var sites: [String] {
+        let saved = Prefs.string(Prefs.focusSites)
+        return saved.isEmpty ? Self.defaultSites : saved.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces).lowercased() }.filter { !$0.isEmpty && $0 != "-" }
+    }
+
+    nonisolated static func isBlocked(host: String, in sites: [String]) -> Bool {
+        let host = host.lowercased()
+        return sites.contains { site in
+            let site = site.hasPrefix("www.") ? String(site.dropFirst(4)) : site
+            return host == site || host.hasSuffix("." + site)
+        }
+    }
+
+    /// "https://www.youtube.com/watch…" → "www.youtube.com", also for a pasted domain without a scheme.
+    nonisolated static func host(of address: String) -> String? {
+        let address = address.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let host = URL(string: address)?.host(), !host.isEmpty { return host }
+        return URL(string: "https://" + address)?.host()
+    }
+
+    /// Called every second while focus mode is on; looks at most every two seconds, only when a browser is in front.
+    func check() {
+        guard !busy, Date().timeIntervalSince(lastCheck) >= 2,
+              let app = NSWorkspace.shared.frontmostApplication, let bundle = app.bundleIdentifier,
+              let tab = Self.browsers[bundle] else { return }
+        lastCheck = Date()
+        busy = true
+        let sites = sites, page = Self.page.absoluteString, name = app.localizedName ?? bundle
+        Task {
+            let (blockedHost, denied) = await Task.detached(priority: .utility) {
+                Self.inspect(bundle: bundle, tab: tab, sites: sites, page: page)
+            }.value
+            busy = false
+            if let blockedHost {
+                Monitor.panelActions.flash(L("Odak: \(blockedHost) bekleyebilir", "Focus: \(blockedHost) can wait"))
+            } else if denied && !warnedDenied.contains(bundle) {
+                warnedDenied.insert(bundle)
+                Monitor.panelActions.flash(L("Siteleri engellemek için \(name) iznini aç (Ayarlar → Gizlilik → Otomasyon)",
+                                             "To block sites, allow \(name) in Settings → Privacy → Automation"))
+            }
+        }
+    }
+
+    /// Reads the front tab's address and, when it is blocked, swaps it for the focus page.
+    nonisolated private static func inspect(bundle: String, tab: String, sites: [String], page: String) -> (String?, Bool) {
+        var error: NSDictionary?
+        let read = NSAppleScript(source: "tell application id \"\(bundle)\" to get URL of \(tab) of front window")?
+            .executeAndReturnError(&error).stringValue
+        let denied = (error?[NSAppleScript.errorNumber] as? Int) == -1743
+        guard let read, let host = host(of: read), isBlocked(host: host, in: sites) else { return (nil, denied) }
+        var setError: NSDictionary?
+        let target = (page + "#" + host).replacingOccurrences(of: "\"", with: "")
+        NSAppleScript(source: "tell application id \"\(bundle)\" to set URL of \(tab) of front window to \"\(target)\"")?
+            .executeAndReturnError(&setError)
+        return (host, false)
+    }
+
+    /// A small local page that says why the site went away.
+    private static var page: URL {
+        let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Nabiz")
+        let file = folder.appendingPathComponent("focus.html")
+        let title = L("Odaktasın", "You're focusing")
+        let body = L("Bu site odak bitince açılır.", "This site opens again when focus ends.")
+        let html = """
+        <!doctype html><html lang="\(L("tr", "en"))"><meta charset="utf-8"><title>\(title)</title>
+        <meta name="color-scheme" content="light dark">
+        <body style="font:15px -apple-system,system-ui;display:grid;place-items:center;height:90vh;margin:0;color:#888">
+        <div style="text-align:center"><div style="font-size:40px">🌙</div><h1 style="font-weight:600;color:CanvasText;margin:.4em 0">\(title)</h1>
+        <p id="site"></p><p>\(body)</p></div>
+        <script>document.getElementById('site').textContent = decodeURIComponent(location.hash.slice(1))</script>
+        """
+        if (try? String(contentsOf: file, encoding: .utf8)) != html {
+            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try? html.write(to: file, atomically: true, encoding: .utf8)
+        }
+        return file
     }
 }

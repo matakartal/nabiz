@@ -112,6 +112,29 @@ enum Prefs {
     /// Names of the user's Shortcuts that turn macOS Focus on and off.
     static let focusShortcutOn = "focusShortcutOn"
     static let focusShortcutOff = "focusShortcutOff"
+    /// Websites kept away during focus (in Safari and Chromium browsers), comma separated domains.
+    static let focusBlockSites = "focusBlockSites"
+    static let focusSites = "focusSites"
+    // MCP: AI apps using Nabız. Off until turned on; the clipboard needs its own yes.
+    static let mcpEnabled = "mcpEnabled"
+    static let mcpCommands = "mcpCommands"
+    static let mcpNotes = "mcpNotes"
+    static let mcpClipboard = "mcpClipboard"
+    // Calendar: the panel section and the launcher's events (asks for access when turned on).
+    static let calendarEnabled = "calendarEnabled"
+    static let calendarHidden = "calendarHidden"
+    static let calendarAlert = "calendarAlert"
+    // Dictation: ⌃⌥D (off until turned on), and its language ("system", "tr", "en").
+    static let dictationHotkey = "dictationHotkey"
+    /// ⌃⌥S: select an area, copy it, show the thumbnail.
+    static let shotHotkey = "shotHotkey"
+    /// After a capture: "preview" (the thumbnail), "editor", or "none".
+    static let shotAfter = "shotAfter"
+    /// ⌘⇧3 / ⌘⇧4 (and with ⌃) go to Nabız; macOS's own are turned off while this is on.
+    static let shotClassic = "shotClassic"
+    static let dictationLanguage = "dictationLanguage"
+    /// A copy of the settings, snippets and notes in iCloud Drive once a day.
+    static let autoBackup = "autoBackup"
     /// Video downloads: "best", "1080", "720" or "audio".
     static let downloadQuality = "downloadQuality"
     static let downloadFolder = "downloadFolder"
@@ -131,6 +154,18 @@ enum Prefs {
     static let customAccent = "customAccent"
     /// Panel section ids, comma separated, in the order they show.
     static let sectionOrder = "sectionOrder"
+    /// "Ask AI" in the launcher and AI actions on text.
+    static let aiAsk = "aiAsk"
+    /// Which AI answers: an AIEngine raw value ("auto", "claude", "codex", "gemini", "onDevice").
+    static let aiEngine = "aiEngine"
+    /// Chats are kept (encrypted) so they can be reopened.
+    static let aiHistory = "aiHistory"
+    /// ⌃⌥A opens the launcher ready to ask.
+    static let aiHotkey = "aiHotkey"
+    /// ⌃⌥I opens the AI chat window.
+    static let aiChatHotkey = "aiChatHotkey"
+    /// The app version whose "New" note in the panel was seen or closed.
+    static let seenVersion = "seenVersion"
 
     static func registerDefaults() {
         UserDefaults.standard.register(defaults: [
@@ -150,10 +185,12 @@ enum Prefs {
             clipboardExcluded: "", autoPaste: true, launcherApps: true, launcherClipboard: true, launcherShortcuts: true, launcherFiles: true, windowHotkeys: false,
             noteOnTop: true, noteHotkey: true, notesApp: "nabiz",
             pomodoroWork: 25, pomodoroShort: 5, pomodoroLong: 15, pomodoroLongEvery: 4, pomodoroAuto: true, pomodoroFocus: true,
-            focusBlocked: "", focusHideOthers: false, focusHideDesktop: false, focusShortcutOn: "", focusShortcutOff: "",
+            focusBlocked: "", focusHideOthers: false, focusHideDesktop: false, focusShortcutOn: "", focusShortcutOff: "", focusBlockSites: false, focusSites: "", mcpEnabled: false, mcpCommands: true, mcpNotes: true, mcpClipboard: false,
+            calendarEnabled: false, calendarHidden: "", calendarAlert: true, dictationHotkey: false, shotHotkey: true, shotAfter: "preview", shotClassic: false, dictationLanguage: "system", autoBackup: false,
             downloadQuality: "best", downloadFolder: "",
             appearanceMode: "system", fontDesign: "standard", density: "normal", meterStyle: "thin",
             barSymbol: "gauge.with.dots.needle.33percent", customAccent: "#1DB954", sectionOrder: "",
+            aiAsk: true, aiEngine: "onDevice", aiHistory: true, aiHotkey: true, aiChatHotkey: true, seenVersion: "",
         ])
         AdviceKind.registerDefaults()
     }
@@ -179,7 +216,7 @@ enum Prefs {
 
 /// The panel's foldable sections, in the order they appear.
 enum PanelSection: String, CaseIterable, Identifiable {
-    case system, advice, simulators, ai, memory, cpu, markets, currency, tools
+    case system, advice, simulators, ai, calendar, memory, cpu, markets, currency, tools
 
     var id: String { rawValue }
 
@@ -188,7 +225,8 @@ enum PanelSection: String, CaseIterable, Identifiable {
         case .system: L("Sistem", "System")
         case .advice: L("Öneriler", "Suggestions")
         case .simulators: L("Simülatörler", "Simulators")
-        case .ai: L("AI limitleri", "AI limits")
+        case .ai: "AI"
+        case .calendar: L("Takvim", "Calendar")
         case .memory: L("En çok bellek", "Top memory")
         case .cpu: L("En çok işlemci", "Top CPU")
         case .markets: L("Piyasalar", "Markets")
@@ -203,6 +241,7 @@ enum PanelSection: String, CaseIterable, Identifiable {
         case .advice: Prefs.showAdvice
         case .simulators: Prefs.showSimulators
         case .ai: Prefs.showAI
+        case .calendar: Prefs.calendarEnabled
         case .memory: Prefs.showApps
         case .cpu: Prefs.showCPUApps
         case .markets: Prefs.showMarkets
@@ -217,6 +256,7 @@ enum PanelSection: String, CaseIterable, Identifiable {
         case .advice: "lightbulb"
         case .simulators: "iphone"
         case .ai: "sparkles"
+        case .calendar: "calendar"
         case .memory: "memorychip"
         case .cpu: "cpu"
         case .markets: "chart.line.uptrend.xyaxis"

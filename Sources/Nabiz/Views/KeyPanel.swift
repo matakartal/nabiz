@@ -125,8 +125,10 @@ final class KeyPanel: NSPanel {
 @MainActor
 enum HotKey {
     enum Shortcut: UInt32, CaseIterable {
-        case launcher = 1, panel = 2, clipboard = 3, note = 4
+        case launcher = 1, panel = 2, clipboard = 3, note = 4, ai = 5, dictation = 6, screenshot = 7, aiChat = 8
         case leftHalf = 10, rightHalf, topHalf, bottomHalf, maximize, center
+        /// macOS's own screenshot keys, taken over: ⌘⇧3, ⌘⇧4, ⌃⌘⇧3, ⌃⌘⇧4.
+        case classicScreen = 20, classicArea, classicScreenCopy, classicAreaCopy
 
         var key: Int {
             switch self {
@@ -134,6 +136,12 @@ enum HotKey {
             case .panel: kVK_ANSI_N
             case .clipboard: kVK_ANSI_V
             case .note: kVK_ANSI_M
+            case .ai: kVK_ANSI_A
+            case .aiChat: kVK_ANSI_I
+            case .dictation: kVK_ANSI_D
+            case .screenshot: kVK_ANSI_S
+            case .classicScreen, .classicScreenCopy: kVK_ANSI_3
+            case .classicArea, .classicAreaCopy: kVK_ANSI_4
             case .leftHalf: kVK_LeftArrow
             case .rightHalf: kVK_RightArrow
             case .topHalf: kVK_UpArrow
@@ -156,6 +164,19 @@ enum HotKey {
         }
 
         static var windows: [Shortcut] { allCases.filter { $0.window != nil } }
+
+        /// What a taken-over macOS screenshot key does: the same as in macOS, with Nabız's thumbnail and editor.
+        var capture: CaptureMode? {
+            switch self {
+            case .classicScreen: .screenFile
+            case .classicArea: .areaFile
+            case .classicScreenCopy: .screen
+            case .classicAreaCopy: .area
+            default: nil
+            }
+        }
+
+        static var classics: [Shortcut] { allCases.filter { $0.capture != nil } }
     }
 
     /// A key and its modifiers (Carbon flags), with how it reads: "⌃⌥Space".
@@ -174,9 +195,14 @@ enum HotKey {
     private(set) static var suspended = false
 
     /// The shortcuts a person can change in Settings.
-    static let customizable: [Shortcut] = [.launcher, .clipboard, .note, .panel]
+    static let customizable: [Shortcut] = [.launcher, .clipboard, .note, .panel, .ai, .aiChat, .dictation, .screenshot]
 
     static func combo(_ shortcut: Shortcut) -> Combo {
+        if shortcut.capture != nil {
+            let copy = shortcut == .classicScreenCopy || shortcut == .classicAreaCopy
+            let digit = shortcut.key == kVK_ANSI_3 ? "3" : "4"
+            return Combo(keyCode: shortcut.key, modifiers: cmdKey | shiftKey | (copy ? controlKey : 0), label: (copy ? "⌃⌘⇧" : "⌘⇧") + digit)
+        }
         if let data = UserDefaults.standard.data(forKey: "hotkey.\(shortcut.rawValue)"),
            let saved = try? JSONDecoder().decode(Combo.self, from: data) { return saved }
         return Combo(keyCode: shortcut.key, modifiers: controlKey | optionKey, label: "⌃⌥" + keyName(shortcut.key, nil))
@@ -211,7 +237,31 @@ enum HotKey {
             refs[shortcut] = ref
             registered[shortcut] = combo
         }
+        if shortcut == .screenshot || shortcut.capture != nil { ShotLog.write("registered \(combo.label): \(ref != nil)") }
     }
+
+    /// Shortcuts people gave to launcher rows, by hot key id (from 1000 up).
+    private static var itemRefs: [UInt32: (id: String, ref: EventHotKeyRef)] = [:]
+
+    /// Registers every launcher row's own shortcut again, after one changed or at launch.
+    static func registerItems() {
+        for entry in itemRefs.values { UnregisterEventHotKey(entry.ref) }
+        itemRefs = [:]
+        let bindings = ItemBindings.shared.all.filter { $0.combo != nil }
+        guard !bindings.isEmpty else { return }
+        installHandler()
+        for (index, binding) in bindings.enumerated() {
+            guard let combo = binding.combo else { continue }
+            let hotKeyID = UInt32(1000 + index)
+            var ref: EventHotKeyRef?
+            RegisterEventHotKey(UInt32(combo.keyCode), UInt32(combo.modifiers),
+                                EventHotKeyID(signature: 0x4E42_5A31, id: hotKeyID), GetApplicationEventTarget(), 0, &ref)
+            if let ref { itemRefs[hotKeyID] = (binding.id, ref) }
+        }
+    }
+
+    /// False when another app already holds the keys.
+    static func isRegistered(_ itemID: String) -> Bool { itemRefs.values.contains { $0.id == itemID } }
 
     private static func unregister(_ shortcut: Shortcut) {
         if let ref = refs.removeValue(forKey: shortcut) { UnregisterEventHotKey(ref) }
@@ -245,7 +295,11 @@ enum HotKey {
         case kVK_ANSI_N: "N"
         case kVK_ANSI_V: "V"
         case kVK_ANSI_M: "M"
+        case kVK_ANSI_D: "D"
+        case kVK_ANSI_A: "A"
         case kVK_ANSI_C: "C"
+        case kVK_ANSI_S: "S"
+        case kVK_ANSI_I: "I"
         default: (characters ?? "?").uppercased()
         }
     }
@@ -268,14 +322,25 @@ enum HotKey {
             GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil,
                               MemoryLayout<EventHotKeyID>.size, nil, &id)
             let pressed = id.id
+            if pressed == HotKey.Shortcut.screenshot.rawValue || HotKey.Shortcut(rawValue: pressed)?.capture != nil { ShotLog.write("hot key \(pressed)") }
             Task { @MainActor in
-                guard !HotKey.suspended, let shortcut = Shortcut(rawValue: pressed) else { return }
+                guard !HotKey.suspended else { return }
+                if let item = HotKey.itemRefs[pressed] {
+                    LauncherPanel.shared.run(itemID: item.id)
+                    return
+                }
+                guard let shortcut = Shortcut(rawValue: pressed) else { return }
                 switch shortcut {
                 case .launcher: LauncherPanel.shared.toggle(.all)
                 case .panel: HotKey.togglePanel()
                 case .clipboard: LauncherPanel.shared.toggle(.clipboard)
                 case .note: NoteWindow.toggle()
-                default: shortcut.window?.run()
+                case .ai: LauncherPanel.shared.toggle(.ai)
+                case .aiChat: AIChatWindow.toggle()
+                case .dictation: Dictation.shared.toggle()
+                case .screenshot: Capture.run(.area)
+                default:
+                    if let mode = shortcut.capture { Capture.run(mode) } else { shortcut.window?.run() }
                 }
             }
             return noErr

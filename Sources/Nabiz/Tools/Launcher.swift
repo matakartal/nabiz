@@ -36,13 +36,20 @@ struct LauncherSection: Identifiable {
 @MainActor
 @Observable
 final class LauncherModel {
-    enum Mode { case all, clipboard }
+    enum Mode { case all, clipboard, ai }
 
     var mode: Mode = .all
     var text = "" {
         didSet {
             guard text != oldValue else { return }
             selection = 0
+            // "?" at the start switches to asking AI.
+            if mode == .all, text.hasPrefix("?"), Prefs.bool(Prefs.aiAsk) {
+                mode = .ai
+                ai = nil
+                text = String(text.dropFirst()).trimmingCharacters(in: .whitespaces)
+                return
+            }
             FileSearch.shared.search(fileTerm)
         }
     }
@@ -52,7 +59,7 @@ final class LauncherModel {
         let query = text.trimmingCharacters(in: .whitespaces)
         if query.hasPrefix("/") { return String(query.dropFirst()) }
         guard Prefs.bool(Prefs.launcherFiles), mode == .all, query.count >= 3,
-              let first = query.first, !"=>:".contains(first), Downloader.videoURL(query) == nil else { return "" }
+              let first = query.first, !"=>:?".contains(first), Downloader.videoURL(query) == nil else { return "" }
         return query
     }
     var selection = 0
@@ -64,6 +71,12 @@ final class LauncherModel {
         didSet { if paletteQuery != oldValue { paletteSelection = 0 } }
     }
     var paletteSelection = 0
+    /// The chat shown while `mode` is `.ai`; nil shows what can be asked (tasks, recent chats).
+    var ai: AIConversation?
+    /// What was typed before asking, so Escape can go back to it.
+    var aiReturnText = ""
+    /// Text selected in the app in front when the launcher opened.
+    var selectedText: String?
     /// The clipboard list was opened from the launcher, so Escape goes back to it instead of closing.
     var cameFromLauncher = false
     @ObservationIgnored private var lastPointer: CGPoint?
@@ -90,8 +103,61 @@ final class LauncherModel {
     var sections: [LauncherSection] {
         switch mode {
         case .clipboard: clipboardSections()
-        case .all: allSections()
+        case .all: allSections().map { section in
+            var section = section
+            section.items = section.items.map(withBinding)
+            return section
         }
+        case .ai: ai == nil ? aiSections(text.trimmingCharacters(in: .whitespaces)) : []
+        }
+    }
+
+    /// A row with its own shortcut shows it on the right, like the built-in ones.
+    private func withBinding(_ item: LauncherItem) -> LauncherItem {
+        guard let binding = ItemBindings.shared.binding(item.id) else { return item }
+        var item = item
+        if let label = binding.combo?.label { item.accessory = label } else if let alias = binding.alias { item.accessory = alias }
+        return item
+    }
+
+    /// One of the user's own AI commands, on the given text, else the selected one, else the last text copied.
+    func runAICommand(_ command: AICommand, on given: String?) {
+        let copied = ClipboardHistory.shared.items.first { $0.kind == .text && $0.text != nil }?.text ?? NSPasteboard.general.string(forType: .string)
+        guard let text = (given ?? selectedText ?? copied)?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else {
+            Monitor.panelActions.flash(L("Önce bir metin seç ya da kopyala", "Select or copy some text first"))
+            return
+        }
+        guard !SecretText.looksSecret(text) else {
+            Monitor.panelActions.flash(L("Bu bir şifreye benziyor; AI'a gönderilmedi", "That looks like a password; not sent to AI"))
+            return
+        }
+        ai = nil
+        mode = .ai
+        ask(command.name, attachment: text, prompt: command.fullPrompt(text))
+    }
+
+    /// Every command the launcher can run, for MCP.
+    func commandList() -> [(id: String, title: String)] { commandItems().map { ($0.id, $0.title) } }
+
+    /// An app, command or quicklink by its id, for its own shortcut (the launcher may be closed).
+    func item(id: String) -> LauncherItem? {
+        if id.hasPrefix("app:") {
+            let path = String(id.dropFirst(4))
+            guard FileManager.default.fileExists(atPath: path) else { return nil }
+            let app = AppIndex.shared.apps.first { $0.path == path }
+            let name = app?.name ?? FileManager.default.displayName(atPath: path).replacingOccurrences(of: ".app", with: "")
+            return LauncherItem(id: id, icon: .app(path), title: name, primaryTitle: L("Aç", "Open"), primary: { [weak self] in
+                self?.close()
+                NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: path), configuration: NSWorkspace.OpenConfiguration())
+            })
+        }
+        if id.hasPrefix("link:") {
+            return LauncherStore.shared.quicklinks.first { "link:\($0.keyword)" == id }.map { searchItem($0, "") }
+        }
+        if id.hasPrefix("bt:") {
+            return BluetoothDevices.devices(for: "bluetooth").first { "bt:\($0.id)" == id }.map(bluetoothItem)
+        }
+        return commandItems().first { $0.id == id }
     }
 
     var items: [LauncherItem] { sections.flatMap(\.items) }
@@ -159,7 +225,7 @@ final class LauncherModel {
     }
 
     /// Puts text on the clipboard and pastes it where the cursor was, or only copies it without permission.
-    private func paste(text: String) {
+    func paste(text: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
         close()
@@ -193,6 +259,7 @@ final class LauncherModel {
             return [LauncherSection(id: "emoji", title: "Emoji", items: Array(found))].filter { !$0.items.isEmpty }
         }
 
+        // "? what is…": ask an AI.
         // "/report": files only.
         if query.hasPrefix("/") {
             let search = FileSearch.shared
@@ -228,6 +295,9 @@ final class LauncherModel {
             let all = commands + apps + LauncherStore.shared.quicklinks.map { searchItem($0, "") }
             let favorites = Favorites.ids.compactMap { id in all.first { $0.id == id } }
             sections.append(LauncherSection(id: "favorites", title: L("Favoriler", "Favourites"), items: favorites))
+            if Prefs.bool(Prefs.aiAsk), let selectedText {
+                sections.append(LauncherSection(id: "selection", title: L("Seçili metin", "Selected text"), items: aiTaskItems(selectedText, source: "sel")))
+            }
             let recents = Recents.ids.compactMap { id in all.first { $0.id == id } }.filter { item in !favorites.contains { $0.id == item.id } }
             sections.append(LauncherSection(id: "recents", title: L("Son kullanılanlar", "Recent"), items: recents))
             if Prefs.bool(Prefs.clipboardEnabled) && Prefs.bool(Prefs.launcherClipboard) {
@@ -236,11 +306,19 @@ final class LauncherModel {
             }
             let downloads = Downloader.shared.jobs.prefix(3).map(jobItem)
             sections.append(LauncherSection(id: "downloads", title: L("İndirilenler", "Downloads"), items: Array(downloads)))
-            let suggested = ["cmd:clipboard", "cmd:note", "cmd:pomodoro", "cmd:focus-25", "cmd:capture-area", "sys:lock", "win:leftHalf"]
+            let suggested = ["cmd:ai-chat", "cmd:clipboard", "cmd:note", "cmd:pomodoro", "cmd:focus-25", "cmd:capture-area", "sys:lock", "win:leftHalf"]
             let suggestions = suggested.compactMap { id in commands.first { $0.id == id } }
                 .filter { item in !recents.contains { $0.id == item.id } && !favorites.contains { $0.id == item.id } }
             sections.append(LauncherSection(id: "suggestions", title: L("Öneriler", "Suggestions"), items: suggestions))
             return sections.filter { !$0.items.isEmpty }
+        }
+
+        // An alias typed alone puts its row first.
+        var aliased: String?
+        if let id = ItemBindings.shared.id(forAlias: query),
+           let hit = (commands + apps).first(where: { $0.id == id }) ?? item(id: id) {
+            aliased = hit.id
+            sections.append(LauncherSection(id: "alias", title: L("Takma ad", "Alias"), items: [hit]))
         }
 
         // Maths, money, units, time zones and dates first.
@@ -248,6 +326,27 @@ final class LauncherModel {
         if !results.isEmpty {
             sections.append(LauncherSection(id: "calc", title: L("Hesap", "Calculator"),
                                             items: results.enumerated().map { calcItem($1, index: $0, expression: query) }))
+        }
+
+        if Prefs.bool(Prefs.calendarEnabled) && CalendarAgenda.shared.authorized && query.count >= 3 {
+            let word = Fuzzy.fold(query)
+            if ["takvim", "calendar", "toplanti", "ajanda", "agenda", "meeting", "etkinlik", "bugun", "today"].contains(where: { $0.hasPrefix(word) }) {
+                let events = CalendarAgenda.shared.upcoming.prefix(8).map(eventItem)
+                sections.append(LauncherSection(id: "calendar", title: L("Takvim", "Calendar"), items: Array(events)))
+            }
+        }
+
+        if Prefs.bool(Prefs.aiAsk), let phrase = TranslateQuery.text(in: query) {
+            let task = TranslateQuery.task(for: phrase)
+            sections.append(LauncherSection(id: "translate", title: L("Çeviri", "Translate"), items: [
+                LauncherItem(id: "translate", icon: .symbol("character.bubble"), title: "\(task.title): \(phrase)",
+                             accessory: "AI", primaryTitle: L("Çevir", "Translate"),
+                             primary: { [weak self] in self?.runAI(task, on: phrase) }, remember: false),
+            ]))
+        }
+
+        if let volume = volumeItem(query) {
+            sections.append(LauncherSection(id: "volume", title: L("Ses", "Sound"), items: [volume]))
         }
 
         if let url = Downloader.videoURL(query) {
@@ -273,8 +372,12 @@ final class LauncherModel {
         sections.append(LauncherSection(id: "apps", title: L("Uygulamalar", "Apps"),
                                         items: ranked(apps, keywords: { $0.subtitle ?? "" }, limit: 6)))
         sections.append(LauncherSection(id: "commands", title: L("Komutlar", "Commands"),
-                                        items: ranked(commands + timerItems(query), keywords: { item in
+                                        items: ranked(commands + timerItems(query) + soundItems(query), keywords: { item in
                                             if item.id.hasPrefix("shortcut:") { return "shortcut kestirme" }
+                                            if item.id.hasPrefix("aicmd:") { return "ai yapay zeka komut command prompt" }
+                                            if item.id.hasPrefix("layout") { return "pencere window layout yerleşim düzen set" }
+                                            if item.id.hasPrefix("audio:") { return "ses çıkış output sound speaker hoparlör kulaklık headphones" }
+                                            if item.id.hasPrefix("bt:") { return "bluetooth bt bağlan connect disconnect kes kulaklık" }
                                             if item.id.hasPrefix("script:") { return "script betik" }
                                             return Self.keywords[item.id] ?? item.id.split(separator: ":").last.map(String.init) ?? ""
                                         }, limit: 8)))
@@ -301,9 +404,21 @@ final class LauncherModel {
             sections.append(LauncherSection(id: "files", title: L("Dosyalar", "Files"), items: FileSearch.shared.results.prefix(5).map(fileItem)))
         }
 
+        // Asking AI comes before the web. A question ("…?", or a sentence of four words or more) or a query nothing
+        // else matched puts it first, so ↩ asks.
+        if Prefs.bool(Prefs.aiAsk) && query.count >= 3 {
+            let ask = LauncherSection(id: "ai", title: "AI", items: [askItem(query)])
+            let words = query.split(whereSeparator: \.isWhitespace).count
+            let question = query.hasSuffix("?") || words >= 4
+            if question || sections.allSatisfy({ $0.items.isEmpty }) { sections.insert(ask, at: 0) } else { sections.append(ask) }
+        }
         // Nothing else fits: search the web for it.
-        if let web = LauncherStore.shared.quicklinks.first {
+        // Not when a quicklink search ("gh nabiz") is already there: both rows would share the id "search".
+        if let web = LauncherStore.shared.quicklinks.first, !sections.contains(where: { $0.id == "search" }) {
             sections.append(LauncherSection(id: "web", title: L("Web", "Web"), items: [searchItem(web, query)]))
+        }
+        if let aliased {
+            for index in sections.indices where sections[index].id != "alias" { sections[index].items.removeAll { $0.id == aliased } }
         }
         return sections.filter { !$0.items.isEmpty }
     }
@@ -502,6 +617,55 @@ final class LauncherModel {
     }
 
     /// "25 dk", "timer 10", "zamanlayıcı 5": a timer for that many minutes.
+    /// "bluetooth", "airpods": the paired devices.
+    private func soundItems(_ query: String) -> [LauncherItem] {
+        BluetoothDevices.devices(for: query).map(bluetoothItem)
+    }
+
+    /// "ses 40", "volume 40": that volume, as its own answer above the rest.
+    private func volumeItem(_ query: String) -> LauncherItem? {
+        SoundOutput.level(in: query).map { level in
+            LauncherItem(id: "volume-set", icon: .symbol("speaker.wave.2"), title: L("Ses: %\(level)", "Volume: \(level)%"),
+                                      accessory: L("Ses", "Sound"), primaryTitle: L("Ayarla", "Set"),
+                                      primary: { [weak self] in
+                                          self?.close()
+                                          SoundOutput.setVolume(level)
+                                      }, remember: false)
+        }
+    }
+
+    private func eventItem(_ event: CalendarAgenda.Event) -> LauncherItem {
+        let close: @MainActor () -> Void = { [weak self] in self?.close() }
+        var item = LauncherItem(id: "event:\(event.id)", icon: .symbol(event.meetingURL != nil ? "video" : "calendar"), title: event.title,
+                                subtitle: event.location ?? event.calendar, accessory: CalendarAgenda.timeText(event),
+                                primaryTitle: event.meetingURL != nil ? L("Katıl", "Join") : L("Takvimde aç", "Open Calendar"),
+                                primary: {
+                                    close()
+                                    if event.meetingURL != nil { CalendarAgenda.shared.join(event) } else { CalendarAgenda.shared.openInCalendar() }
+                                },
+                                remember: false)
+        if let url = event.meetingURL {
+            item.secondaryTitle = L("Bağlantıyı kopyala", "Copy link")
+            item.secondary = {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                close()
+                Monitor.panelActions.flash(L("Kopyalandı", "Copied"))
+            }
+        }
+        return item
+    }
+
+    private func bluetoothItem(_ device: BluetoothDevices.Device) -> LauncherItem {
+        LauncherItem(id: "bt:\(device.id)", icon: .symbol(device.name.lowercased().contains("airpods") ? "airpods" : "dot.radiowaves.left.and.right"),
+                     title: device.connected ? L("Bağlantıyı kes: \(device.name)", "Disconnect \(device.name)") : L("Bağlan: \(device.name)", "Connect \(device.name)"),
+                     accessory: device.connected ? L("Bağlı", "Connected") : "Bluetooth", primaryTitle: device.connected ? L("Kes", "Disconnect") : L("Bağlan", "Connect"),
+                     primary: { [weak self] in
+                         self?.close()
+                         BluetoothDevices.toggle(device)
+                     })
+    }
+
     private func timerItems(_ query: String) -> [LauncherItem] {
         let pattern = #"^(?:timer|zamanlayıcı|zamanlayici|sayaç|sayac)?\s*(\d{1,3})\s*(?:dk|dakika|min|m)?$"#
         guard let match = query.lowercased().firstMatch(of: try! Regex(pattern)), let range = match.output[1].range,
@@ -517,8 +681,12 @@ final class LauncherModel {
     /// Extra words each command answers to, in both languages, so "kilit" and "lock" both find "Lock screen".
     private static let keywords: [String: String] = [
         "cmd:panel": "panel nabız nabiz menu", "cmd:settings": "settings ayarlar preferences",
-        "cmd:history": "history geçmiş grafik chart", "cmd:clipboard": "clipboard pano history geçmiş kopyala",
+        "cmd:history": "history geçmiş grafik chart",
+        "cmd:ai-chat": "ai chat sohbet claude codex gemini apple yapay zeka gpt", "cmd:ai-ask": "ai ask sor soru claude codex gemini yapay zeka", "cmd:clipboard": "clipboard pano history geçmiş kopyala",
         "cmd:note": "note not notes notlar yüzen floating", "cmd:note-new": "note not new yeni", "cmd:schedules": "schedule görev zamanla tasks",
+        "cmd:dictation": "dikte dictate dictation ses voice konuş speak yaz type", "cmd:calendar-join": "join katıl toplantı meeting zoom meet teams call", "cmd:calendar": "calendar takvim ajanda agenda toplantı meeting",
+        "cmd:volume-mute": "ses sound mute sustur kapat aç volume", "cmd:volume-up": "ses artır yükselt volume up louder",
+        "cmd:volume-down": "ses azalt kıs volume down quieter",
         "sys:lock": "lock kilitle", "sys:sleep": "sleep uyut uyku", "sys:displayOff": "display ekran kapat",
         "sys:hideOthers": "hide gizle", "sys:quitAll": "quit çık kapat all tüm", "sys:emptyTrash": "trash çöp boşalt",
         "sys:restart": "restart yeniden başlat reboot", "sys:shutDown": "shutdown kapat power", "sys:logOut": "logout oturum",
@@ -564,6 +732,12 @@ final class LauncherModel {
             command("settings", "gearshape", L("Nabız ayarları", "Nabız settings"), accessory: "⌘,") { SettingsWindow.show(nil) },
             command("schedules", "calendar.badge.clock", L("Zamanlanmış görevler", "Scheduled tasks")) { SettingsWindow.show(.schedules) },
         ]
+        if Prefs.bool(Prefs.aiAsk) {
+            items.append(command("ai-chat", "sparkles", L("AI sohbet", "AI chat")) { AIChatWindow.show() })
+            items.append(command("ai-ask", "sparkles", L("AI'a sor", "Ask AI"), accessory: HotKey.label(.ai), keepOpen: true) { [weak self] in
+                self?.reset(mode: .ai)
+            })
+        }
         for minutes in [5, 10, 25, 60] {
             items.append(command("timer-\(minutes)", "timer", L("Zamanlayıcı: \(minutes) dk", "Timer: \(minutes) min")) {
                 CountdownTimer.shared.start(minutes: minutes)
@@ -594,8 +768,13 @@ final class LauncherModel {
         }
         items.append(command("focus-on", "moon.circle", L("Odak modu: süresiz", "Focus mode: until I stop it")) { focus.start(minutes: nil) })
         for mode in CaptureMode.allCases {
-            items.append(command("capture-\(mode.rawValue)", mode.symbol, L("Ekran görüntüsü: ", "Screenshot: ") + mode.title) { Capture.run(mode) })
+            items.append(command("capture-\(mode.rawValue)", mode.symbol, L("Ekran görüntüsü: ", "Screenshot: ") + mode.title,
+                                 accessory: mode == .area && Prefs.bool(Prefs.shotHotkey) ? HotKey.label(.screenshot) : nil) { Capture.run(mode) })
         }
+        if NSPasteboard.general.canReadObject(forClasses: [NSImage.self], options: nil) {
+            items.append(command("shot-clipboard", "pencil.tip.crop.circle", L("Panodaki resmi düzenle", "Mark up the copied image")) { ShotEditor.showClipboard() })
+        }
+        items.append(command("shot-open", "photo.badge.plus", L("Resim dosyasını düzenle…", "Mark up an image file…")) { ShotEditor.choose() })
         items.append(command("download", "arrow.down.circle", L("Video indir (panodaki bağlantı)", "Download video (copied link)"), keepOpen: true) { [weak self] in
             if let url = NSPasteboard.general.string(forType: .string).flatMap(Downloader.videoURL) {
                 self?.text = url.absoluteString
@@ -611,6 +790,41 @@ final class LauncherModel {
             Microphone.toggle()
             Toolbox.shared.refreshMic()
         })
+        items.append(command("dictation", "mic.badge.plus", Dictation.shared.isListening ? L("Dikteyi bitir", "Finish dictation") : L("Dikte et", "Dictate"),
+                             accessory: Prefs.bool(Prefs.dictationHotkey) ? HotKey.label(.dictation) : nil) { Dictation.shared.toggle() })
+        if Prefs.bool(Prefs.aiAsk) {
+            for aiCommand in AICommandStore.shared.commands {
+                items.append(LauncherItem(id: aiCommand.commandID, icon: .symbol("sparkles"), title: "AI: \(aiCommand.name)",
+                                          subtitle: L("seçili ya da kopyalanan metinle", "on the selected or copied text"),
+                                          accessory: "AI", primaryTitle: L("Çalıştır", "Run"),
+                                          primary: { [weak self] in self?.runAICommand(aiCommand, on: nil) }))
+            }
+        }
+        let agenda = CalendarAgenda.shared
+        if Prefs.bool(Prefs.calendarEnabled) && agenda.authorized {
+            if let next = agenda.upcoming.first(where: { $0.meetingURL != nil && !$0.allDay && $0.end > Date() }) {
+                items.append(command("calendar-join", "video", L("Toplantıya katıl: \(next.title)", "Join: \(next.title)"),
+                                     accessory: CalendarAgenda.untilText(next)) { agenda.join(next) })
+            }
+            items.append(command("calendar", "calendar", L("Takvim", "Calendar"),
+                                 accessory: agenda.next.map { CalendarAgenda.untilText($0) }) { agenda.openInCalendar() })
+        }
+        let soundMuted = SoundOutput.isMuted
+        items.append(command("volume-mute", soundMuted ? "speaker.wave.2" : "speaker.slash", soundMuted ? L("Sesi aç", "Unmute the sound") : L("Sesi kapat", "Mute the sound")) {
+            SoundOutput.toggleMute()
+        })
+        items.append(command("volume-up", "speaker.plus", L("Sesi artır", "Volume up"), accessory: SoundOutput.volume.map { L("%\($0)", "\($0)%") }) { SoundOutput.change(by: 10) })
+        items.append(command("volume-down", "speaker.minus", L("Sesi azalt", "Volume down"), accessory: SoundOutput.volume.map { L("%\($0)", "\($0)%") }) { SoundOutput.change(by: -10) })
+        let current = SoundOutput.currentOutput
+        for device in SoundOutput.outputs {
+            items.append(LauncherItem(id: "audio:\(device.uid)", icon: .symbol(device.name.lowercased().contains("airpods") ? "airpods" : "hifispeaker"),
+                                      title: L("Ses çıkışı: \(device.name)", "Sound output: \(device.name)"),
+                                      accessory: device.id == current ? L("Şu an", "Current") : L("Ses", "Sound"), primaryTitle: L("Seç", "Select"),
+                                      primary: { [weak self] in
+                                          self?.close()
+                                          SoundOutput.select(device)
+                                      }))
+        }
         if let at = SleepTimer.shared.at {
             items.append(command("sleep-off", "moon.zzz", L("Uyku zamanlayıcısını iptal et", "Cancel the sleep timer"),
                                  accessory: at.formatted(date: .omitted, time: .shortened)) { SleepTimer.shared.cancel() })
@@ -639,6 +853,23 @@ final class LauncherModel {
                                           action.run()
                                       }))
         }
+        for layout in WindowLayouts.shared.layouts {
+            items.append(LauncherItem(id: layout.commandID, icon: .symbol("macwindow"),
+                                      title: layout.appName.map { "\(layout.name) · \($0)" } ?? layout.name,
+                                      accessory: L("Pencere", "Window"), primaryTitle: L("Uygula", "Apply"),
+                                      primary: { [weak self] in
+                                          self?.close()
+                                          WindowLayouts.shared.apply(layout)
+                                      }))
+        }
+        for name in WindowLayouts.shared.sets {
+            items.append(LauncherItem(id: "layoutset:\(name)", icon: .symbol("rectangle.3.group"), title: L("Düzen: \(name)", "Set: \(name)"),
+                                      accessory: L("Pencere", "Window"), primaryTitle: L("Uygula", "Apply"),
+                                      primary: { [weak self] in
+                                          self?.close()
+                                          WindowLayouts.shared.applySet(name)
+                                      }))
+        }
         // These already exist as commands above (or open the launcher itself).
         for script in Extensions.shared.scripts {
             items.append(LauncherItem(id: "script:\(script.path)", icon: script.icon.map { .emoji($0) } ?? .symbol("terminal"),
@@ -657,7 +888,7 @@ final class LauncherModel {
                                       }))
         }
         items.append(command("help", "questionmark.circle", L("Neler yapabilir?", "What can Nabız do?")) { HelpWindow.show() })
-        let skip: Set<ToolKind> = [.calculator, .keepAwake, .timer, .clipboard, .note, .displayOff, .pomodoro, .focus, .screenshot,
+        let skip: Set<ToolKind> = [.aiChat, .calculator, .keepAwake, .timer, .clipboard, .note, .displayOff, .pomodoro, .focus, .screenshot,
                                    .readText, .download, .mic, .sleepTimer]
         for tool in ToolKind.allCases where !skip.contains(tool) {
             items.append(LauncherItem(id: "tool:\(tool.rawValue)", icon: .symbol(tool.symbol), title: tool.title, subtitle: tool.help,
@@ -840,15 +1071,20 @@ struct LauncherAction: Identifiable {
 
 extension LauncherModel {
     var paletteActions: [LauncherAction] {
-        guard let item = selected else { return [] }
-        let all = actions(for: item)
+        let all: [LauncherAction]
+        if mode == .ai && ai != nil {
+            all = aiActions()
+        } else {
+            guard let item = selected else { return [] }
+            all = actions(for: item)
+        }
         let query = paletteQuery.trimmingCharacters(in: .whitespaces)
         guard !query.isEmpty else { return all }
         return all.filter { Fuzzy.score(query, $0.title) != nil || Fuzzy.keyword(query, $0.group) != nil }
     }
 
     func togglePalette() {
-        paletteOpen = !paletteOpen && selected != nil
+        paletteOpen = !paletteOpen && (selected != nil || (mode == .ai && ai != nil))
     }
 
     func movePalette(_ offset: Int) {
@@ -859,8 +1095,9 @@ extension LauncherModel {
 
     func runPaletteAction(_ chosen: LauncherAction? = nil) {
         let actions = paletteActions
-        guard let item = selected, let action = chosen ?? (actions.isEmpty ? nil : actions[min(paletteSelection, actions.count - 1)]) else { return }
+        guard let action = chosen ?? (actions.isEmpty ? nil : actions[min(paletteSelection, actions.count - 1)]) else { return }
         paletteOpen = false
+        guard let item = selected else { action.run(); return }
         if item.remember && (action.id == "primary" || action.id == "secondary") { Recents.add(item.id) }
         action.run()
     }
@@ -953,6 +1190,18 @@ extension LauncherModel {
                     LauncherStore.shared.save(snippet: Snippet(keyword: "", name: name, text: text))
                     SettingsWindow.show(.snippets)
                 })
+                if Prefs.bool(Prefs.aiAsk) {
+                    for task in AITextTask.allCases {
+                        list.append(LauncherAction(id: "ai-\(task.rawValue)", title: task.title, symbol: task.symbol, group: "AI") { [weak self] in
+                            self?.runAI(task, on: text)
+                        })
+                    }
+                    for command in AICommandStore.shared.commands {
+                        list.append(LauncherAction(id: "aicmd-\(command.id)", title: command.name, symbol: "sparkles", group: "AI") { [weak self] in
+                            self?.runAICommand(command, on: text)
+                        })
+                    }
+                }
                 let transform = L("Dönüştür ve yapıştır", "Transform and paste")
                 for change in TextTransform.allCases {
                     guard let result = change.apply(text) else { continue }
@@ -1069,6 +1318,26 @@ extension LauncherModel {
             list.append(LauncherAction(id: "editLinks", title: L("Bağlantıları düzenle", "Edit quicklinks"), symbol: "pencil", group: main) { [weak self] in
                 self?.close()
                 SettingsWindow.show(.launcher)
+            })
+        }
+
+        if item.remember && (item.id.hasPrefix("app:") || item.id.hasPrefix("cmd:") || item.id.hasPrefix("sys:") || item.id.hasPrefix("win:") || item.id.hasPrefix("layout") || item.id.hasPrefix("aicmd:")
+                             || item.id.hasPrefix("tool:") || item.id.hasPrefix("link:") || item.id.hasPrefix("script:")
+                             || item.id.hasPrefix("shortcut:") || item.id.hasPrefix("audio:") || item.id.hasPrefix("bt:")) {
+            let launcher = L("Başlatıcı", "Launcher")
+            let binding = ItemBindings.shared.binding(item.id)
+            let title = item.title
+            list.append(LauncherAction(id: "bindKey", title: binding?.combo.map { L("Kısayolu değiştir (\($0.label))…", "Change shortcut (\($0.label))…") }
+                                           ?? L("Kısayol ata…", "Set a shortcut…"),
+                                       symbol: "keyboard", group: launcher) { [weak self] in
+                self?.close()
+                ItemBindings.shared.askCombo(id: item.id, title: title)
+            })
+            list.append(LauncherAction(id: "bindAlias", title: binding?.alias.map { L("Takma adı değiştir (\($0))…", "Change alias (\($0))…") }
+                                           ?? L("Takma ad ver…", "Set an alias…"),
+                                       symbol: "character.cursor.ibeam", group: launcher) { [weak self] in
+                self?.close()
+                ItemBindings.shared.askAlias(id: item.id, title: title)
             })
         }
 

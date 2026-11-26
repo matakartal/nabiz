@@ -2,6 +2,53 @@
 
 ## Unreleased
 
+- **Settings, easier to search:** search now finds single settings, not just pages — in Turkish or English, without
+  accents ("karanlik"), by word starts and with a typo forgiven. Results list the pages, then each setting with its
+  page; ↑↓ walk them and the page scrolls to the setting and lights it up. Busy pages are split into smaller ones:
+  **Shortcuts**, **Backup & Upkeep**, **Screenshots** and **Extensions** have their own pages, and AI is split into
+  **Ask AI**, **Chat**, **Dictation** and **AI Limits**. The sidebar gains a **Menu Bar & Panel** group.
+- **Easier to find:** the panel's AI section opens the chat (⌃⌥I, its own new shortcut) and quick questions, and an
+  **AI chat** tile leads the tools. The menu bar item's right-click menu adds AI chat, Ask AI, Screenshot and Dictate
+  with their keys. Settings has its own **AI** group (AI and MCP); AI commands and dictation moved to the AI page.
+  In the launcher a question goes to AI first and Web second. Help and the welcome window show AI chat and
+  screenshots, and the panel says once what's new in this version.
+- **Screenshots with markup** (⌃⌥S, Settings → Screenshots): after a capture a thumbnail slides in at the lower-left —
+  copy, save, pin, drag it out as a file, or click to mark it up. The editor has arrows (tapered, line, both ends),
+  lines, boxes, ellipses, pen, highlighter, text (outlined or on a label), numbered steps, blur / pixelate,
+  spotlight and crop; every mark stays movable and editable, with undo, one-key tools (A, R, T, N…), 1–8 for
+  colours and [ ] for size. A frame option adds a gradient background, padding, rounded corners and a shadow.
+  Copy text from the image (⇧⌘C), pin it over every app, share it, or mark up the copied image or any file from the
+  launcher. Optionally ⌘⇧3 / ⌘⇧4 (and ⌃ to copy) go to Nabız too: macOS's own are turned off while Nabız runs
+  and come back when it quits.
+- **MCP server** (Settings → MCP, off until turned on): Claude Code, Claude Desktop, Cursor and other AI apps can use
+  Nabız through `Nabiz --mcp`: this Mac's status and busiest apps, AI limits, calendar, maths and conversions, markets,
+  rates, notifications, opening apps, window layouts, volume, timers, focus mode, your notes and snippets, and (only
+  if you allow it) the clipboard history. One-click "Add to Claude Code / Claude Desktop". It listens on a socket only
+  your user can open; restart, shut down and the like are never run.
+- **Calendar** (Settings → Calendar): today's meetings in the panel, a heads-up a minute before, one click to join
+  Zoom / Meet / Teams / Webex / FaceTime calls; `calendar` and "Join: …" in the launcher.
+- **Your own window layouts** (Settings → Windows): any share of the screen, for the front window or a chosen app,
+  and sets applied together ("Set: Code"); each is a launcher command you can give a shortcut.
+- **Your own AI commands** (Settings → Launcher): a name and a prompt, run on the selected or copied text from the
+  launcher or ⌘K. **Translate** with `çevir …` / `translate …` (Turkish ↔ English, by the text's language).
+- **Dictation** (Settings → General, ⌃⌥D): speak, press again, and the words are typed where the cursor is;
+  on-device when macOS has the language.
+- **Backup** (Settings → General): one file with settings, snippets, quicklinks, shortcuts, layouts, AI commands,
+  schedules and notes, to load on another Mac; optionally a daily copy in iCloud Drive.
+- **AI chat with your own subscriptions:** Claude, Codex, Grok and Gemini through their CLIs on this Mac, or Apple's
+  free on-device model (the default). Each provider's own models, defaults and thinking levels (Claude Low…Max, Codex
+  per model, Grok Low…Extra); real logos where the provider's app is installed; Apple Intelligence's edge light.
+  Sidebar with pinned chats, folders (drag chats in), grouping by date or AI, archive, rename, unread dots and search
+  that shows where it matched; one aligned top bar (also in Settings). A chat window like the apps (history, Markdown, code blocks with copy, tables, model and thinking
+  pickers, write again with another AI), quick questions in the launcher (`?` or ⌃⌥A) and ready-made tasks for selected
+  or copied text. Each AI keeps its own look while it thinks; chats are kept encrypted.
+- **Your own shortcut or alias for any app or command:** in the launcher press ⌘K on a row → "Set a shortcut…"
+  (works from any app, e.g. ⌥S for Safari) or "Set an alias…" (type "ss" and that row comes first). Listed and
+  removable in Settings → Launcher.
+- **Sound:** mute, volume up/down, `ses 40` / `volume 40`, switch the sound output (speakers, AirPods, a display) and
+  connect or disconnect paired Bluetooth devices (`bluetooth`, `airpods`) from the launcher.
+- **Focus mode blocks websites** (opt-in, Settings → Focus): in Safari, Chrome, Arc, Brave, Edge and Vivaldi, with no
+  extension, a blocked site in the front tab turns into a short "You're focusing" page until focus ends.
 - **What can it do?** rebuilt: a fixed header (nothing scrolls under the window buttons any more), four tabs (Start,
   Launcher, Tools, Shortcuts) and search across all of it. Feature cards open what they describe, launcher examples
   open the launcher with that text and show their answer on hover, keys are drawn as keycaps.

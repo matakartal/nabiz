@@ -142,6 +142,16 @@ struct HelpView: View {
                    "Nabız watches your Mac from the menu bar. One shortcut away, there's also:"))
                 .font(Theme.body).foregroundStyle(Theme.textMuted)
             LazyVGrid(columns: [GridItem(.flexible(), spacing: Theme.Spacing.m), GridItem(.flexible())], spacing: Theme.Spacing.m) {
+                FeatureCard(symbol: "sparkles", title: L("AI sohbet", "AI chat"), keys: HotKey.label(.aiChat),
+                            text: L("Claude, Codex, Gemini, Grok ya da Apple'ın ücretsiz modeliyle sohbet; kendi aboneliklerinle.",
+                                    "Chat with Claude, Codex, Gemini, Grok or Apple's free model, on your own subscriptions.")) {
+                    AIChatWindow.show()
+                }
+                FeatureCard(symbol: "camera.viewfinder", title: L("Ekran görüntüsü", "Screenshot"), keys: HotKey.label(.screenshot),
+                            text: L("Alan seç; ok, kutu, yazı, numara, bulanıklaştırma ve çerçeveyle düzenle.",
+                                    "Pick an area; mark it up with arrows, boxes, text, steps, blur and a frame.")) {
+                    Capture.run(.area)
+                }
                 FeatureCard(symbol: "magnifyingglass", title: L("Başlatıcı", "Launcher"), keys: HotKey.label(.launcher),
                             text: L("Uygulama aç, hesapla, para ve birim çevir, dosya ve emoji bul, komut çalıştır.",
                                     "Open apps, calculate, convert money and units, find files and emoji, run commands.")) {
@@ -170,6 +180,16 @@ struct HelpView: View {
                                                "Paste a YouTube or Instagram link into the launcher to save the video or its sound."))
                     tip("brain.head.profile", L("Pomodoro'yu başlat; odak bloklarında sohbet uygulamaları kendiliğinden gizlenir.",
                                                 "Start a Pomodoro; chat apps hide themselves during focus blocks."))
+                    tip("questionmark.bubble", L("Başlatıcıda bir soru yaz ya da başına ? koy: AI cevaplar. \(HotKey.label(.ai)) seçili metni de alır.",
+                                                 "Type a question in the launcher, or start with ?: AI answers. \(HotKey.label(.ai)) takes the selected text too."))
+                    tip("mic", L("Dikte: kısayola bas, konuş, yine bas; söylediklerin imlecin olduğu yere yazılır (Ayarlar → AI).",
+                                 "Dictation: press the shortcut, speak, press again; your words are typed at the cursor (Settings → AI)."))
+                    tip("calendar", L("Takvimi aç: bugünkü toplantılar panelde, tek tıkla katıl (Ayarlar → Takvim).",
+                                      "Turn on the calendar: today's meetings in the panel, one click to join (Settings → Calendar)."))
+                    tip("rectangle.split.2x1", L("Kendi pencere düzenlerini kur ve kısayol ver (Ayarlar → Pencereler).",
+                                                 "Make your own window layouts and give them shortcuts (Settings → Windows)."))
+                    tip("point.3.connected.trianglepath.dotted", L("Claude Code ya da Claude Desktop Nabız'ı kullanabilir (Ayarlar → MCP).",
+                                                                   "Claude Code or Claude Desktop can use Nabız (Settings → MCP)."))
                     tip("cursorarrow.click.2", L("Menü çubuğundaki simgeye sağ tıkla: kısa bir menü açılır.", "Right-click the menu bar item for a short menu."))
                 }
             }
@@ -185,6 +205,7 @@ struct HelpView: View {
                     prefix(">", L("yalnızca komutlar", "commands only"))
                     prefix("/", L("yalnızca dosyalar", "files only"))
                     prefix(":", L("emoji", "emoji"))
+                    prefix("?", L("AI'a sor (Claude, Codex, Gemini, Apple)", "ask AI (Claude, Codex, Gemini, Apple)"))
                     prefix("g", L("Google'da ara (gh, yt, w…)", "search Google (gh, yt, w…)"))
                 }
             }
@@ -220,7 +241,7 @@ struct HelpView: View {
                     }
                 }
             }
-            Button(L("Kısayolları değiştir…", "Change shortcuts…")) { SettingsWindow.show(.general) }
+            Button(L("Kısayolları değiştir…", "Change shortcuts…")) { SettingsWindow.show(.shortcuts) }
         }
     }
 
@@ -309,6 +330,8 @@ struct HelpView: View {
             example(commands, "30 dk sonra uyut", L("uyku zamanlayıcı", "sleep timer")), example(commands, "ekran görüntüsü", L("ekran al", "screenshot")),
             example(find, "g nabız", L("Google", "Google")), example(find, "gh swift", "GitHub"), example(find, "/rapor", L("dosya", "files")),
             example(find, ":ateş", "emoji"), example(find, "safari", L("uygulama", "app")),
+            example("AI", L("? bu hata ne demek", "? what does this error mean"), L("soru sor", "ask a question")),
+            example("AI", "?", L("seçili metni özetle, çevir, düzelt", "summarise, translate, fix selected text")),
         ]
         let everyday = L("Her gün", "Everyday"), more = L("Diğer araçlar", "More tools")
         list += ToolKind.allCases.map { kind in
@@ -318,6 +341,14 @@ struct HelpView: View {
         list += [
             key(anywhere, HotKey.label(.launcher), L("Başlatıcı", "Launcher")), key(anywhere, HotKey.label(.clipboard), L("Pano geçmişi", "Clipboard history")),
             key(anywhere, HotKey.label(.note), L("Notlar", "Notes")), key(anywhere, HotKey.label(.panel), L("Panel", "Panel")),
+            key(anywhere, HotKey.label(.aiChat), L("AI sohbet penceresi", "AI chat window")),
+            key(anywhere, HotKey.label(.ai), L("AI'a sor (seçili metinle)", "Ask AI (with the selected text)")),
+            key(anywhere, HotKey.label(.screenshot), L("Ekran görüntüsü (alan)", "Screenshot (area)")),
+            key(anywhere, HotKey.label(.dictation), L("Dikte (Ayarlar → AI'dan açılır)", "Dictation (turn on in Settings → AI)")),
+            key(L("AI sohbetinde", "In an AI chat"), "⌘O", L("Sohbeti pencerede aç", "Open the chat in its window")),
+            key(L("AI sohbetinde", "In an AI chat"), "⌘R", L("Son cevabı yeniden yaz", "Write the last answer again")),
+            key(L("AI sohbetinde", "In an AI chat"), "⌘N", L("Yeni sohbet", "New chat")),
+            key(L("AI sohbetinde", "In an AI chat"), "esc", L("Cevabı durdur", "Stop the answer")),
             key(anywhere, "⌃⌥← → ↑ ↓", L("Pencereyi yarıya yerleştir (Ayarlar → Pencereler)", "Snap the window to a half (Settings → Windows)")),
             key(anywhere, "⌃⌥↩", L("Pencereyi ekranı kaplayacak kadar büyüt", "Maximize the window")),
             key(inLauncher, "↑ ↓", L("Seç", "Pick")), key(inLauncher, "↩", L("Çalıştır, aç ya da yapıştır", "Run, open or paste")),

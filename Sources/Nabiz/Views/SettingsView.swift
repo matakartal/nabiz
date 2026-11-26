@@ -5,47 +5,71 @@ import Carbon.HIToolbox
 import SwiftUI
 
 enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
-    case general, appearance, menuBar, panel, advice, launcher, clipboard, snippets, windows, focus, schedules, markets, currency, ai, about
+    case general, appearance, shortcuts, maintenance
+    case menuBar, panel, advice
+    case ai, aiChat, dictation, aiLimits, mcp
+    case launcher, extensions, clipboard, snippets, windows, screenshot, focus, schedules
+    case calendar, markets, currency
+    case about
 
     var id: String { rawValue }
 
-    var title: String {
+    var title: String { L(names.tr, names.en) }
+
+    var names: (tr: String, en: String) {
         switch self {
-        case .general: L("Genel", "General")
-        case .appearance: L("Görünüm", "Appearance")
-        case .menuBar: L("Menü çubuğu", "Menu Bar")
-        case .panel: L("Panel", "Panel")
-        case .advice: L("Öneriler", "Suggestions")
-        case .launcher: L("Başlatıcı", "Launcher")
-        case .clipboard: L("Pano", "Clipboard")
-        case .snippets: L("Parçacıklar", "Snippets")
-        case .windows: L("Pencereler", "Windows")
-        case .focus: L("Odak", "Focus")
-        case .schedules: L("Görevler", "Schedules")
-        case .markets: L("Piyasalar", "Markets")
-        case .currency: L("Döviz", "Currency")
-        case .ai: L("AI limitleri", "AI Limits")
-        case .about: L("Hakkında", "About")
+        case .general: ("Genel", "General")
+        case .appearance: ("Görünüm", "Appearance")
+        case .shortcuts: ("Kısayollar", "Shortcuts")
+        case .maintenance: ("Yedek ve bakım", "Backup & Upkeep")
+        case .menuBar: ("Menü çubuğu", "Menu Bar")
+        case .panel: ("Panel", "Panel")
+        case .advice: ("Öneriler", "Suggestions")
+        case .ai: ("AI'a sor", "Ask AI")
+        case .aiChat: ("Sohbet", "Chat")
+        case .dictation: ("Dikte", "Dictation")
+        case .aiLimits: ("AI limitleri", "AI Limits")
+        case .mcp: ("MCP", "MCP")
+        case .launcher: ("Başlatıcı", "Launcher")
+        case .extensions: ("Uzantılar", "Extensions")
+        case .clipboard: ("Pano", "Clipboard")
+        case .snippets: ("Parçacıklar", "Snippets")
+        case .windows: ("Pencereler", "Windows")
+        case .screenshot: ("Ekran görüntüsü", "Screenshots")
+        case .focus: ("Odak", "Focus")
+        case .schedules: ("Görevler", "Schedules")
+        case .calendar: ("Takvim", "Calendar")
+        case .markets: ("Piyasalar", "Markets")
+        case .currency: ("Döviz", "Currency")
+        case .about: ("Hakkında", "About")
         }
     }
 
-    /// One line under the page title: what this page is for.
     var subtitle: String {
         switch self {
-        case .general: L("Dil, açılış, yenileme ve kısayollar.", "Language, startup, refresh and shortcuts.")
+        case .general: L("Dil, açılış, yenileme, notlar ve bildirimler.", "Language, startup, refresh, notes and notifications.")
         case .appearance: L("Renk, tema, yazı tipi, boyut ve sıklık.", "Colour, theme, typeface, size and density.")
+        case .shortcuts: L("Her aracı açan genel kısayollar.", "The global shortcuts that open each tool.")
+        case .maintenance: L("Yedekleme, otomatik temizlik ve sıfırlama.", "Backups, automatic clean-up and reset.")
         case .menuBar: L("Menü çubuğunda ne ve nasıl görüneceği.", "What the menu bar shows, and how.")
         case .panel: L("Paneldeki bölümler, sıraları, katlama ve araçlar.", "The panel's sections, their order, folding and tools.")
         case .advice: L("Hangi durumlarda öneri görüneceği.", "Which situations bring up a suggestion.")
+        case .ai: L("Hızlı soru, kim cevaplasın, model ve kendi AI komutların.", "Quick questions, who answers, the model and your own AI commands.")
+        case .aiChat: L("Sohbet penceresi ve sohbet geçmişi.", "The chat window and its history.")
+        case .dictation: L("Konuş, imlecin olduğu yere yazılsın.", "Speak, and it's typed where the cursor is.")
+        case .aiLimits: L("Claude, Codex ve Gemini abonelik limitleri.", "Claude, Codex and Gemini subscription limits.")
+        case .mcp: L("Claude Code, Claude Desktop ve diğer AI uygulamaları Nabız'ı kullansın.", "Let Claude Code, Claude Desktop and other AI apps use Nabız.")
         case .launcher: L("Uygulama, komut, hesap ve web araması tek yerde.", "Apps, commands, maths and web search in one place.")
+        case .extensions: L("Dosyalar, kestirmeler, betikler ve video indirme.", "Files, Shortcuts, scripts and video downloads.")
         case .clipboard: L("Kopyaladıklarının geçmişi ve yapıştırma.", "The history of what you copied, and pasting.")
         case .snippets: L("Kısa bir kelimeyle yapıştırılan hazır metinler.", "Saved text you paste with a short keyword.")
         case .windows: L("Öndeki pencereyi kısayolla yerleştir.", "Place the front window with a shortcut.")
+        case .screenshot: L("Kısayol, sonrasında ne olacağı ve macOS kısayolları.", "The shortcut, what happens next, and macOS's own keys.")
         case .focus: L("Pomodoro süreleri ve odakta gizlenecek uygulamalar.", "Pomodoro lengths, and the apps focus mode hides.")
         case .schedules: L("Belirli gün ve saatlerde kendiliğinden yapılacak işler.", "Things done on their own at set days and times.")
+        case .calendar: L("Bugünkü toplantılar, hatırlatma ve tek tıkla katılma.", "Today's meetings, a heads-up and one-click join.")
         case .markets: L("Hyperliquid'den izlenecek piyasalar.", "The Hyperliquid markets to watch.")
         case .currency: L("Ana para birimi ve izlenen kurlar.", "Your main currency and the rates you watch.")
-        case .ai: L("Abonelik limitleri ve harcama hızı.", "Subscription limits and how fast they burn.")
         case .about: ""
         }
     }
@@ -54,18 +78,27 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .general: "gearshape.fill"
         case .appearance: "paintpalette.fill"
+        case .shortcuts: "command"
+        case .maintenance: "archivebox.fill"
         case .menuBar: "menubar.rectangle"
         case .panel: "list.bullet.rectangle.fill"
         case .advice: "lightbulb.fill"
+        case .ai: "sparkles"
+        case .aiChat: "bubble.left.and.bubble.right.fill"
+        case .dictation: "mic.fill"
+        case .aiLimits: "gauge.with.dots.needle.67percent"
+        case .mcp: "point.3.connected.trianglepath.dotted"
         case .launcher: "magnifyingglass"
+        case .extensions: "puzzlepiece.extension.fill"
         case .clipboard: "doc.on.clipboard.fill"
         case .snippets: "text.quote"
         case .windows: "rectangle.split.2x1.fill"
+        case .screenshot: "camera.viewfinder"
         case .focus: "brain.head.profile"
         case .schedules: "calendar.badge.clock"
+        case .calendar: "calendar"
         case .markets: "chart.line.uptrend.xyaxis"
         case .currency: "dollarsign.arrow.circlepath"
-        case .ai: "sparkles"
         case .about: "info.circle.fill"
         }
     }
@@ -75,6 +108,17 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
 @Observable
 final class SettingsSelection {
     var page: SettingsPage? = .general
+    /// The section a search result points at; the page scrolls to it and lights it up briefly.
+    var anchor: String?
+    var flash: String?
+    /// Bumped on every jump, so picking the same result twice still scrolls.
+    var jump = 0
+
+    func go(_ target: SettingsTarget) {
+        page = target.page
+        anchor = target.anchor
+        if target.anchor != nil { jump += 1 }
+    }
 }
 
 @MainActor
@@ -84,18 +128,14 @@ enum SettingsWindow {
     /// The live monitor, for the menu bar preview.
     static weak var monitor: Monitor?
 
-    static func show(_ page: SettingsPage?) {
-        if let page { selection.page = page }
+    static func show(_ page: SettingsPage?, anchor: String? = nil) {
+        if let page { selection.go(SettingsTarget(page: page, anchor: anchor)) }
         if window == nil {
             let controller = NSHostingController(rootView: SettingsView(selection: selection))
             let window = NSWindow(contentViewController: controller)
             window.styleMask = [.titled, .closable, .miniaturizable, .fullSizeContentView]
-            window.titlebarAppearsTransparent = true
-            window.titleVisibility = .hidden
-            window.toolbarStyle = .unified
+            WindowChrome.apply(window)
             window.isReleasedWhenClosed = false
-            window.backgroundColor = .clear
-            window.isOpaque = false
             window.setContentSize(NSSize(width: 680, height: 500))
             window.center()
             self.window = window
@@ -108,6 +148,8 @@ enum SettingsWindow {
         NSApp.activate()
         window?.makeKeyAndOrderFront(nil)
         window?.orderFrontRegardless()
+        // AppKit gives the first text field focus on open; the search field should wait for a click or ⌘F.
+        DispatchQueue.main.async { window?.makeFirstResponder(nil) }
     }
 }
 
@@ -115,58 +157,328 @@ enum SettingsWindow {
 struct SettingsView: View {
     @Bindable var selection: SettingsSelection
     @AppStorage(Prefs.language) private var language = "system"
+    @AppStorage("settingsSidebarWidth") private var sidebarWidth = 220.0
+    @State private var query = ""
 
-    init(selection: SettingsSelection = SettingsSelection()) {
+    init(selection: SettingsSelection = SettingsSelection(), query: String = "") {
         self.selection = selection
+        _query = State(initialValue: query)
     }
 
     var body: some View {
-        NavigationSplitView {
-            List(SettingsPage.allCases, selection: $selection.page) { page in
-                HStack(spacing: Theme.Spacing.s) {
-                    Image(systemName: page.symbol)
-                        .font(Theme.small)
-                        .foregroundStyle(.white)
-                        .frame(width: Theme.settingsIcon, height: Theme.settingsIcon)
-                        .background(Theme.accent, in: RoundedRectangle(cornerRadius: Theme.fieldRadius, style: .continuous))
-                    Text(page.title).font(Theme.body).lineLimit(1).minimumScaleFactor(0.85)
-                }
-                .tag(page)
+        // One bar along the top, level with the window buttons and split like the window below it (as in the AI window).
+        UnifiedSplitView(sidebarVisible: .constant(true), sidebarWidth: $sidebarWidth, minWidth: 200, maxWidth: 300) {
+            VStack(spacing: 0) {
+                SidebarSearchField(text: $query, onMove: move) { if let first = hits.first { open(first) } }
+                    .padding(.horizontal, Theme.sidebarInset)
+                    .padding(.top, Theme.Spacing.s)
+                    .padding(.bottom, Theme.Spacing.s)
+                sidebarList
             }
-            .listStyle(.sidebar)
-            .scrollIndicators(.never)
-            .scrollContentBackground(.hidden)
-            .navigationSplitViewColumnWidth(min: 210, ideal: 220, max: 260)
-            .toolbar(removing: .sidebarToggle)
         } detail: {
-            VStack(alignment: .leading, spacing: 0) {
-                switch selection.page ?? .general {
-                case .general: GeneralPage()
-                case .appearance: AppearancePage()
-                case .menuBar: MenuBarPage()
-                case .panel: PanelPage()
-                case .advice: AdvicePage()
-                case .launcher: LauncherPage()
-                case .clipboard: ClipboardPage()
-                case .snippets: SnippetsPage()
-                case .windows: WindowsPage()
-                case .focus: FocusPage()
-                case .schedules: SchedulesPage()
-                case .markets: MarketsPage()
-                case .currency: CurrencyPage()
-                case .ai: AIPage()
-                case .about: AboutPage()
+            ScrollViewReader { proxy in
+                VStack(alignment: .leading, spacing: 0) {
+                    switch selection.page ?? .general {
+                    case .general: GeneralPage()
+                    case .appearance: AppearancePage()
+                    case .shortcuts: ShortcutsPage()
+                    case .maintenance: MaintenancePage()
+                    case .menuBar: MenuBarPage()
+                    case .panel: PanelPage()
+                    case .advice: AdvicePage()
+                    case .ai: AIPage()
+                    case .aiChat: AIChatPage()
+                    case .dictation: DictationPage()
+                    case .aiLimits: AILimitsPage()
+                    case .mcp: MCPPage()
+                    case .launcher: LauncherPage()
+                    case .extensions: ExtensionsPage()
+                    case .clipboard: ClipboardPage()
+                    case .snippets: SnippetsPage()
+                    case .windows: WindowsPage()
+                    case .screenshot: ScreenshotPage()
+                    case .focus: FocusPage()
+                    case .schedules: SchedulesPage()
+                    case .calendar: CalendarPage()
+                    case .markets: MarketsPage()
+                    case .currency: CurrencyPage()
+                    case .about: AboutPage()
+                    }
                 }
+                .environment(\.settingsFlash, selection.flash)
+                .onAppear { if selection.anchor != nil { reveal(proxy) } }
+                .onChange(of: selection.jump) { reveal(proxy) }
             }
             .scrollContentBackground(.hidden)
             .scrollIndicators(.never)
             .background(HiddenScrollers().id(selection.page))
-            .navigationTitle("")
+        } sidebarBar: {
+            EmptyView()
+        } detailBar: {
+            HStack(spacing: Theme.Spacing.s) {
+                Text(verbatim: (selection.page ?? .general).title).font(Theme.bodyStrong).foregroundStyle(Theme.text)
+                    .contentTransition(.opacity)
+                Spacer()
+            }
         }
         .frame(minWidth: 640, minHeight: 460)
         .background(MenuMaterial().ignoresSafeArea())
         .appearanceRoot(opaqueFill: Theme.surface)
+        .onChange(of: query) { _, new in
+            if new.trimmingCharacters(in: .whitespaces).isEmpty { selection.anchor = nil }
+        }
     }
+
+    private var hits: [SettingsHit] { SettingsIndex.search(query) }
+
+    private var current: SettingsTarget {
+        SettingsTarget(page: selection.page ?? .general, anchor: selection.anchor)
+    }
+
+    private func open(_ hit: SettingsHit) { selection.go(hit.target) }
+
+    /// ↑↓ in the search field walk the results and open each one as they go.
+    private func move(_ step: Int) {
+        let list = hits
+        guard !list.isEmpty else { return }
+        let index = list.firstIndex { $0.target == current }.map { $0 + step } ?? (step > 0 ? 0 : list.count - 1)
+        open(list[min(max(index, 0), list.count - 1)])
+    }
+
+    /// Waits for the page to lay out, scrolls the section to the top and lights it up for a moment.
+    private func reveal(_ proxy: ScrollViewProxy) {
+        guard let anchor = selection.anchor else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(120))
+            withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(anchor, anchor: .top) }
+            withAnimation(.easeOut(duration: 0.2)) { selection.flash = anchor }
+            try? await Task.sleep(for: .seconds(1.6))
+            if selection.flash == anchor { withAnimation(.easeOut(duration: 0.6)) { selection.flash = nil } }
+        }
+    }
+
+    /// Grouped with small headings while browsing; while searching, pages first and then the settings themselves.
+    private var sidebarList: some View {
+        List(selection: Binding(get: { current }, set: { if let target = $0 { selection.go(target) } })) {
+            if query.trimmingCharacters(in: .whitespaces).isEmpty {
+                ForEach(SettingsGroup.allCases) { group in
+                    Section {
+                        ForEach(group.pages) { SidebarRow(page: $0) }
+                    } header: {
+                        if let title = group.title {
+                            Text(verbatim: title).font(Theme.smallStrong).foregroundStyle(Theme.textMuted)
+                        }
+                    }
+                }
+            } else {
+                let list = hits
+                let pages = list.filter { $0.target.anchor == nil }
+                let items = list.filter { $0.target.anchor != nil }
+                if list.isEmpty {
+                    VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                        Text(L("Sonuç yok", "No results")).font(Theme.body).foregroundStyle(Theme.text)
+                        Text(L("Başka bir kelime dene: \"koyu\", \"kısayol\", \"yedek\"…", "Try another word: \"dark\", \"shortcut\", \"backup\"…"))
+                            .font(Theme.small).foregroundStyle(Theme.textMuted)
+                    }
+                    .selectionDisabled()
+                }
+                if !pages.isEmpty {
+                    Section {
+                        ForEach(pages) { SidebarRow(page: $0.target.page) }
+                    } header: {
+                        Text(L("Sayfalar", "Pages")).font(Theme.smallStrong).foregroundStyle(Theme.textMuted)
+                    }
+                }
+                if !items.isEmpty {
+                    Section {
+                        ForEach(items) { SettingsHitRow(hit: $0, query: query) }
+                    } header: {
+                        Text(L("Ayarlar · \(items.count)", "Settings · \(items.count)")).font(Theme.smallStrong).foregroundStyle(Theme.textMuted)
+                    }
+                }
+            }
+        }
+        .listStyle(.sidebar)
+        .scrollIndicators(.never)
+        .scrollContentBackground(.hidden)
+    }
+}
+
+// MARK: - Sidebar
+
+/// The sidebar's groups, each under a small heading; About sits alone at the end, like a footer.
+enum SettingsGroup: String, CaseIterable, Identifiable {
+    case app, bar, ai, tools, tracking, about
+
+    var id: String { rawValue }
+
+    var title: String? {
+        switch self {
+        case .app: L("Uygulama", "App")
+        case .bar: L("Menü çubuğu ve panel", "Menu Bar & Panel")
+        case .ai: L("Yapay zekâ", "AI")
+        case .tools: L("Araçlar", "Tools")
+        case .tracking: L("Takip", "Tracking")
+        case .about: nil
+        }
+    }
+
+    var pages: [SettingsPage] {
+        switch self {
+        case .app: [.general, .appearance, .shortcuts, .maintenance]
+        case .bar: [.menuBar, .panel, .advice]
+        case .ai: [.ai, .aiChat, .dictation, .aiLimits, .mcp]
+        case .tools: [.launcher, .extensions, .clipboard, .snippets, .windows, .screenshot, .focus, .schedules]
+        case .tracking: [.calendar, .markets, .currency]
+        case .about: [.about]
+        }
+    }
+}
+
+private struct SidebarRow: View {
+    let page: SettingsPage
+
+    var body: some View {
+        HStack(spacing: Theme.Spacing.s) {
+            Image(systemName: page.symbol)
+                .font(Theme.small)
+                .foregroundStyle(.white)
+                .frame(width: Theme.settingsIcon, height: Theme.settingsIcon)
+                .background(Theme.accent, in: RoundedRectangle(cornerRadius: Theme.fieldRadius, style: .continuous))
+            Text(page.title).font(Theme.body).lineLimit(1).minimumScaleFactor(0.85)
+        }
+        .tag(SettingsTarget(page: page, anchor: nil))
+    }
+}
+
+/// A single setting found by search: its name with the typed letters in bold, and the page it lives on.
+private struct SettingsHitRow: View {
+    let hit: SettingsHit
+    let query: String
+
+    var body: some View {
+        HStack(spacing: Theme.Spacing.s) {
+            Image(systemName: hit.target.page.symbol)
+                .font(Theme.small)
+                .foregroundStyle(Theme.accent)
+                .frame(width: Theme.settingsIcon, height: Theme.settingsIcon)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(SettingsIndex.highlighted(hit.title, query)).font(Theme.body).lineLimit(1)
+                Text(verbatim: hit.target.page.title).font(Theme.small).foregroundStyle(Theme.textMuted).lineLimit(1)
+            }
+        }
+        .tag(hit.target)
+    }
+}
+
+/// A flat search field for the sidebar: a quiet fill, no shadow or border, lined up with the selection highlight.
+/// ⌘F focuses it, ⎋ clears it, ↩ opens the first match, ↑↓ walk the results when `onMove` is given.
+struct SidebarSearchField: View {
+    @Binding var text: String
+    var onMove: ((Int) -> Void)? = nil
+    let onSubmit: () -> Void
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: Theme.Spacing.xs + 2) {
+            Image(systemName: "magnifyingglass").foregroundStyle(Theme.textMuted)
+            TextField(L("Ara", "Search"), text: $text)
+                .textFieldStyle(.plain)
+                .focused($focused)
+                .onSubmit(onSubmit)
+                .onExitCommand { text = "" }
+                .onKeyPress(.downArrow) {
+                    guard let onMove, !text.isEmpty else { return .ignored }
+                    onMove(1)
+                    return .handled
+                }
+                .onKeyPress(.upArrow) {
+                    guard let onMove, !text.isEmpty else { return .ignored }
+                    onMove(-1)
+                    return .handled
+                }
+            if !text.isEmpty {
+                Button { text = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.textMuted) }
+                    .buttonStyle(.plain)
+                    .help(L("Temizle", "Clear"))
+            }
+        }
+        .font(Theme.body)
+        .padding(.horizontal, Theme.Spacing.s)
+        .frame(height: Theme.sidebarSearch)
+        .background(Theme.track, in: RoundedRectangle(cornerRadius: Theme.fieldRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: Theme.fieldRadius, style: .continuous)
+                .strokeBorder(Theme.accent.opacity(focused ? 0.6 : 0), lineWidth: 1)
+        }
+        .animation(.easeOut(duration: 0.15), value: focused)
+        .background {
+            Button("") { focused = true }.keyboardShortcut("f", modifiers: .command).hidden()
+        }
+    }
+}
+
+/// A form section a search result can point at: it carries the result's id for scrolling and lights up when opened.
+struct SettingsSection<Content: View, Header: View, Footer: View>: View {
+    let id: String
+    let content: Content
+    let header: Header
+    let footer: Footer
+    @Environment(\.settingsFlash) private var flash
+
+    init(id: String, content: Content, header: Header, footer: Footer) {
+        self.id = id
+        self.content = content
+        self.header = header
+        self.footer = footer
+    }
+
+    var body: some View {
+        Section {
+            // Grouped forms ignore row backgrounds on macOS, so the glow is drawn under each row, out to the card's edges.
+            content.background {
+                Theme.accent.opacity(flash == id ? 0.2 : 0)
+                    .padding(.horizontal, -Theme.Spacing.m)
+                    .padding(.vertical, -Theme.Spacing.s)
+                    .allowsHitTesting(false)
+            }
+        } header: { header } footer: { footer }
+            .id(id)
+    }
+}
+
+extension SettingsSection where Header == EmptyView, Footer == EmptyView {
+    init(_ id: String, @ViewBuilder content: () -> Content) {
+        self.init(id: id, content: content(), header: EmptyView(), footer: EmptyView())
+    }
+}
+
+extension SettingsSection where Footer == EmptyView {
+    init(_ id: String, @ViewBuilder content: () -> Content, @ViewBuilder header: () -> Header) {
+        self.init(id: id, content: content(), header: header(), footer: EmptyView())
+    }
+}
+
+extension SettingsSection where Header == EmptyView {
+    init(_ id: String, @ViewBuilder content: () -> Content, @ViewBuilder footer: () -> Footer) {
+        self.init(id: id, content: content(), header: EmptyView(), footer: footer())
+    }
+}
+
+extension SettingsSection {
+    init(_ id: String, @ViewBuilder content: () -> Content, @ViewBuilder header: () -> Header, @ViewBuilder footer: () -> Footer) {
+        self.init(id: id, content: content(), header: header(), footer: footer())
+    }
+}
+
+extension SettingsSection where Header == Text, Footer == EmptyView {
+    init(_ id: String, title: String, @ViewBuilder content: () -> Content) {
+        self.init(id: id, content: content(), header: Text(verbatim: title), footer: EmptyView())
+    }
+}
+
+extension EnvironmentValues {
+    @Entry var settingsFlash: String? = nil
 }
 
 // MARK: - Pages
@@ -174,20 +486,14 @@ struct SettingsView: View {
 private struct GeneralPage: View {
     @AppStorage(Prefs.language) private var language = "system"
     @AppStorage(Prefs.refreshSeconds) private var refresh = 5
-    @AppStorage(Prefs.hotkey) private var hotkey = true
-    @AppStorage(Prefs.panelHotkey) private var panelHotkey = true
-    @AppStorage(Prefs.clipboardHotkey) private var clipboardHotkey = true
-    @AppStorage(Prefs.noteHotkey) private var noteHotkey = true
     @AppStorage(Prefs.notesApp) private var notesApp = "nabiz"
     @AppStorage(Prefs.notifications) private var notifications = false
-    @AppStorage(Prefs.rustAutoClean) private var rustAutoClean = false
-    @AppStorage(Prefs.rustAutoCleanDays) private var rustDays = 14
     @State private var login = SMAppService.mainApp.status == .enabled
 
     var body: some View {
         Form {
             Section {} header: { PageHeader(page: .general) }
-            Section {
+            SettingsSection("general.language") {
                 Picker(L("Dil", "Language"), selection: $language) {
                     Text(L("Sistem", "System")).tag("system")
                     Text(verbatim: "Türkçe").tag("tr")
@@ -195,7 +501,7 @@ private struct GeneralPage: View {
                 }
                 Toggle(L("Girişte aç", "Open at login"), isOn: Binding(get: { login }, set: setLogin))
             }
-            Section {
+            SettingsSection("general.refresh") {
                 Picker(L("Arka planda yenile", "Refresh in background"), selection: $refresh) {
                     ForEach([1, 2, 5, 10, 30], id: \.self) { Text(L("\($0) saniyede bir", "every \($0) s")).tag($0) }
                 }
@@ -203,19 +509,7 @@ private struct GeneralPage: View {
                 Footnote(L("Panel açıkken her 2 saniyede bir yenilenir. Seyrek yenileme pili korur.",
                        "While the panel is open it refreshes every 2 seconds. Slower refresh saves battery."))
             }
-            Section {
-                HotKeyRow(title: L("Başlatıcı", "Launcher"), shortcut: .launcher, enabled: $hotkey)
-                HotKeyRow(title: L("Pano geçmişi", "Clipboard history"), shortcut: .clipboard, enabled: $clipboardHotkey)
-                HotKeyRow(title: L("Notlar", "Notes"), shortcut: .note, enabled: $noteHotkey)
-                HotKeyRow(title: L("Panel", "Panel"), shortcut: .panel, enabled: $panelHotkey)
-                Button(L("Neler yapabilir?", "What can it do?")) { HelpWindow.show() }
-            } header: {
-                Text(L("Kısayollar", "Shortcuts"))
-            } footer: {
-                Footnote(L("Değiştirmek için kısayola tıkla ve yeni tuşlara bas (en az bir ⌘, ⌃ ya da ⌥ ile). ⎋ vazgeçer, ⌫ varsayılana döndürür. Pencere kısayolları Pencereler sayfasında.",
-                           "Click a shortcut and press the new keys (with at least ⌘, ⌃ or ⌥). ⎋ cancels, ⌫ goes back to the default. Window shortcuts are on the Windows page."))
-            }
-            Section {
+            SettingsSection("general.notes") {
                 Picker(L("Notlar için", "For notes"), selection: $notesApp) {
                     Text(L("Nabız notları", "Nabız notes")).tag("nabiz")
                     Text(L("Apple Notlar", "Apple Notes")).tag("apple")
@@ -224,7 +518,7 @@ private struct GeneralPage: View {
                 Footnote(L("Not kısayolu, Notlar aracı ve \"Not olarak kaydet\" seçtiğin uygulamayı kullanır. Apple Notlar için macOS bir kez izin ister.",
                            "The notes shortcut, the Notes tool and \"Save as note\" use the app you pick. For Apple Notes, macOS asks once for permission."))
             }
-            Section {
+            SettingsSection("general.notifications") {
                 Toggle(L("Bildirimler", "Notifications"), isOn: Binding(get: { notifications }, set: { on in
                     notifications = on
                     if on { Notifier.shared.requestPermission() }
@@ -234,7 +528,91 @@ private struct GeneralPage: View {
                            "Tells you when memory turns critical, the CPU stays above 90% for 3 minutes, the disk drops under 10 GB, the battery reaches 10%, and an AI limit you turned on burns fast or is about to reset unused. Once each time."))
 
             }
-            Section {
+        }
+        .formStyle(.grouped)
+    }
+
+    private func setLogin(_ on: Bool) {
+        do {
+            if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
+        } catch {
+            NSSound.beep()
+        }
+        login = SMAppService.mainApp.status == .enabled
+    }
+}
+
+private struct ShortcutsPage: View {
+    @AppStorage(Prefs.hotkey) private var hotkey = true
+    @AppStorage(Prefs.panelHotkey) private var panelHotkey = true
+    @AppStorage(Prefs.clipboardHotkey) private var clipboardHotkey = true
+    @AppStorage(Prefs.noteHotkey) private var noteHotkey = true
+    @AppStorage(Prefs.dictationHotkey) private var dictationHotkey = false
+    @AppStorage(Prefs.shotHotkey) private var shotHotkey = true
+    @AppStorage(Prefs.aiHotkey) private var aiHotkey = true
+    @AppStorage(Prefs.aiChatHotkey) private var aiChatHotkey = true
+
+    var body: some View {
+        Form {
+            Section {} header: { PageHeader(page: .shortcuts) }
+            SettingsSection("shortcuts.keys") {
+                HotKeyRow(title: L("Başlatıcı", "Launcher"), shortcut: .launcher, enabled: $hotkey)
+                HotKeyRow(title: L("Pano geçmişi", "Clipboard history"), shortcut: .clipboard, enabled: $clipboardHotkey)
+                HotKeyRow(title: L("Notlar", "Notes"), shortcut: .note, enabled: $noteHotkey)
+                HotKeyRow(title: L("AI sohbet", "AI chat"), shortcut: .aiChat, enabled: $aiChatHotkey)
+                HotKeyRow(title: L("AI'a sor", "Ask AI"), shortcut: .ai, enabled: $aiHotkey)
+                HotKeyRow(title: L("Panel", "Panel"), shortcut: .panel, enabled: $panelHotkey)
+                HotKeyRow(title: L("Dikte", "Dictation"), shortcut: .dictation, enabled: $dictationHotkey)
+                HotKeyRow(title: L("Ekran görüntüsü", "Screenshot"), shortcut: .screenshot, enabled: $shotHotkey)
+                Button(L("Neler yapabilir?", "What can it do?")) { HelpWindow.show() }
+            } header: {
+                Text(L("Kısayollar", "Shortcuts"))
+            } footer: {
+                Footnote(L("Değiştirmek için kısayola tıkla ve yeni tuşlara bas (en az bir ⌘, ⌃ ya da ⌥ ile). ⎋ vazgeçer, ⌫ varsayılana döndürür. Pencere kısayolları Pencereler sayfasında; ekran görüntüsü ayarları kendi sayfasında. Dikte: kısayola bas, konuş, yeniden bas; söylediklerin imlecin olduğu yere yazılır.",
+                           "Click a shortcut and press the new keys (with at least ⌘, ⌃ or ⌥). ⎋ cancels, ⌫ goes back to the default. Window shortcuts are on the Windows page; screenshot options have their own page. Dictation: press the shortcut, speak, press it again; your words land where the cursor is."))
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+private struct ScreenshotPage: View {
+    @AppStorage(Prefs.shotHotkey) private var shotHotkey = true
+    @AppStorage(Prefs.shotAfter) private var shotAfter = "preview"
+
+    var body: some View {
+        Form {
+            Section {} header: { PageHeader(page: .screenshot) }
+            SettingsSection("screenshot.keys") {
+                HotKeyRow(title: L("Ekran görüntüsü", "Screenshot"), shortcut: .screenshot, enabled: $shotHotkey)
+                Picker(L("Ekran görüntüsünden sonra", "After a screenshot"), selection: $shotAfter) {
+                    Text(L("Köşede önizleme", "Thumbnail in the corner")).tag("preview")
+                    Text(L("Düzenleyiciyi aç", "Open the editor")).tag("editor")
+                    Text(L("Hiçbir şey", "Nothing")).tag("none")
+                }
+            } footer: {
+                Footnote(L("Kısayola bas, alanı seç: önizlemeden düzenleyiciyi açar, ok, metin, bulanıklık ve çerçeve eklersin.",
+                           "Press the shortcut and pick an area: from the thumbnail open the editor to add arrows, text, blur and a frame."))
+            }
+            SettingsSection("screenshot.classic") {
+                ClassicShotRow()
+            } header: {
+                SectionTitle(L("macOS kısayolları", "macOS shortcuts"))
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+private struct MaintenancePage: View {
+    @AppStorage(Prefs.autoBackup) private var autoBackup = false
+    @AppStorage(Prefs.rustAutoClean) private var rustAutoClean = false
+    @AppStorage(Prefs.rustAutoCleanDays) private var rustDays = 14
+
+    var body: some View {
+        Form {
+            Section {} header: { PageHeader(page: .maintenance) }
+            SettingsSection("maintenance.rust") {
                 Toggle(L("Kullanılmayan Rust önbelleklerini otomatik sil", "Delete unused Rust build caches automatically"),
                        isOn: $rustAutoClean)
                 Picker(L("Ne kadar süre derlenmediyse", "When not built for"), selection: $rustDays) {
@@ -247,7 +625,29 @@ private struct GeneralPage: View {
                 Footnote(L("Sadece cargo'nun işaretlediği target/ klasörleri silinir; kod, ayar ve Cargo.lock'a dokunulmaz. Son 10 dakikada derlenen proje atlanır. Taranan yerler: ~/Developer, ~/Projects, ~/code, ~/src.",
                            "Only target/ folders cargo marked as caches are deleted; code, settings and Cargo.lock are untouched. A project built in the last 10 minutes is skipped. Looks in ~/Developer, ~/Projects, ~/code, ~/src."))
             }
-            Section {
+            SettingsSection("maintenance.backup") {
+                HStack {
+                    Button(L("Yedekle…", "Back up…")) { Backup.saveAs() }
+                    Button(L("Yedekten yükle…", "Load a backup…")) { Backup.restore() }
+                }
+                Toggle(L("Her gün iCloud Drive'a yedekle", "Back up to iCloud Drive every day"), isOn: $autoBackup)
+                    .disabled(Backup.iCloudFolder == nil)
+                if autoBackup, let folder = Backup.iCloudFolder {
+                    LabeledContent(Backup.lastAutoBackup.map { L("Son yedek: ", "Last backup: ") + $0.formatted(.relative(presentation: .named).locale(Format.locale)) }
+                                   ?? L("Henüz yedek yok", "No backup yet")) {
+                        Button(L("Klasörü göster", "Show folder")) {
+                            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                            NSWorkspace.shared.open(folder)
+                        }
+                    }
+                }
+            } header: {
+                Text(L("Yedek", "Backup"))
+            } footer: {
+                Footnote(L("Tek dosyada ayarlar, parçacıklar, bağlantılar, kendi kısayolların, pencere yerleşimleri, AI komutları, görevler ve notlar. Başka bir Mac'te \"Yedekten yükle\" ile aynı Nabız'a kavuşursun. Pano geçmişi ve oturum bilgileri hiç yedeklenmez. iCloud Drive'da son 10 yedek tutulur.",
+                           "One file with settings, snippets, quicklinks, your shortcuts, window layouts, AI commands, schedules and notes. On another Mac, \"Load a backup\" gives you the same Nabız. The clipboard history and sign-ins are never included. iCloud Drive keeps the last 10."))
+            }
+            SettingsSection("maintenance.reset") {
                 Button(L("Tüm ayarları sıfırla…", "Reset all settings…"), role: .destructive) { resetAll() }
             }
         }
@@ -269,15 +669,6 @@ private struct GeneralPage: View {
         UserDefaults.standard.removePersistentDomain(forName: domain)
         for (key, value) in saved { UserDefaults.standard.set(value, forKey: key) }
     }
-
-    private func setLogin(_ on: Bool) {
-        do {
-            if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
-        } catch {
-            NSSound.beep()
-        }
-        login = SMAppService.mainApp.status == .enabled
-    }
 }
 
 private struct MenuBarPage: View {
@@ -296,7 +687,7 @@ private struct MenuBarPage: View {
     var body: some View {
         Form {
             Section {} header: { PageHeader(page: .menuBar) }
-            Section {
+            SettingsSection("menuBar.preview") {
                 MenuBarPreview(showIcon: icon, stacked: style != "line")
                 Picker(L("Yerleşim", "Layout"), selection: $style) {
                     Text(L("İki satır", "Two lines")).tag("stacked")
@@ -304,12 +695,12 @@ private struct MenuBarPage: View {
                 }
                 .pickerStyle(.segmented)
             } header: {
-                Text(L("Önizleme", "Preview"))
+                SectionTitle(L("Önizleme", "Preview"))
             }
-            Section(L("Sistem", "System")) {
+            SettingsSection("menuBar.system", title: L("Sistem", "System")) {
                 ForEach([MenuBarItem.cpu, .ram, .gpu, .swap, .network, .disk, .battery]) { BarToggle(item: $0) }
             }
-            Section {
+            SettingsSection("menuBar.other") {
                 BarToggle(item: .ai)
                 BarToggle(item: .market)
                 if marketOn && !watchedMarkets.isEmpty {
@@ -328,7 +719,7 @@ private struct MenuBarPage: View {
                     : L("AI limitini göstermek için önce AI limitleri sayfasından bir sağlayıcı aç.",
                         "To show an AI limit, first turn on a provider on the AI Limits page."))
             }
-            Section {
+            SettingsSection("menuBar.icon") {
                 Toggle(L("Simge", "Icon"), isOn: $icon)
                 Picker(L("Simge biçimi", "Icon style"), selection: $symbol) {
                     ForEach(BarSymbol.all, id: \.self) { name in
@@ -399,17 +790,17 @@ private struct PanelPage: View {
     var body: some View {
         Form {
             Section {} header: { PageHeader(page: .panel) }
-            Section {
+            SettingsSection("panel.folding") {
                 Toggle(L("Bölümler katlanabilsin", "Collapsible sections"), isOn: $collapsible)
                 Toggle(L("Akordeon: aynı anda tek bölüm açık", "Accordion: one section open at a time"), isOn: $accordion)
                     .disabled(!collapsible)
             } header: {
-                Text(L("Katlama", "Folding"))
+                SectionTitle(L("Katlama", "Folding"))
             } footer: {
                 Footnote(L("Paneldeki bir başlığa tıklayınca o bölüm açılır ya da kapanır. Kapalı bölümün başlığında kısa bir özet görünür.",
                            "Click a heading in the panel to open or close its section. A closed section shows a short summary in its heading."))
             }
-            Section {
+            SettingsSection("panel.sections") {
                 let ordered = PanelSection.ordered
                 ForEach(ordered) { section in
                     SectionSettingRow(section: section, collapsible: collapsible,
@@ -433,16 +824,16 @@ private struct PanelPage: View {
                 }
                 .padding(.horizontal, Theme.formInset)
             }
-            Section {
+            SettingsSection("panel.tools") {
                 ForEach(ToolKind.allCases) { ToolSettingRow(kind: $0) }
             } header: {
                 Text(L("Araçlar", "Tools"))
             } footer: {
                 Footnote(L("Kapattığın araçlar paneldeki ızgaradan kalkar.", "Tools you turn off leave the panel's grid."))
             }
-            Section(L("Uygulama listesi", "App list")) {
-                Stepper(L("Bellekte ilk \(memoryCount)", "Top \(memoryCount) by memory"), value: $memoryCount, in: 1...10)
-                Stepper(L("İşlemcide ilk \(cpuCount)", "Top \(cpuCount) by CPU"), value: $cpuCount, in: 1...10)
+            SettingsSection("panel.apps", title: L("Uygulama listesi", "App list")) {
+                ValueStepper(L("Bellekte", "By memory"), L("ilk \(memoryCount)", "top \(memoryCount)"), value: $memoryCount, in: 1...10)
+                ValueStepper(L("İşlemcide", "By CPU"), L("ilk \(cpuCount)", "top \(cpuCount)"), value: $cpuCount, in: 1...10)
             }
         }
         .formStyle(.grouped)
@@ -461,19 +852,19 @@ private struct AdvicePage: View {
     var body: some View {
         Form {
             Section {} header: { PageHeader(page: .advice) }
-            Section {
+            SettingsSection("advice.show") {
                 Toggle(L("Panelde önerileri göster", "Show suggestions in the panel"), isOn: $showAdvice)
             } footer: {
                 Footnote(L("Paneldeki bir öneriye sağ tıklayınca onu bir günlüğüne, bir haftalığına ya da tamamen gizleyebilirsin. Gizlenen öneri daha ciddileşirse yine görünür.",
                            "Right-click a suggestion in the panel to hide it for a day, a week or for good. A hidden suggestion shows again if it gets more serious."))
             }
-            Section {
+            SettingsSection("advice.kinds") {
                 ForEach(AdviceKind.allCases) { AdviceKindRow(kind: $0) }
             } header: {
                 Text(L("Ne zaman öneri gelsin", "When to suggest"))
             }
             .disabled(!showAdvice)
-            Section {
+            SettingsSection("advice.security") {
                 ForEach(SecurityCheck.Kind.allCases, id: \.self) { SecurityWatchRow(kind: $0) }
             } header: {
                 Text(L("Güvenlik kontrolleri", "Security checks"))
@@ -482,7 +873,7 @@ private struct AdvicePage: View {
                            "The firewall ships off on macOS and is rarely needed behind a home router. Turn it on here if you often work on public Wi‑Fi."))
             }
             .disabled(!showAdvice || !AdviceKind.security.isOn)
-            Section {
+            SettingsSection("advice.hidden") {
                 HStack {
                     Text(hidden == 0 ? L("Gizlenen öneri yok", "No hidden suggestions") : L("\(hidden) öneri gizli", "\(hidden) hidden"))
                         .foregroundStyle(Theme.textMuted)
@@ -634,7 +1025,7 @@ private struct MarketsPage: View {
         let results = filtered
         Form {
             Section {} header: { PageHeader(page: .markets) }
-            Section {
+            SettingsSection("markets.panel") {
                 if watchedIDs.isEmpty {
                     Text(L("Henüz piyasa seçilmedi.", "No markets picked yet.")).foregroundStyle(Theme.textMuted)
                 }
@@ -653,13 +1044,22 @@ private struct MarketsPage: View {
                     }
                 }
             } header: {
-                Text(L("Panelde", "In the panel"))
+                SectionTitle(L("Panelde", "In the panel"))
             }
 
             PriceAlertsSection(watched: watchedIDs)
 
-            Section {
-                TextField(L("Ara: BTC, TSLA, GOLD…", "Search: BTC, TSLA, GOLD…"), text: $query)
+            SettingsSection("markets.catalog") {
+                HStack(spacing: Theme.Spacing.s) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(Theme.textMuted)
+                    TextField(L("Ara", "Search"), text: $query, prompt: Text(L("Ara: BTC, TSLA, GOLD…", "Search: BTC, TSLA, GOLD…")))
+                        .textFieldStyle(.plain)
+                        .labelsHidden()
+                    if !query.isEmpty {
+                        Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.textMuted) }
+                            .buttonStyle(.plain)
+                    }
+                }
                 Picker(L("Borsa", "Exchange"), selection: $dex) {
                     Text(L("Hepsi", "All")).tag("*")
                     ForEach(store.dexes.filter { dex in store.markets.values.contains { $0.dex == dex.id } }) { dex in
@@ -744,7 +1144,7 @@ private struct CurrencyPage: View {
         let codes = rates.codes
         Form {
             Section {} header: { PageHeader(page: .currency) }
-            Section {
+            SettingsSection("currency.base") {
                 Picker(L("Ana para birimi", "Main currency"), selection: $base) {
                     ForEach(codes, id: \.self) { Text(verbatim: label(for: $0)).tag($0) }
                 }
@@ -752,7 +1152,7 @@ private struct CurrencyPage: View {
                 Footnote(L("Kurlar bu para biriminde gösterilir; hızlı hesapta hedef yazılmazsa buna çevrilir.",
                        "Rates are shown in this currency; quick conversions go to it when no target is given."))
             }
-            Section(L("Panelde izlenenler", "Watched in the panel")) {
+            SettingsSection("currency.watched", title: L("Panelde izlenenler", "Watched in the panel")) {
                 ForEach(codes.filter { $0 != base }, id: \.self) { code in
                     Toggle(label(for: code), isOn: binding(for: code))
                 }
@@ -779,6 +1179,157 @@ private struct CurrencyPage: View {
 }
 
 private struct AIPage: View {
+    @AppStorage(Prefs.aiAsk) private var ask = true
+    @AppStorage(Prefs.aiEngine) private var engine = AIEngine.auto.rawValue
+    @State private var efforts: [String: String] = [:]
+    @AppStorage(Prefs.aiHotkey) private var hotkey = true
+    @AppStorage(Prefs.dictationHotkey) private var dictationHotkey = false
+    @State private var models: [String: String] = [:]
+    private let engines = AIEngines.shared
+
+    var body: some View {
+        Form {
+            Section {} header: { PageHeader(page: .ai) }
+            SettingsSection("ai.ask") {
+                Toggle(L("Launcher'da AI'a sor", "Ask AI in the launcher"), isOn: $ask)
+                Picker(L("Kim cevaplasın", "Who answers"), selection: $engine) {
+                    ForEach(AIEngine.allCases) { option in
+                        Text(verbatim: label(option)).tag(option.rawValue)
+                    }
+                }
+                .disabled(!ask)
+                if let current = engines.resolve(AIEngine(rawValue: engine) ?? .auto) {
+                    let options = engines.models(for: current)
+                    if options.count > 1 {
+                        Picker(L("\(current.title) modeli", "\(current.title) model"), selection: modelBinding(current)) {
+                            ForEach(options) { Text(verbatim: $0.title).tag($0.id) }
+                        }
+                        .disabled(!ask)
+                    }
+                    let levels = engines.efforts(for: current, model: current.chosenModel)
+                    if !levels.isEmpty {
+                        Picker(L("Düşünme", "Thinking"), selection: effortBinding(current)) {
+                            if !levels.contains(where: \.recommended) { Text(L("Otomatik", "Auto")).tag("") }
+                            ForEach(levels) { level in
+                                Text(verbatim: level.title + (level.recommended ? L(" (önerilen)", " (recommended)") : "")
+                                     + (level.warning.map { " · \($0)" } ?? "")).tag(level.id)
+                            }
+                        }
+                        .disabled(!ask)
+                    }
+                }
+                HotKeyRow(title: L("Hızlı soru", "Quick question"), shortcut: .ai, enabled: $hotkey)
+                    .disabled(!ask)
+            } header: {
+                SectionTitle(L("AI'a sor", "Ask AI"))
+            } footer: {
+                Footnote(L("Launcher'da ? yaz ya da \(HotKey.label(.ai)) tuşla ve sor; seçili ya da kopyalanan metni özetle, çevir, düzelt. Claude, Codex ve Gemini bu Mac'te kurulu CLI'leri üzerinden, kendi aboneliğinle cevaplar; metin o şirkete gider. Cihaz içi model ücretsizdir ve metin bu Mac'ten çıkmaz. Daha uzun düşünme daha iyi ama daha yavaş cevaplar ve limitini daha hızlı harcar.",
+                           "Type ? in the launcher or press \(HotKey.label(.ai)) and ask; summarise, translate or fix selected or copied text. Claude, Codex and Gemini answer through their CLIs on this Mac, with your own subscription; the text goes to that company. The on-device model is free and the text never leaves this Mac. Longer thinking answers better but slower and uses your limit faster."))
+            }
+            .onAppear { engines.refreshIfNeeded() }
+            AICommandsSection()
+        }
+        .formStyle(.grouped)
+    }
+
+    private func effortBinding(_ engine: AIEngine) -> Binding<String> {
+        Binding(get: { efforts[engine.rawValue] ?? engines.effectiveEffort(for: engine, model: engine.chosenModel) }, set: { level in
+            engine.setChosenEffort(level)
+            efforts[engine.rawValue] = level
+        })
+    }
+
+    private func modelBinding(_ engine: AIEngine) -> Binding<String> {
+        Binding(get: { models[engine.rawValue] ?? engine.chosenModel }, set: { model in
+            engine.setChosenModel(model)
+            models[engine.rawValue] = model
+        })
+    }
+
+    private func label(_ option: AIEngine) -> String {
+        if option == .auto {
+            return engines.resolved.map { "\(option.title) (\($0.title))" } ?? option.title
+        }
+        guard engines.searched || option == .onDevice, let problem = engines.problem(option) else { return option.title }
+        return "\(option.title) — \(problem)"
+    }
+}
+
+private struct AIChatPage: View {
+    @AppStorage(Prefs.aiHistory) private var history = true
+    @AppStorage(Prefs.aiChatHotkey) private var chatHotkey = true
+    @State private var confirmClear = false
+    private let chats = AIChatStore.shared
+
+    var body: some View {
+        Form {
+            Section {} header: { PageHeader(page: .aiChat) }
+            SettingsSection("aiChat.open") {
+                HStack {
+                    Button { AIChatWindow.show() } label: { Label(L("Sohbet penceresini aç", "Open the chat window"), systemImage: "sparkles") }
+                        .buttonStyle(.borderedProminent)
+                    Spacer()
+                }
+                HotKeyRow(title: L("Sohbet penceresi", "Chat window"), shortcut: .aiChat, enabled: $chatHotkey)
+            } header: {
+                SectionTitle(L("Sohbet", "Chat"))
+            } footer: {
+                Footnote(L("Panelde AI → Sohbet, araçlarda \"AI sohbet\", menü çubuğu simgesine sağ tık ya da başlatıcıda \"sohbet\" ile de açılır.",
+                           "Also from the panel (AI → Chat), the \"AI chat\" tool, a right-click on the menu bar item, or \"chat\" in the launcher."))
+            }
+            SettingsSection("aiChat.history") {
+                Toggle(L("Sohbetleri sakla", "Keep chats"), isOn: Binding(get: { history }, set: { on in
+                    history = on
+                    if !on { chats.deleteAll() }
+                }))
+                HStack {
+                    Text(L("\(chats.conversations.filter { !$0.messages.isEmpty }.count) sohbet", "\(chats.conversations.filter { !$0.messages.isEmpty }.count) chats"))
+                        .foregroundStyle(Theme.textMuted)
+                    Spacer()
+                    Button(L("Tümünü sil…", "Delete all…"), role: .destructive) { confirmClear = true }
+                        .disabled(chats.conversations.isEmpty)
+                }
+            } footer: {
+                Footnote(L("Sohbetler bu Mac'te, pano geçmişiyle aynı anahtarla şifreli tutulur. Kapatırsan hepsi silinir.",
+                           "Chats are kept on this Mac, encrypted with the same key as the clipboard history. Turning this off deletes them."))
+            }
+            .onAppear { chats.loadIfNeeded() }
+            .confirmationDialog(L("Tüm sohbetler silinsin mi?", "Delete all chats?"), isPresented: $confirmClear) {
+                Button(L("Tümünü sil", "Delete all"), role: .destructive) { chats.deleteAll() }
+            } message: {
+                Text(L("Bu geri alınamaz.", "This can't be undone."))
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+private struct DictationPage: View {
+    @AppStorage(Prefs.dictationHotkey) private var dictationHotkey = false
+    @AppStorage(Prefs.dictationLanguage) private var dictationLanguage = "system"
+
+    var body: some View {
+        Form {
+            Section {} header: { PageHeader(page: .dictation) }
+            SettingsSection("dictation.main") {
+                HotKeyRow(title: L("Dikte", "Dictation"), shortcut: .dictation, enabled: $dictationHotkey)
+                Picker(L("Dikte dili", "Dictation language"), selection: $dictationLanguage) {
+                    Text(L("Uygulama dili", "App language")).tag("system")
+                    Text(verbatim: "Türkçe").tag("tr")
+                    Text(verbatim: "English").tag("en")
+                }
+            } header: {
+                SectionTitle(L("Dikte", "Dictation"))
+            } footer: {
+                Footnote(L("Kısayola bas, konuş, yine bas: söylediklerin imlecin olduğu yere yazılır. macOS dili biliyorsa ses bu Mac'ten çıkmaz. Menü çubuğu simgesine sağ tıklayıp \"Dikte et\" de diyebilirsin.",
+                           "Press the shortcut, speak, press it again: your words are typed where the cursor is. When macOS knows the language the audio never leaves this Mac. Or right-click the menu bar item → \"Dictate\"."))
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+private struct AILimitsPage: View {
     @AppStorage("ai.claude") private var claude = false
     @AppStorage("ai.codex") private var codex = false
     @AppStorage("ai.gemini") private var gemini = false
@@ -787,8 +1338,8 @@ private struct AIPage: View {
 
     var body: some View {
         Form {
-            Section {} header: { PageHeader(page: .ai) }
-            Section {
+            Section {} header: { PageHeader(page: .aiLimits) }
+            SettingsSection("aiLimits.providers") {
                 ForEach(AIProvider.allCases) { provider in
                     Toggle(isOn: binding(provider)) {
                         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
@@ -801,7 +1352,7 @@ private struct AIPage: View {
                 Footnote(L("Nabız, resmi CLI'lerin bu Mac'te zaten tuttuğu oturumu okur ve yalnızca o sağlayıcının kendi sunucusuna sorar. Oturum bilgisi saklanmaz, yenilenmez ve başka bir yere gönderilmez. macOS ilk okumada izin isteyebilir.",
                        "Nabız reads the sign-in the official CLIs already keep on this Mac and asks only that provider's own server. The sign-in is never stored, refreshed or sent anywhere else. macOS may ask for permission the first time."))
             }
-            Section {
+            SettingsSection("aiLimits.display") {
                 Picker(L("Göster", "Show"), selection: $remaining) {
                     Text(L("Kalan", "What's left")).tag(true)
                     Text(L("Kullanılan", "What's used")).tag(false)
@@ -811,14 +1362,14 @@ private struct AIPage: View {
                 Footnote(L("Örnek: haftalık limitin %94'ü kullanıldıysa \"%6 kaldı\" ya da \"%94\" yazar. Çubuk da aynısını gösterir; kalanı seçersen harcadıkça kısalır.",
                            "Example: with 94% of the weekly limit used it reads \"6% left\" or \"94%\". The bar shows the same; with what's left it shrinks as you use it."))
             }
-            Section {
+            SettingsSection("aiLimits.grok") {
                 LabeledContent("Grok") {
                     Text(L("Herkese açık limit verisi yok", "No public limit data")).foregroundStyle(Theme.textMuted)
                 }
             } footer: {
                 Footnote(L("xAI kullanım limitlerini okuyacak bir yol sunduğunda eklenecek.", "Will be added once xAI offers a way to read usage limits."))
             }
-            Section {
+            SettingsSection("aiLimits.refresh") {
                 HStack {
                     Button(L("Şimdi yenile", "Refresh now")) { store.refreshIfNeeded(force: true) }
                         .disabled(store.enabled.isEmpty || store.loading)
@@ -836,6 +1387,154 @@ private struct AIPage: View {
         case .gemini: $gemini
         }
     }
+}
+
+/// MCP: AI apps use Nabız's tools through `Nabiz --mcp`.
+private struct MCPPage: View {
+    @AppStorage(Prefs.mcpEnabled) private var enabled = false
+    @AppStorage(Prefs.mcpCommands) private var commands = true
+    @AppStorage(Prefs.mcpNotes) private var notes = true
+    @AppStorage(Prefs.mcpClipboard) private var clipboard = false
+    @State private var message = ""
+    @State private var working = false
+    private let server = MCPServer.shared
+
+    var body: some View {
+        Form {
+            Section {} header: { PageHeader(page: .mcp) }
+            SettingsSection("mcp.server") {
+                Toggle(L("MCP sunucusunu aç", "Turn on the MCP server"), isOn: $enabled)
+                if enabled {
+                    LabeledContent(L("Durum", "Status")) {
+                        Text(verbatim: status).foregroundStyle(server.running ? Theme.text : Theme.textMuted)
+                    }
+                }
+            } footer: {
+                Footnote(L("Açıkken AI uygulamaları Nabız'a yalnızca bu Mac'te ve senin kullanıcınla bağlanabilir. İnternete hiçbir şey açılmaz.",
+                           "While it's on, AI apps can reach Nabız only on this Mac and as your user. Nothing is opened to the internet."))
+            }
+            SettingsSection("mcp.permissions") {
+                LabeledContent(L("Her zaman", "Always")) {
+                    Text(L("Sistem durumu, AI limitleri, takvim, hesap, piyasa, kur, bildirim", "System status, AI limits, calendar, maths, markets, rates, notifications"))
+                        .foregroundStyle(Theme.textMuted).multilineTextAlignment(.trailing)
+                }
+                Toggle(L("Mac'te işlem yapsın", "Act on the Mac"), isOn: $commands)
+                Toggle(L("Notları ve parçacıkları okuyup yazsın", "Read and write notes and snippets"), isOn: $notes)
+                Toggle(L("Pano geçmişini okusun", "Read the clipboard history"), isOn: $clipboard)
+            } header: {
+                Text(L("Neleri kullanabilsin", "What it may use"))
+            } footer: {
+                Footnote(L("İşlemler: uygulama açma, pencere yerleştirme, ses, zamanlayıcı, odak modu, kendi komutların ve kestirmelerin. Yeniden başlatma, kapatma, çöpü boşaltma gibi geri alınamayanlar hiçbir zaman çalıştırılmaz. Pano geçmişinde şifre gibi şeyler olabilir; o yüzden kapalı başlar.",
+                           "Actions: opening apps, placing windows, sound, timers, focus mode, your own commands and Shortcuts. Things that can't be undone, like restart, shut down or emptying the Trash, are never run. The clipboard history may hold things like passwords, so it starts off."))
+            }
+            .disabled(!enabled)
+            SettingsSection("mcp.connect") {
+                HStack {
+                    Button(L("Claude Code'a ekle", "Add to Claude Code")) {
+                        working = true
+                        Task {
+                            message = await MCPSetup.addToClaudeCode()
+                            working = false
+                        }
+                    }
+                    .disabled(working)
+                    Button(L("Claude Desktop'a ekle", "Add to Claude Desktop")) { message = MCPSetup.addToClaudeDesktop() }
+                    Spacer()
+                    if working { ProgressView().controlSize(.small) }
+                }
+                if !message.isEmpty {
+                    Text(verbatim: message).foregroundStyle(Theme.textMuted).textSelection(.enabled)
+                }
+                LabeledContent(L("Komut", "Command")) {
+                    HStack {
+                        Text(verbatim: MCPSetup.claudeCodeCommand).font(.system(.caption, design: .monospaced)).lineLimit(2)
+                            .textSelection(.enabled).foregroundStyle(Theme.textMuted)
+                        Button { copy(MCPSetup.claudeCodeCommand) } label: { Image(systemName: "doc.on.doc") }
+                            .buttonStyle(TextButtonStyle(color: Theme.textMuted)).help(L("Kopyala", "Copy"))
+                    }
+                }
+                LabeledContent(L("Diğer uygulamalar (JSON)", "Other apps (JSON)")) {
+                    Button(L("JSON'u kopyala", "Copy JSON")) { copy(MCPSetup.desktopJSON) }
+                }
+            } header: {
+                Text(L("Bağla", "Connect"))
+            } footer: {
+                Footnote(L("Cursor, Windsurf, VS Code gibi uygulamalarda MCP ayarlarına JSON'u yapıştır. Nabız kapalıysa AI uygulaması onu arka planda açar.",
+                           "In Cursor, Windsurf, VS Code and others, paste the JSON into their MCP settings. If Nabız isn't running, the AI app starts it in the background."))
+            }
+            .disabled(!enabled)
+        }
+        .formStyle(.grouped)
+    }
+
+    private var status: String {
+        guard server.running else { return L("Başlatılamadı", "Couldn't start") }
+        var parts = [L("Hazır", "Ready")]
+        if let client = server.lastClient { parts.append(L("son bağlanan: \(client)", "last connected: \(client)")) }
+        if let call = server.lastCall {
+            parts.append("\(call.tool) · " + call.at.formatted(.relative(presentation: .named).locale(Format.locale)))
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private func copy(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        message = L("Kopyalandı.", "Copied.")
+    }
+}
+
+/// The calendar: on/off (macOS asks for access), which calendars, and the heads-up.
+private struct CalendarPage: View {
+    @AppStorage(Prefs.calendarEnabled) private var enabled = false
+    @AppStorage(Prefs.calendarHidden) private var hidden = ""
+    @AppStorage(Prefs.calendarAlert) private var alert = true
+    private let agenda = CalendarAgenda.shared
+
+    var body: some View {
+        Form {
+            Section {} header: { PageHeader(page: .calendar) }
+            SettingsSection("calendar.main") {
+                Toggle(L("Takvimi göster", "Show the calendar"), isOn: $enabled)
+                if enabled && agenda.denied {
+                    HStack {
+                        Text(L("Nabız'ın takvim izni kapalı.", "Nabız has no calendar access."))
+                        Spacer()
+                        Button(L("İzni aç…", "Allow…")) {
+                            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars")!)
+                        }
+                    }
+                }
+                Toggle(L("Toplantıdan 1 dk önce bildir", "Notify 1 min before a meeting"), isOn: $alert).disabled(!enabled)
+            } footer: {
+                Footnote(L("Panelde bugünün kalan etkinlikleri görünür; görüntülü toplantı bağlantısı (Zoom, Meet, Teams, Webex, FaceTime…) olana tıklayınca katılırsın. Başlatıcıda \"takvim\" ya da \"katıl\" yaz. Takvim yalnızca bu Mac'te okunur.",
+                           "The panel shows what's left today; click one with a call link (Zoom, Meet, Teams, Webex, FaceTime…) to join. Type \"calendar\" or \"join\" in the launcher. The calendar is read only on this Mac."))
+            }
+            if enabled && agenda.authorized {
+                SettingsSection("calendar.calendars") {
+                    ForEach(agenda.calendars, id: \.id) { calendar in
+                        Toggle(isOn: Binding(get: { !hiddenSet.contains(calendar.id) }, set: { show in
+                            var set = hiddenSet
+                            if show { set.remove(calendar.id) } else { set.insert(calendar.id) }
+                            hidden = set.sorted().joined(separator: ",")
+                            agenda.reload()
+                        })) {
+                            HStack(spacing: Theme.Spacing.s) {
+                                Circle().fill(calendar.color).frame(width: 8, height: 8)
+                                Text(verbatim: calendar.title)
+                            }
+                        }
+                    }
+                } header: {
+                    Text(L("Takvimler", "Calendars"))
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .onAppear { agenda.update(); agenda.reload() }
+    }
+
+    private var hiddenSet: Set<String> { Set(hidden.split(separator: ",").map(String.init)) }
 }
 
 private struct AboutPage: View {
@@ -865,6 +1564,44 @@ private struct AboutPage: View {
         }
         .padding(Theme.Spacing.xxl)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// A stepper laid out like System Settings: the name on the left, the value and the arrows on the right.
+private struct ValueStepper: View {
+    let title: String
+    let value: String
+    @Binding var number: Int
+    let range: ClosedRange<Int>
+    let step: Int
+
+    init(_ title: String, _ value: String, value number: Binding<Int>, in range: ClosedRange<Int>, step: Int = 1) {
+        self.title = title
+        self.value = value
+        _number = number
+        self.range = range
+        self.step = step
+    }
+
+    var body: some View {
+        LabeledContent(title) {
+            HStack(spacing: Theme.Spacing.xs) {
+                Text(verbatim: value).monospacedDigit()
+                Stepper(title, value: $number, in: range, step: step).labelsHidden()
+            }
+        }
+    }
+}
+
+/// The first section heading under a page header. A grouped form draws that one small and grey, unlike the
+/// rest, so it is styled by hand to match the other headings.
+private struct SectionTitle: View {
+    let text: String
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Text(verbatim: text).font(Theme.bodyStrong).foregroundStyle(Theme.text)
+            .padding(.top, Theme.Spacing.m)
     }
 }
 
@@ -915,7 +1652,7 @@ private struct PriceAlertsSection: View {
     private let store = MarketStore.shared
 
     var body: some View {
-        Section {
+        SettingsSection("markets.alerts") {
             let sorted = alerts.alerts.sorted { a, b in
                 if a.armed != b.armed { return a.armed }
                 let da = store.markets[a.market].map { a.distance(from: $0.price) } ?? 1
@@ -1099,7 +1836,7 @@ private struct AppearancePage: View {
     var body: some View {
         Form {
             Section {} header: { PageHeader(page: .appearance) }
-            Section {
+            SettingsSection("appearance.accent") {
                 LazyVGrid(columns: Array(repeating: GridItem(.fixed(Theme.settingsIcon + Theme.Spacing.s), spacing: Theme.Spacing.s),
                                          count: 9), alignment: .leading, spacing: Theme.Spacing.s) {
                     ForEach(AccentChoice.swatches) { Swatch(choice: $0, selected: accent == $0.rawValue) { accent = $0.rawValue } }
@@ -1117,12 +1854,12 @@ private struct AppearancePage: View {
                     }
                 }
             } header: {
-                Text(L("Vurgu rengi", "Accent colour"))
+                SectionTitle(L("Vurgu rengi", "Accent colour"))
             } footer: {
                 Footnote(L("Göstergeler, düğmeler, açık araçlar, başlatıcı ve grafikler bu rengi alır. Turuncu ve kırmızı uyarılar için ayrıldı; çok açık bir renk seçersen yazılar zor okunabilir.",
                            "Meters, buttons, active tools, the launcher and charts take this colour. Orange and red are kept for warnings; a very light colour can make text hard to read."))
             }
-            Section(L("Tema", "Theme")) {
+            SettingsSection("appearance.theme", title: L("Tema", "Theme")) {
                 Picker(L("Görünüm", "Appearance"), selection: $mode) {
                     Text(L("Sistem", "System")).tag("system")
                     Text(L("Açık", "Light")).tag("light")
@@ -1135,7 +1872,7 @@ private struct AppearancePage: View {
                 }
                 .pickerStyle(.segmented)
             }
-            Section(L("Yazı", "Text")) {
+            SettingsSection("appearance.text", title: L("Yazı", "Text")) {
                 Picker(L("Yazı tipi", "Typeface"), selection: $fontDesign) {
                     Text(L("Standart", "Standard")).tag("standard")
                     Text(L("Yuvarlak", "Rounded")).font(.system(.body, design: .rounded)).tag("rounded")
@@ -1148,7 +1885,7 @@ private struct AppearancePage: View {
                 }
                 .pickerStyle(.segmented)
             }
-            Section(L("Panel", "Panel")) {
+            SettingsSection("appearance.panel", title: L("Panel", "Panel")) {
                 Picker(L("Genişlik", "Width"), selection: $width) {
                     Text(L("Dar", "Narrow")).tag(300)
                     Text(L("Normal", "Normal")).tag(320)
@@ -1167,7 +1904,7 @@ private struct AppearancePage: View {
                 }
                 .pickerStyle(.segmented)
             }
-            Section {
+            SettingsSection("appearance.menuBar") {
                 Toggle(L("Değerleri renklendir", "Colour the values"), isOn: $barColors)
                 Toggle(L("Değişen rakamları kaydır", "Roll changing digits"), isOn: $barAnimate)
             } header: {
@@ -1176,7 +1913,7 @@ private struct AppearancePage: View {
                 Footnote(L("Dikkat isteyen değer turuncu ya da kırmızı olur (yoğun CPU, sıkışık bellek, azalan pil, biten AI limiti); bol kalan AI limiti yeşil, piyasalar yükselişte yeşil, düşüşte kırmızı. Her şey yolundaysa menü çubuğu sade kalır. Simge biçimi Menü çubuğu sayfasında.",
                            "A value that needs attention turns orange or red (busy CPU, tight memory, low battery, an AI limit running out); an AI limit with plenty left is green, markets go green when up and red when down. When all is well the menu bar stays plain. The icon style is on the Menu Bar page."))
             }
-            Section {
+            SettingsSection("appearance.reset") {
                 Button(L("Görünümü sıfırla", "Reset appearance")) {
                     for key in [Prefs.accentColor, Prefs.customAccent, Prefs.panelStyle, Prefs.panelWidth, Prefs.textSize, Prefs.fontDesign,
                                 Prefs.density, Prefs.meterStyle, Prefs.appearanceMode, Prefs.barColors, Prefs.barAnimate] {
@@ -1227,7 +1964,7 @@ private struct SchedulesPage: View {
     var body: some View {
         Form {
             Section {} header: { PageHeader(page: .schedules) }
-            Section {
+            SettingsSection("schedules.list") {
                 if scheduler.tasks.isEmpty {
                     Text(L("Henüz görev yok. Aşağıdan hazır bir tane ekle ya da kendin oluştur.",
                            "No tasks yet. Add a ready-made one below, or make your own."))
@@ -1235,12 +1972,12 @@ private struct SchedulesPage: View {
                 }
                 ForEach(scheduler.tasks) { TaskRow(task: $0) }
             } header: {
-                Text(L("Görevler", "Tasks"))
+                SectionTitle(L("Görevler", "Tasks"))
             } footer: {
                 Footnote(L("Görev seçtiğin saatte kendiliğinden çalışır ve kısa bir bildirim gönderir. Mac o saatte uykudaysa 6 saat içinde uyanınca telafi edilir; daha geç olursa bir sonraki güne kalır.",
                            "A task runs on its own at the time you set and posts a short notification. If the Mac was asleep, it catches up within 6 hours of waking; later than that it waits for its next day."))
             }
-            Section(L("Ekle", "Add")) {
+            SettingsSection("schedules.add", title: L("Ekle", "Add")) {
                 Menu {
                     ForEach(ScheduledAction.allCases) { action in
                         Button { scheduler.add(ScheduledTask(action: action, hour: 9, minute: 0)) } label: {
@@ -1381,7 +2118,7 @@ private struct LauncherPage: View {
     var body: some View {
         Form {
             Section {} header: { PageHeader(page: .launcher) }
-            Section {
+            SettingsSection("launcher.main") {
                 Toggle(L("⌃⌥Boşluk ile aç", "Open with ⌃⌥Space"), isOn: $hotkey)
                 Toggle(L("Uygulamaları ara", "Search apps"), isOn: $apps)
                 Toggle(L("Pano öğelerini göster", "Show clipboard items"), isOn: $clips)
@@ -1390,7 +2127,7 @@ private struct LauncherPage: View {
                 Footnote(L("Yaz: uygulama adı, komut (kilitle, uyut, sol yarı…), hesap (12*4, 100 usd, 5 km mi), \"25 dk\" zamanlayıcı ya da \"g kelime\" ile web araması. ↑↓ seç, ↩ çalıştır, ⌘↩ ikinci işlem, esc kapat.",
                            "Type an app name, a command (lock, sleep, left half…), maths (12*4, 100 usd, 5 km mi), \"25 min\" for a timer or \"g words\" to search the web. ↑↓ to pick, ↩ to run, ⌘↩ for the second action, esc to close."))
             }
-            Section {
+            SettingsSection("launcher.quicklinks") {
                 ForEach(store.quicklinks) { QuicklinkRow(link: $0) }
                 HStack {
                     Button {
@@ -1408,10 +2145,113 @@ private struct LauncherPage: View {
                 Footnote(L("Adreste {query} yazan yere, kısaltmadan sonra yazdığın gelir: \"gh nabiz\" → GitHub'da nabiz araması. İlk bağlantı, başka sonuç olmayınca web araması için kullanılır.",
                            "{query} in the address is replaced by what you type after the keyword: \"gh nabiz\" searches GitHub for nabiz. The first link is used for web search when nothing else matches."))
             }
+            BindingsSection()
+            SettingsSection("launcher.aiCommands") {
+                HStack {
+                    Text(L("Kendi AI komutların", "Your own AI commands"))
+                    Spacer()
+                    Button(L("Ayarlar → AI'da", "In Settings → AI")) { SettingsWindow.show(.ai) }
+                }
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+private struct ExtensionsPage: View {
+    var body: some View {
+        Form {
+            Section {} header: { PageHeader(page: .extensions) }
             ExtensionsSection()
             DownloadSection()
         }
         .formStyle(.grouped)
+    }
+}
+
+/// Launcher rows given their own shortcut or alias (⌘K in the launcher → Set a shortcut / Set an alias).
+private struct BindingsSection: View {
+    private let bindings = ItemBindings.shared
+
+    var body: some View {
+        SettingsSection("launcher.bindings") {
+            if bindings.all.isEmpty {
+                Text(L("Henüz yok.", "None yet.")).foregroundStyle(Theme.textMuted)
+            }
+            ForEach(bindings.all) { binding in
+                HStack {
+                    Text(verbatim: binding.title).lineLimit(1)
+                    Spacer()
+                    if let alias = binding.alias {
+                        Button(alias) { bindings.askAlias(id: binding.id, title: binding.title) }
+                            .buttonStyle(TextButtonStyle(color: Theme.textMuted))
+                    }
+                    if let combo = binding.combo {
+                        Button(combo.label) { bindings.askCombo(id: binding.id, title: binding.title) }
+                            .buttonStyle(TextButtonStyle(color: Theme.text)).monospacedDigit()
+                    }
+                    Button { bindings.remove(binding.id) } label: { Image(systemName: "minus.circle") }
+                        .buttonStyle(TextButtonStyle(color: Theme.textMuted))
+                        .help(L("Kaldır", "Remove"))
+                }
+            }
+        } header: {
+            Text(L("Kendi kısayolların ve takma adların", "Your shortcuts and aliases"))
+        } footer: {
+            Footnote(L("Başlatıcıda bir uygulama ya da komut seç, ⌘K'ya bas, \"Kısayol ata…\" ya da \"Takma ad ver…\" de. Kısayol her uygulamadayken çalışır; takma adı (örn. \"ss\") yazınca o satır en üste çıkar.",
+                       "Pick an app or command in the launcher, press ⌘K and choose \"Set a shortcut…\" or \"Set an alias…\". The shortcut works from any app; type the alias (e.g. \"ss\") and that row comes first."))
+        }
+    }
+}
+
+/// The user's own AI prompts, run on the selected or copied text from the launcher or its ⌘K menu.
+private struct AICommandsSection: View {
+    @AppStorage(Prefs.aiAsk) private var aiAsk = true
+    private let store = AICommandStore.shared
+
+    var body: some View {
+        SettingsSection("ai.commands") {
+            ForEach(store.commands) { command in
+                AICommandRow(command: Binding(get: { store.commands.first { $0.id == command.id } ?? command },
+                                              set: { new in
+                                                  if let index = store.commands.firstIndex(where: { $0.id == command.id }) { store.commands[index] = new }
+                                              }))
+            }
+            HStack {
+                Button {
+                    store.commands.append(AICommand(name: L("Yeni komut", "New command"), prompt: ""))
+                } label: { Label(L("Komut ekle", "Add a command"), systemImage: "plus") }
+                Spacer()
+                if store.commands.isEmpty {
+                    Button(L("Örnekleri ekle", "Add examples")) { store.commands = AICommand.examples }
+                }
+            }
+        } header: {
+            Text(L("Kendi AI komutların", "Your own AI commands"))
+        } footer: {
+            Footnote(aiAsk
+                ? L("Seçili metinde (yoksa son kopyaladığında) çalışır. Başlatıcıda \"AI: ad\" olarak ve ⌘K menüsünde çıkar; ⌘K ile kısayol da atayabilirsin. İstemde {text} yazdığın yere metin gelir.",
+                    "Runs on the selected text (or the last thing you copied). Shows in the launcher as \"AI: name\" and in the ⌘K menu; give it a shortcut with ⌘K. {text} in the prompt is replaced by the text.")
+                : L("AI'a sor kapalı; Ayarlar → AI'dan aç.", "Ask AI is off; turn it on in Settings → AI."))
+        }
+    }
+}
+
+private struct AICommandRow: View {
+    @Binding var command: AICommand
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.s) {
+            HStack {
+                TextField(L("Ad", "Name"), text: $command.name).labelsHidden()
+                Button { AICommandStore.shared.commands.removeAll { $0.id == command.id } } label: { Image(systemName: "minus.circle") }
+                    .buttonStyle(TextButtonStyle(color: Theme.textMuted))
+            }
+            TextField(L("İstem: ne yapsın?", "Prompt: what should it do?"), text: $command.prompt, axis: .vertical)
+                .labelsHidden()
+                .lineLimit(2...5)
+        }
+        .padding(.vertical, Theme.Spacing.xs)
     }
 }
 
@@ -1422,7 +2262,7 @@ private struct ExtensionsSection: View {
     private let extensions = Extensions.shared
 
     var body: some View {
-        Section {
+        SettingsSection("extensions.files") {
             Toggle(L("Aramada dosyaları da göster", "Show files in searches"), isOn: $files)
             Toggle(L("Kestirmeler uygulamasındaki kestirmeleri göster", "Show your Shortcuts"), isOn: Binding(get: { shortcuts }, set: { on in
                 shortcuts = on
@@ -1452,7 +2292,7 @@ private struct DownloadSection: View {
     private let downloader = Downloader.shared
 
     var body: some View {
-        Section {
+        SettingsSection("extensions.downloads") {
             Picker(L("Video kalitesi", "Video quality"), selection: $quality) {
                 Text(L("En iyi", "Best")).tag("best")
                 Text(verbatim: "1080p").tag("1080")
@@ -1505,16 +2345,31 @@ private struct FocusPage: View {
     @AppStorage(Prefs.focusBlocked) private var blocked = ""
     @AppStorage(Prefs.focusShortcutOn) private var shortcutOn = ""
     @AppStorage(Prefs.focusShortcutOff) private var shortcutOff = ""
+    @AppStorage(Prefs.focusBlockSites) private var blockSites = false
+    @AppStorage(Prefs.focusSites) private var sites = ""
+    @State private var newSite = ""
     private let pomodoro = Pomodoro.shared
+
+    private var siteList: [String] { SiteBlocker.shared.sites }
+
+    /// "-" keeps an emptied list empty instead of going back to the defaults.
+    private func setSites(_ list: [String]) { sites = list.isEmpty ? "-" : list.joined(separator: ",") }
+
+    private func addSite() {
+        guard let host = SiteBlocker.host(of: newSite)?.lowercased() else { return }
+        let site = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+        if !siteList.contains(site) { setSites(siteList + [site]) }
+        newSite = ""
+    }
 
     var body: some View {
         Form {
             Section {} header: { PageHeader(page: .focus) }
-            Section {
-                Stepper(L("Odak: \(work) dk", "Focus: \(work) min"), value: $work, in: 5...120, step: 5)
-                Stepper(L("Kısa mola: \(short) dk", "Short break: \(short) min"), value: $short, in: 1...30)
-                Stepper(L("Uzun mola: \(long) dk", "Long break: \(long) min"), value: $long, in: 5...60, step: 5)
-                Stepper(L("Uzun mola her \(every) blokta", "Long break every \(every) blocks"), value: $every, in: 2...8)
+            SettingsSection("focus.pomodoro") {
+                ValueStepper(L("Odak", "Focus"), L("\(work) dk", "\(work) min"), value: $work, in: 5...120, step: 5)
+                ValueStepper(L("Kısa mola", "Short break"), L("\(short) dk", "\(short) min"), value: $short, in: 1...30)
+                ValueStepper(L("Uzun mola", "Long break"), L("\(long) dk", "\(long) min"), value: $long, in: 5...60, step: 5)
+                ValueStepper(L("Uzun mola sıklığı", "Long break every"), L("\(every) blokta bir", "\(every) blocks"), value: $every, in: 2...8)
                 Toggle(L("Sıradaki blok kendiliğinden başlasın", "Start the next block by itself"), isOn: $auto)
                 Toggle(L("Odak bloklarında odak modunu aç", "Turn on focus mode during focus blocks"), isOn: $withFocus)
                 HStack {
@@ -1527,12 +2382,12 @@ private struct FocusPage: View {
                         .foregroundStyle(Theme.textMuted)
                 }
             } header: {
-                Text("Pomodoro")
+                SectionTitle("Pomodoro")
             } footer: {
                 Footnote(L("Kalan süre menü çubuğunda görünür; her geçişte ses ve bildirim gelir. Başlatıcıda \"pomodoro\" yaz ya da Araçlar'daki Pomodoro'ya bas.",
                            "The time left shows in the menu bar; each change plays a sound and posts a notification. Type \"pomodoro\" in the launcher, or tap Pomodoro in Tools."))
             }
-            Section {
+            SettingsSection("focus.hide") {
                 // Only apps on this Mac; the rest of the list waits in case they're installed later.
                 ForEach(blockedList.filter { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) != nil }, id: \.self) { bundle in
                     HStack {
@@ -1558,7 +2413,33 @@ private struct FocusPage: View {
                 Footnote(L("Bu uygulamalar odak boyunca arka planda bekler; öne gelirlerse yeniden gizlenir. Hiçbiri kapatılmaz, mesajların kaybolmaz. Varsayılan liste Slack, Discord, Telegram, WhatsApp, Mesajlar, Messenger, Teams ve Mail'dir; kurulu olanlar görünür.",
                            "These apps wait in the background during focus; if they come forward they're hidden again. Nothing is quit, no messages are lost. The default list is Slack, Discord, Telegram, WhatsApp, Messages, Messenger, Teams and Mail; the installed ones show."))
             }
-            Section {
+            SettingsSection("focus.sites") {
+                Toggle(L("Odak modunda siteleri engelle", "Block websites during focus"), isOn: $blockSites)
+                ForEach(siteList, id: \.self) { site in
+                    HStack {
+                        Image(systemName: "globe").foregroundStyle(Theme.textMuted).frame(width: Theme.menuIcon)
+                        Text(verbatim: site)
+                        Spacer()
+                        Button { setSites(siteList.filter { $0 != site }) } label: { Image(systemName: "minus.circle") }
+                            .buttonStyle(TextButtonStyle(color: Theme.textMuted))
+                    }
+                }
+                .disabled(!blockSites)
+                HStack {
+                    TextField(L("Site ekle", "Add a site"), text: $newSite, prompt: Text(verbatim: "news.ycombinator.com"))
+                        .labelsHidden()
+                        .onSubmit(addSite)
+                    Button(L("Ekle", "Add"), action: addSite).disabled(SiteBlocker.host(of: newSite) == nil || newSite.isEmpty)
+                    Button(L("Varsayılanlar", "Defaults")) { sites = "" }.disabled(sites.isEmpty)
+                }
+                .disabled(!blockSites)
+            } header: {
+                Text(L("Odak modunda engellenen siteler", "Websites blocked during focus"))
+            } footer: {
+                Footnote(L("Safari, Chrome, Arc, Brave, Edge ve Vivaldi'de eklenti gerekmeden çalışır: öndeki sekme bu sitelerden biriyse kısa bir \"Odaktasın\" sayfasına döner. macOS her tarayıcı için bir kez izin ister. Alt alan adları da engellenir (youtube.com → m.youtube.com).",
+                           "Works in Safari, Chrome, Arc, Brave, Edge and Vivaldi with no extension: if the tab in front is one of these sites it turns into a short \"You're focusing\" page. macOS asks once per browser. Subdomains are blocked too (youtube.com → m.youtube.com)."))
+            }
+            SettingsSection("focus.macos") {
                 TextField(L("Açarken çalışacak kestirme", "Shortcut to run when it starts"), text: $shortcutOn, prompt: Text(verbatim: "Odak Aç"))
                 TextField(L("Kapatırken çalışacak kestirme", "Shortcut to run when it ends"), text: $shortcutOff, prompt: Text(verbatim: "Odak Kapat"))
             } header: {
@@ -1596,7 +2477,7 @@ private struct QuicklinkRow: View {
     var body: some View {
         HStack(spacing: Theme.Spacing.s) {
             TextField(L("Kısaltma", "Keyword"), text: binding(\.keyword)).frame(width: 64)
-            TextField(L("Ad", "Name"), text: binding(\.name)).frame(width: 110)
+            TextField(L("Ad", "Name"), text: binding(\.name)).frame(width: 88)
             TextField("https://…{query}", text: binding(\.url))
             Button { store.remove(quicklink: link) } label: { Image(systemName: "minus.circle") }
                 .buttonStyle(TextButtonStyle(color: Theme.textMuted))
@@ -1628,7 +2509,7 @@ private struct ClipboardPage: View {
     var body: some View {
         Form {
             Section {} header: { PageHeader(page: .clipboard) }
-            Section {
+            SettingsSection("clipboard.history") {
                 Toggle(L("Pano geçmişini tut", "Keep clipboard history"), isOn: $enabled)
                 Toggle(L("⌃⌥V ile aç", "Open with ⌃⌥V"), isOn: $hotkey).disabled(!enabled)
                 Toggle(L("Yeniden başlatınca da hatırla", "Remember after a restart"), isOn: Binding(get: { save }, set: { on in
@@ -1652,7 +2533,7 @@ private struct ClipboardPage: View {
                 Footnote(L("Metin, bağlantı, renk kodu, dosya ve 3 MB'a kadar görseller tutulur; sabitlenenler hiç silinmez. Şifre yöneticilerinin gizli işaretlediği kopyalar ve aşağıdaki uygulamalardan kopyalananlar hiç kaydedilmez. Her şey yalnızca bu Mac'te kalır.",
                            "Text, links, colour codes, files and images up to 3 MB are kept; pinned items are never removed. Copies password managers mark as secret, and anything copied in the apps below, are never saved. Everything stays on this Mac."))
             }
-            Section {
+            SettingsSection("clipboard.paste") {
                 Toggle(L("↩ ile yapıştır", "Paste with ↩"), isOn: $autoPaste)
                 AccessibilityRow()
             } header: {
@@ -1661,7 +2542,7 @@ private struct ClipboardPage: View {
                 Footnote(L("Seçtiğini, imlecin olduğu uygulamaya doğrudan yapıştırır. Bunun için macOS'in Erişilebilirlik izni gerekir; izin yoksa yalnızca kopyalanır.",
                            "Pastes what you pick straight into the app with the cursor. macOS needs Accessibility permission for this; without it, the item is only copied."))
             }
-            Section {
+            SettingsSection("clipboard.excluded") {
                 ForEach(customExcluded, id: \.self) { bundle in
                     HStack {
                         Text(verbatim: appName(bundle))
@@ -1677,7 +2558,7 @@ private struct ClipboardPage: View {
                 Footnote(L("Her zaman hariç: 1Password, Bitwarden, LastPass, Dashlane, KeePassXC, Anahtar Zinciri ve Parolalar.",
                            "Always left out: 1Password, Bitwarden, LastPass, Dashlane, KeePassXC, Keychain Access and Passwords."))
             }
-            Section {
+            SettingsSection("clipboard.clear") {
                 Button(L("Geçmişi temizle (\(history.items.filter { !$0.pinned }.count))…", "Clear history (\(history.items.filter { !$0.pinned }.count))…"),
                        role: .destructive) { clear() }
                     .disabled(history.items.allSatisfy(\.pinned))
@@ -1745,7 +2626,7 @@ private struct SnippetsPage: View {
     var body: some View {
         Form {
             Section {} header: { PageHeader(page: .snippets) }
-            Section {
+            SettingsSection("snippets.list") {
                 if store.snippets.isEmpty {
                     Text(L("Henüz parçacık yok.", "No snippets yet.")).foregroundStyle(Theme.textMuted)
                 }
@@ -1802,7 +2683,7 @@ private struct WindowsPage: View {
     var body: some View {
         Form {
             Section {} header: { PageHeader(page: .windows) }
-            Section {
+            SettingsSection("windows.shortcuts") {
                 Toggle(L("Pencere kısayolları", "Window shortcuts"), isOn: Binding(get: { hotkeys }, set: { on in
                     hotkeys = on
                     if on && !Paster.isTrusted { Paster.requestTrust() }
@@ -1812,7 +2693,7 @@ private struct WindowsPage: View {
                 Footnote(L("Öndeki pencereyi taşır ve boyutlandırır. Bunun için Erişilebilirlik izni gerekir. Kısayolları kapalı olsa da başlatıcıda \"sol yarı\", \"ortala\" yazarak kullanabilirsin.",
                            "Moves and resizes the front window. This needs Accessibility permission. With shortcuts off you can still type \"left half\" or \"center\" in the launcher."))
             }
-            Section(L("Yerleşimler", "Layouts")) {
+            SettingsSection("windows.layouts", title: L("Yerleşimler", "Layouts")) {
                 ForEach(WindowAction.allCases) { action in
                     LabeledContent {
                         Text(verbatim: action.shortcut ?? L("Başlatıcıdan", "From the launcher"))
@@ -1822,12 +2703,188 @@ private struct WindowsPage: View {
                     }
                 }
             }
+            CustomLayoutsSection()
         }
         .formStyle(.grouped)
     }
 }
 
+/// The user's own window positions, and sets of them applied together.
+private struct CustomLayoutsSection: View {
+    private let store = WindowLayouts.shared
+
+    var body: some View {
+        SettingsSection("windows.custom") {
+            ForEach(store.layouts) { layout in
+                WindowLayoutRow(layout: Binding(get: { store.layouts.first { $0.id == layout.id } ?? layout },
+                                                set: { new in
+                                                    if let index = store.layouts.firstIndex(where: { $0.id == layout.id }) { store.layouts[index] = new }
+                                                }))
+            }
+            HStack {
+                Menu {
+                    Button(L("Boş yerleşim", "Blank layout")) { store.add(WindowLayout(name: L("Yeni yerleşim", "New layout"))) }
+                    Divider()
+                    ForEach(WindowLayout.presets) { preset in
+                        Button(preset.name) {
+                            var copy = preset
+                            copy.id = UUID()
+                            store.add(copy)
+                        }
+                    }
+                } label: {
+                    Label(L("Yerleşim ekle", "Add a layout"), systemImage: "plus")
+                }
+                .fixedSize()
+                Spacer()
+            }
+        } header: {
+            Text(L("Kendi yerleşimlerin", "Your own layouts"))
+        } footer: {
+            Footnote(L("Ekranın yüzdesiyle: sol ve üstten uzaklık, genişlik ve yükseklik. Bir uygulama seçersen o uygulamanın penceresi yerleşir (kapalıysa açılır). Aynı düzen adını verdiğin yerleşimler \"Düzen: ad\" komutuyla birlikte uygulanır. Hepsi başlatıcıda çıkar; ⌘K ile kısayol atayabilirsin.",
+                       "As shares of the screen: distance from the left and top, width and height. Pick an app to place that app's window (it opens if needed). Layouts with the same set name run together as \"Set: name\". All of them show in the launcher; give one a shortcut with ⌘K."))
+        }
+    }
+}
+
+private struct WindowLayoutRow: View {
+    @Binding var layout: WindowLayout
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.s) {
+            HStack(spacing: Theme.Spacing.m) {
+                LayoutPreview(layout: layout)
+                TextField(L("Ad", "Name"), text: $layout.name).labelsHidden()
+                Button(L("Dene", "Try")) { WindowLayouts.shared.apply(layout) }
+                    .help(L("Öndeki pencereye (şu an bu pencere) ya da seçtiğin uygulamaya uygular.", "Applies it to the front window (this one right now) or to the app you picked."))
+                Button { WindowLayouts.shared.remove(layout.id) } label: { Image(systemName: "minus.circle") }
+                    .buttonStyle(TextButtonStyle(color: Theme.textMuted))
+            }
+            HStack(spacing: Theme.Spacing.m) {
+                PercentField(L("Sol", "Left"), value: $layout.x)
+                PercentField(L("Üst", "Top"), value: $layout.y)
+                PercentField(L("Genişlik", "Width"), value: $layout.width, range: 5...100)
+                PercentField(L("Yükseklik", "Height"), value: $layout.height, range: 5...100)
+            }
+            HStack(spacing: Theme.Spacing.m) {
+                Menu(layout.appName ?? L("Öndeki pencere", "Front window")) {
+                    Button(L("Öndeki pencere", "Front window")) { layout.app = nil }
+                    Divider()
+                    ForEach(runningApps, id: \.bundle) { app in Button(app.name) { layout.app = app.bundle } }
+                    Divider()
+                    Button(L("Başka uygulama…", "Other app…")) { pickApp() }
+                }
+                .fixedSize()
+                TextField(L("Düzen adı (isteğe bağlı)", "Set name (optional)"), text: $layout.set)
+                    .labelsHidden()
+            }
+        }
+        .padding(.vertical, Theme.Spacing.xs)
+    }
+
+    private var runningApps: [(bundle: String, name: String)] {
+        NSWorkspace.shared.runningApplications
+            .filter { $0.activationPolicy == .regular && $0.bundleIdentifier != Bundle.main.bundleIdentifier }
+            .compactMap { app in app.bundleIdentifier.map { ($0, app.localizedName ?? $0) } }
+            .sorted { $0.name.localizedCompare($1.name) == .orderedAscending }
+    }
+
+    private func pickApp() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.application]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        NSApp.activate()
+        guard panel.runModal() == .OK, let url = panel.url, let bundle = Bundle(url: url)?.bundleIdentifier else { return }
+        layout.app = bundle
+    }
+}
+
+/// "Left 0%" with a stepper, 5% at a time.
+private struct PercentField: View {
+    let title: String
+    @Binding var value: Int
+    var range: ClosedRange<Int> = 0...95
+
+    init(_ title: String, value: Binding<Int>, range: ClosedRange<Int> = 0...95) {
+        self.title = title
+        _value = value
+        self.range = range
+    }
+
+    var body: some View {
+        HStack(spacing: Theme.Spacing.xs) {
+            Text(verbatim: title).foregroundStyle(Theme.textMuted)
+            Stepper(value: $value, in: range, step: 5) {
+                Text(verbatim: L("%\(value)", "\(value)%")).monospacedDigit()
+            }
+        }
+        .fixedSize()
+    }
+}
+
+/// The screen as a small rectangle with the window drawn in it.
+private struct LayoutPreview: View {
+    let layout: WindowLayout
+
+    var body: some View {
+        let size = CGSize(width: 40, height: 26)
+        let frame = layout.frame(in: CGRect(origin: .zero, size: size))
+        ZStack(alignment: .topLeading) {
+            RoundedRectangle(cornerRadius: 3).strokeBorder(Theme.textMuted.opacity(0.6), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 2).fill(Theme.accent)
+                .frame(width: max(frame.width - 2, 2), height: max(frame.height - 2, 2))
+                .offset(x: frame.minX + 1, y: size.height - frame.maxY + 1)
+        }
+        .frame(width: size.width, height: size.height)
+    }
+}
+
 /// One global shortcut: on/off, and a button that records a new key combination.
+/// ⌘⇧3 / ⌘⇧4 answered by Nabız: turning it on turns macOS's own off (and back on when turned off or on quit).
+private struct ClassicShotRow: View {
+    @AppStorage(Prefs.shotClassic) private var on = false
+    @State private var systemOn = true
+    @State private var working = false
+
+    var body: some View {
+        LabeledContent {
+            HStack(spacing: Theme.Spacing.m) {
+                if working { ProgressView().controlSize(.small) }
+                Toggle(L("macOS kısayolları", "macOS shortcuts"), isOn: Binding(get: { on }, set: change))
+                    .labelsHidden().toggleStyle(.switch).controlSize(.small)
+                    .disabled(working)
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(L("⌘⇧3 ve ⌘⇧4 Nabız'da", "⌘⇧3 and ⌘⇧4 in Nabız"))
+                if on && systemOn && !working {
+                    HStack(spacing: Theme.Spacing.xs) {
+                        Text(L("macOS'unkiler hâlâ açık, önce onlar çalışıyor.", "macOS's own are still on and win."))
+                            .font(Theme.small).foregroundStyle(Theme.warning.mark)
+                        Button(L("Ayarları aç", "Open Settings")) { SystemScreenshotKeys.openSettings() }
+                            .buttonStyle(TextButtonStyle(font: Theme.small, color: Theme.accent))
+                    }
+                } else {
+                    Text(L("⌘⇧3 tüm ekran, ⌘⇧4 alan (Boşluk: pencere) dosyaya; ⌃ ile panoya. ⌘⇧5 macOS'ta kalır.",
+                           "⌘⇧3 whole screen, ⌘⇧4 area (then Space: window) to a file; with ⌃ to the clipboard. ⌘⇧5 stays with macOS."))
+                        .font(Theme.small).foregroundStyle(Theme.textMuted)
+                }
+            }
+        }
+        .onAppear { systemOn = SystemScreenshotKeys.anyOn }
+    }
+
+    private func change(_ next: Bool) {
+        working = true
+        Task {
+            _ = await SystemScreenshotKeys.set(on: !next)
+            on = next
+            systemOn = SystemScreenshotKeys.anyOn
+            working = false
+        }
+    }
+}
+
 private struct HotKeyRow: View {
     let title: String
     let shortcut: HotKey.Shortcut

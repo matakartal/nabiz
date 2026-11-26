@@ -8,7 +8,7 @@ let package = Package(
         .executableTarget(
             name: "Nabiz",
             path: "Sources/Nabiz",
-            linkerSettings: [.linkedFramework("IOKit"), .linkedFramework("ServiceManagement")]
+            linkerSettings: [.linkedFramework("IOKit"), .linkedFramework("ServiceManagement"), .linkedFramework("IOBluetooth"), .linkedFramework("CoreAudio")]
         ),
         .testTarget(
             name: "NabizTests",

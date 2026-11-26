@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import SwiftUI
 
 @main
@@ -6,12 +7,52 @@ enum Entry {
     @MainActor static func main() {
         Prefs.registerDefaults()
         let args = CommandLine.arguments
+        // `Nabiz --mcp`: started by an AI app (Claude Code, Claude Desktop…), it connects them to the running Nabız.
+        if args.contains("--mcp") { MCPBridge.run() }
         // `Nabiz --calc "100 usd"` prints what the quick calculator would show.
         if let index = args.firstIndex(of: "--calc"), index + 1 < args.count {
             print(Calculator.evaluate(args[index + 1])?.text ?? "—")
             return
         }
+        // `Nabiz --ask "question" [--engine claude|codex|gemini|onDevice]` prints the answer, for checking the AI engines.
+        if let index = args.firstIndex(of: "--ask"), index + 1 < args.count {
+            _ = NSApplication.shared
+            let engine = args.firstIndex(of: "--engine").flatMap { args.indices.contains($0 + 1) ? AIEngine(rawValue: args[$0 + 1]) : nil }
+            AIChatStore.persists = false
+            Task { @MainActor in
+                AIEngines.shared.refreshIfNeeded()
+                while !AIEngines.shared.searched { try? await Task.sleep(for: .milliseconds(50)) }
+                guard let resolved = AIEngines.shared.resolve(engine ?? .auto) else { print("no engine"); exit(1) }
+                let model = args.firstIndex(of: "--model").flatMap { args.indices.contains($0 + 1) ? args[$0 + 1] : nil }
+                let chat = AIConversation(engine: resolved, model: model ?? "")
+                // Every message after the first is a follow-up in the same chat: `--ask "a" "b"`.
+                for question in args[(index + 1)...].prefix { !$0.hasPrefix("--") } {
+                    chat.send(question)
+                    while chat.isRunning { try? await Task.sleep(for: .milliseconds(100)) }
+                    guard let answer = chat.lastAnswer else { exit(1) }
+                    if let error = answer.error { print("[\(resolved.rawValue)] failed: \(error)"); exit(1) }
+                    let name = AIEngines.shared.displayName(answer.model ?? "", engine: resolved)
+                    print("[\(name), \(String(format: "%.1f", answer.duration ?? 0))s]\(answer.thinking.isEmpty ? "" : " (thought)") \(answer.text)\n")
+                }
+                exit(0)
+            }
+            while true { RunLoop.main.run(until: .distantFuture) }
+        }
         // `Nabiz --snapshot out.png [--dark] [--settings]` renders the panel (or settings) with live data, for layout checks.
+        if let index = args.firstIndex(of: "--snapshot"), index + 1 < args.count,
+           let selectorIndex = args.firstIndex(of: "--selector"), selectorIndex + 1 < args.count {
+            // `--snapshot out.png --selector picture.png [--drag]`: the frozen-screen picker drawn over that picture.
+            _ = NSApplication.shared
+            let out = args[index + 1], picture = args[selectorIndex + 1]
+            Task { @MainActor in
+                guard let source = NSImage(contentsOfFile: picture)?.cgImage(forProposedRect: nil, context: nil, hints: nil),
+                      let image = ShotSelector.preview(source, drag: args.contains("--drag")),
+                      let tiff = image.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:])
+                else { exit(1) }
+                exit((try? png.write(to: URL(fileURLWithPath: out))) != nil ? 0 : 1)
+            }
+            while true { RunLoop.main.run(until: .distantFuture) }
+        }
         if let index = args.firstIndex(of: "--snapshot"), index + 1 < args.count {
             _ = NSApplication.shared
             Task { @MainActor in
@@ -38,6 +79,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         CrashReporter.shared.start()
+        ShotExport.cleanCache()
+        ShotLog.write("launch, screen access: \(ScreenAccess.granted)")
+        ScreenAccess.checkAfterLaunch()
+        if Prefs.bool(Prefs.shotClassic) && SystemScreenshotKeys.anyOn { Task { _ = await SystemScreenshotKeys.set(on: false) } }
+        if Prefs.bool(Prefs.aiAsk) { AIEngines.shared.refreshIfNeeded() }
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.target = self
         statusItem.button?.action = #selector(statusItemClicked)
@@ -80,9 +126,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.mainMenu = Self.editMenu()
         HotKey.togglePanel = { [weak self] in self?.togglePanel() }
         updateHotKeys()
+        MCPServer.shared.update()
+        CalendarAgenda.shared.update()
         NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.updateHotKeys()
+                MCPServer.shared.update()
+                CalendarAgenda.shared.update()
                 AppearanceMode.apply()
                 ClipboardHistory.shared.update()
                 AILimitsStore.shared.refreshIfNeeded()
@@ -96,6 +146,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self else { return }
                 Pomodoro.shared.tick()
                 FocusMode.shared.tick()
+                CalendarAgenda.shared.tick()
+                Backup.autoBackupIfNeeded()
                 let running = CountdownTimer.shared.endsAt != nil || Pomodoro.shared.isActive || FocusMode.shared.isOn
                 // One last refresh when it stops, so the countdown doesn't linger.
                 if running || self.timerWasRunning { self.updateButton() }
@@ -105,7 +157,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         WelcomeWindow.showIfFirstLaunch { [weak self] in self?.togglePanel() }
     }
 
+    /// While Nabız answers ⌘⇧3 / ⌘⇧4, macOS's own are off; they come back on while Nabız isn't running.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard Prefs.bool(Prefs.shotClassic) else { return .terminateNow }
+        Task {
+            _ = await SystemScreenshotKeys.set(on: true)
+            NSApp.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
+        MCPServer.shared.stop()
         KeepAwake.shared.stop()
         UsageHistory.shared.save()
         NoteStore.shared.saveNow()
@@ -123,7 +186,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         HotKey.update(.panel, enabled: Prefs.bool(Prefs.panelHotkey))
         HotKey.update(.clipboard, enabled: Prefs.bool(Prefs.clipboardHotkey) && Prefs.bool(Prefs.clipboardEnabled))
         HotKey.update(.note, enabled: Prefs.bool(Prefs.noteHotkey))
+        HotKey.update(.dictation, enabled: Prefs.bool(Prefs.dictationHotkey))
+        HotKey.update(.screenshot, enabled: Prefs.bool(Prefs.shotHotkey))
+        for shortcut in HotKey.Shortcut.classics { HotKey.update(shortcut, enabled: Prefs.bool(Prefs.shotClassic)) }
+        HotKey.update(.ai, enabled: Prefs.bool(Prefs.aiHotkey) && Prefs.bool(Prefs.aiAsk))
+        HotKey.update(.aiChat, enabled: Prefs.bool(Prefs.aiChatHotkey))
         for shortcut in HotKey.Shortcut.windows { HotKey.update(shortcut, enabled: Prefs.bool(Prefs.windowHotkeys)) }
+        HotKey.registerItems()
     }
 
     /// Without an Edit menu, ⌘C, ⌘V and ⌘A do nothing in text fields (Settings, the note). The menu bar never shows it.
@@ -157,10 +226,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let item = ClosureMenuItem(title: title, keyEquivalent: key, handler: action)
             return item
         }
-        menu.addItem(item(L("Paneli aç", "Open Panel")) { [weak self] in self?.togglePanel() })
-        menu.addItem(item(L("Başlatıcı", "Launcher")) { LauncherPanel.shared.show() })
-        menu.addItem(item(L("Pano geçmişi", "Clipboard History")) { LauncherPanel.shared.show(.clipboard) })
-        menu.addItem(item(L("Notlar", "Notes")) { NoteWindow.toggle() })
+        /// Shows the global shortcut on the right, as native menus do (only while it is turned on).
+        func keyed(_ item: NSMenuItem, _ shortcut: HotKey.Shortcut, on: Bool) -> NSMenuItem {
+            guard on else { return item }
+            let combo = HotKey.combo(shortcut)
+            let name = HotKey.keyName(combo.keyCode, nil)
+            let key = combo.keyCode == kVK_Space ? " " : name.count == 1 ? name.lowercased() : ""
+            guard !key.isEmpty else { return item }
+            var flags: NSEvent.ModifierFlags = []
+            if combo.modifiers & controlKey != 0 { flags.insert(.control) }
+            if combo.modifiers & optionKey != 0 { flags.insert(.option) }
+            if combo.modifiers & shiftKey != 0 { flags.insert(.shift) }
+            if combo.modifiers & cmdKey != 0 { flags.insert(.command) }
+            item.keyEquivalent = key
+            item.keyEquivalentModifierMask = flags
+            return item
+        }
+        menu.addItem(keyed(item(L("Paneli aç", "Open Panel")) { [weak self] in self?.togglePanel() }, .panel, on: Prefs.bool(Prefs.panelHotkey)))
+        menu.addItem(keyed(item(L("Başlatıcı", "Launcher")) { LauncherPanel.shared.show() }, .launcher, on: Prefs.bool(Prefs.hotkey)))
+        menu.addItem(keyed(item(L("AI sohbet", "AI Chat")) { AIChatWindow.show() }, .aiChat, on: Prefs.bool(Prefs.aiChatHotkey)))
+        if Prefs.bool(Prefs.aiAsk) {
+            menu.addItem(keyed(item(L("AI'a sor", "Ask AI")) { LauncherPanel.shared.show(.ai) }, .ai, on: Prefs.bool(Prefs.aiHotkey)))
+        }
+        menu.addItem(.separator())
+        menu.addItem(keyed(item(L("Pano geçmişi", "Clipboard History")) { LauncherPanel.shared.show(.clipboard) }, .clipboard,
+                           on: Prefs.bool(Prefs.clipboardHotkey) && Prefs.bool(Prefs.clipboardEnabled)))
+        menu.addItem(keyed(item(L("Notlar", "Notes")) { NoteWindow.toggle() }, .note, on: Prefs.bool(Prefs.noteHotkey)))
+        menu.addItem(keyed(item(L("Ekran görüntüsü", "Screenshot")) { Capture.run(.area) }, .screenshot, on: Prefs.bool(Prefs.shotHotkey)))
+        menu.addItem(keyed(item(Dictation.shared.isListening ? L("Dikteyi bitir", "Stop Dictation") : L("Dikte et", "Dictate")) { Dictation.shared.toggle() },
+                           .dictation, on: Prefs.bool(Prefs.dictationHotkey)))
         let pomodoro = Pomodoro.shared
         menu.addItem(item(pomodoro.isActive ? (pomodoro.isRunning ? L("Pomodoro'yu duraklat", "Pause Pomodoro") : L("Pomodoro'ya devam et", "Resume Pomodoro"))
                                             : L("Pomodoro başlat", "Start Pomodoro")) { pomodoro.toggle() })
@@ -314,6 +408,7 @@ final class StatusPanel {
 
 @MainActor
 enum Snapshot {
+    static var shotDoc: ShotDocument?
     static func render(to path: String, dark: Bool, settings: Bool) async -> Bool {
         let monitor = Monitor(autostart: false)
         RateStore.shared.refreshIfNeeded()
@@ -337,6 +432,8 @@ enum Snapshot {
         }
         let selection = SettingsSelection()
         selection.page = page ?? .general
+        // `--anchor id`: open that section as a search result would (scrolled to and lit up).
+        if let anchor = value(after: "--anchor") { selection.go(SettingsTarget(page: page ?? .general, anchor: anchor)) }
         let root: AnyView
         if args.contains("--welcome") {
             root = AnyView(WelcomeView {})
@@ -350,16 +447,113 @@ enum Snapshot {
             root = AnyView(HistoryView().frame(width: 680, height: 560))
         } else if args.contains("--limits") {
             root = AnyView(LimitsPreview())
+        } else if let text = value(after: "--ai-window") {
+            // `--ai-window "question" [--engine x] [--thinking]`: the chat window with that question asked ("" = a new chat).
+            AIChatStore.persists = false
+            AIEngines.shared.refreshIfNeeded()
+            while !AIEngines.shared.searched { try? await Task.sleep(for: .milliseconds(50)) }
+            let state = AIChatWindow.state
+            // `--seed`: a few made-up chats so the sidebar shows pinned, grouped and archived rows.
+            if args.contains("--seed") {
+                let day: TimeInterval = 86_400
+                let samples: [(String, AIEngine, TimeInterval, Bool, Bool)] = [
+                    (L("Haftalık plan", "Weekly plan"), .claude, 0, true, false),
+                    (L("Kahve mi çay mı", "Coffee or tea"), .onDevice, 600, false, false),
+                    (L("Go'da merhaba dünya", "Hello world in Go"), .codex, 3_000, false, false),
+                    (L("Tatil rotası", "Holiday route"), .claude, day * 1.2, false, false),
+                    (L("Kira sözleşmesi özeti", "Lease summary"), .onDevice, day * 4, false, false),
+                    (L("Eski fikirler", "Old ideas"), .claude, day * 40, false, true),
+                ]
+                for (title, engine, age, pinned, archived) in samples.reversed() {
+                    let date = Date().addingTimeInterval(-age)
+                    let record = AIConversation.Record(id: UUID(), title: title, messages: [
+                        AIMessage(role: .user, text: title, date: date),
+                        AIMessage(role: .assistant, text: "…", engine: engine, date: date, duration: 3),
+                    ], engine: engine, model: "", created: date, updated: date, pinned: pinned, archived: archived, titleEdited: true)
+                    AIChatStore.shared.touch(AIConversation(record: record))
+                }
+                let folder = AIChatStore.shared.createFolder("PTBook")
+                if let chat = AIChatStore.shared.conversations.first(where: { $0.engine == .codex }) { AIChatStore.shared.move(chat, to: folder.id) }
+                if args.contains("--renaming") { AIChatWindow.state.renamingFolder = folder.id }
+            }
+            state.newChat()
+            if let engine = value(after: "--engine").flatMap(AIEngine.init(rawValue:)) {
+                state.engine = engine
+                state.model = engine.chosenModel
+            }
+            if !text.isEmpty {
+                state.send(text)
+                for _ in 0..<900 where state.conversation?.isRunning == true && !args.contains("--thinking") {
+                    try? await Task.sleep(for: .milliseconds(100))
+                }
+                if let follow = value(after: "--then") {
+                    state.send(follow)
+                    for _ in 0..<900 where state.conversation?.isRunning == true && !args.contains("--thinking") {
+                        try? await Task.sleep(for: .milliseconds(100))
+                    }
+                }
+                try? await Task.sleep(for: .milliseconds(400))
+            }
+            root = AnyView(AIChatView(state: state).frame(width: 920, height: 660))
         } else if let text = value(after: "--launcher") {
             AppIndex.shared.refreshIfNeeded()
             try? await Task.sleep(for: .milliseconds(600))
             LauncherPanel.shared.model.reset(mode: args.contains("--clipboard") ? .clipboard : .all, text: text)
+            // `--ai`: asks the text and waits for the answer.
+            if args.contains("--ai") {
+                AIChatStore.persists = false
+                AIEngines.shared.refreshIfNeeded()
+                while !AIEngines.shared.searched { try? await Task.sleep(for: .milliseconds(50)) }
+                LauncherPanel.shared.model.ask(text)
+                // `--thinking`: catch it before the first words, to see the loading state.
+                for _ in 0..<600 where LauncherPanel.shared.model.ai?.isRunning == true && !args.contains("--thinking") {
+                    try? await Task.sleep(for: .milliseconds(100))
+                }
+            }
             if args.contains("--palette") { LauncherPanel.shared.model.paletteOpen = true }
             root = AnyView(LauncherView(model: LauncherPanel.shared.model))
+        } else if args.contains("--access") {
+            // `--access [--stuck | --ready]`: the Screen Recording guide.
+            let state = ScreenAccessState()
+            state.stuck = args.contains("--stuck")
+            state.ready = args.contains("--ready")
+            root = AnyView(ScreenAccessView(state: state))
+        } else if let file = value(after: "--shot") {
+            // `--shot image.png [--seed] [--tool arrow] [--frame]`: the screenshot editor on that image.
+            guard let doc = ShotDocument(contentsOf: URL(fileURLWithPath: file)) else { return false }
+            if args.contains("--seed") { ShotDemo.seed(doc) }
+            if args.contains("--frame") { doc.background.enabled = true; doc.framePanel = true }
+            if let tool = value(after: "--tool").flatMap(ShotTool.init(rawValue:)) { doc.tool = tool }
+            Snapshot.shotDoc = doc
+            root = AnyView(ShotEditorView(doc: doc) { _ in })
         } else if settings {
             root = AnyView(SettingsView(selection: selection).frame(width: 760, height: 560))
         } else {
             root = AnyView(PanelView(monitor: monitor, actions: PanelActions(), alwaysRender: true))
+        }
+        // `--chrome`: Settings in a real titled window, traffic lights and all, drawn off screen.
+        // `--chrome`: Settings (or the AI window with `--ai-window`) in a real titled window, window buttons and all.
+        if (settings || args.contains("--ai-window") || args.contains("--shot")) && args.contains("--chrome") {
+            let content: AnyView = args.contains("--shot") ? root : args.contains("--ai-window") ? AnyView(AIChatView(state: AIChatWindow.state))
+                : AnyView(SettingsView(selection: selection, query: value(after: "--find") ?? ""))
+            let controller = NSHostingController(rootView: content.environment(\.colorScheme, dark ? .dark : .light))
+            let window = NSWindow(contentViewController: controller)
+            window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+            WindowChrome.apply(window)
+            window.appearance = appearance
+            window.setContentSize(NSSize(width: value(after: "--width").flatMap(Double.init) ?? (settings ? 680 : 1000),
+                                         height: value(after: "--height").flatMap(Double.init) ?? (settings ? 500 : 680)))
+            window.setFrameOrigin(NSPoint(x: -20_000, y: -20_000))
+            window.orderFrontRegardless()
+            try? await Task.sleep(for: .milliseconds(300))
+            if !args.contains("--focus") { window.makeFirstResponder(nil) }
+            try? await Task.sleep(for: .milliseconds(900))
+            guard let frame = window.contentView?.superview,
+                  let rep = frame.bitmapImageRepForCachingDisplay(in: frame.bounds) else { return false }
+            frame.cacheDisplay(in: frame.bounds, to: rep)
+            window.orderOut(nil)
+            guard let data = rep.representation(using: .png, properties: [:]) else { return false }
+            return (try? data.write(to: URL(fileURLWithPath: path))) != nil
         }
         let host = NSHostingView(rootView: root
             .background(settings ? Color.clear : Theme.surfaceRaised)

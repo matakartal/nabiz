@@ -29,7 +29,19 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
-	<string>Nabız switches between dark and light mode with one tap through System Events.</string>
+	<string>Nabız switches dark mode through System Events and, in focus mode, reads the address of the browser tab in front to keep the sites you blocked away.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Nabız connects and disconnects your paired Bluetooth devices when you ask it to from the launcher.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Nabız shows today's meetings in its panel and launcher, reminds you a minute before, and joins their calls with one click. Your calendar is read only on this Mac.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Nabız shows today's meetings in its panel and launcher, reminds you a minute before, and joins their calls with one click. Your calendar is read only on this Mac.</string>
+	<key>NSScreenCaptureUsageDescription</key>
+	<string>Nabız takes screenshots you ask for and lets you mark them up. Nothing leaves your Mac.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Nabız listens only while you dictate, after you press its dictation shortcut, and types your words where the cursor is.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Nabız turns your speech into text while you dictate. When macOS has your language on this Mac, it stays on this Mac.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>

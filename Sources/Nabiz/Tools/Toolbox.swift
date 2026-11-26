@@ -4,17 +4,18 @@ import Security
 
 /// The one-tap tools in the panel's grid. Each does its job directly; nothing sends the user to another app to finish.
 enum ToolKind: String, CaseIterable, Identifiable {
-    case calculator, clipboard, note, pomodoro, focus, keepAwake, timer, sleepTimer, color, screenshot, readText, download, mic
+    case aiChat, calculator, clipboard, note, pomodoro, focus, keepAwake, timer, sleepTimer, color, screenshot, readText, download, mic
     case displayOff, darkMode, speedTest, ip, password, uuid, eject, xcode, rust, hiddenFiles, desktop, clearClipboard, activity
 
     var id: String { rawValue }
 
     /// Short enough for a 66 pt tile.
     /// Shown in the grid straight away; the rest sit behind "More tools".
-    static let everyday: Set<ToolKind> = [.calculator, .clipboard, .note, .pomodoro, .focus, .keepAwake, .timer, .screenshot, .download]
+    static let everyday: Set<ToolKind> = [.aiChat, .calculator, .clipboard, .note, .pomodoro, .focus, .keepAwake, .timer, .screenshot]
 
     var title: String {
         switch self {
+        case .aiChat: L("AI sohbet", "AI chat")
         case .calculator: L("Başlatıcı", "Launcher")
         case .clipboard: L("Pano", "Clipboard")
         case .note: L("Notlar", "Notes")
@@ -46,6 +47,7 @@ enum ToolKind: String, CaseIterable, Identifiable {
 
     var symbol: String {
         switch self {
+        case .aiChat: "sparkles"
         case .calculator: "magnifyingglass"
         case .clipboard: "doc.on.clipboard"
         case .note: "note.text"
@@ -78,6 +80,8 @@ enum ToolKind: String, CaseIterable, Identifiable {
     /// The tooltip: what one tap does, in one sentence.
     var help: String {
         switch self {
+        case .aiChat: L("Claude, Codex, Gemini ya da Apple'ın modeliyle sohbet (⌃⌥I). Hızlı soru için ⌃⌥A.",
+                        "Chat with Claude, Codex, Gemini or Apple's model (⌃⌥I). ⌃⌥A for a quick question.")
         case .calculator: L("Uygulama aç, komut çalıştır, hesapla, çevir, web'de ara (⌃⌥Boşluk).",
                             "Open apps, run commands, calculate, convert, search the web (⌃⌥Space).")
         case .clipboard: L("Kopyaladıklarının geçmişi; seç, yapıştır, sabitle (⌃⌥V).", "Everything you copied; pick, paste, pin (⌃⌥V).")
@@ -95,8 +99,8 @@ enum ToolKind: String, CaseIterable, Identifiable {
         case .timer: L("Geri sayım; bitince ses ve bildirim. Kalan süre menü çubuğunda görünür.",
                        "A countdown with a sound and a notification at the end. The time left shows in the menu bar.")
         case .color: L("Ekrandan bir renk seç; hex kodu panoya kopyalanır.", "Pick a colour on screen; its hex code is copied.")
-        case .screenshot: L("macOS'un kendi ekran görüntüsü: alan, pencere, tüm ekran, zamanlı ya da kayıt.",
-                            "macOS's own screenshots: area, window, whole screen, timed, or recording.")
+        case .screenshot: L("Alan, pencere ya da tüm ekran; sonra ok, kutu, yazı, numara, bulanıklaştırma ve çerçeveyle düzenle (⌃⌥S).",
+                            "Area, window or whole screen; then mark it up with arrows, boxes, text, steps, blur and a frame (⌃⌥S).")
         case .displayOff: L("Ekranı hemen uyutur; Mac çalışmaya devam eder.", "Puts the display to sleep now; the Mac keeps running.")
         case .darkMode: L("Karanlık ve açık görünüm arasında geçer.", "Switches between dark and light appearance.")
         case .speedTest: L("İnternet hızını ölçer (yaklaşık 15 saniye).", "Measures your internet speed (about 15 seconds).")
@@ -289,6 +293,9 @@ final class Toolbox {
 
     func run(_ kind: ToolKind, actions: PanelActions, monitor: Monitor) {
         switch kind {
+        case .aiChat:
+            actions.close()
+            AIChatWindow.show()
         case .calculator:
             actions.close()
             LauncherPanel.shared.show()

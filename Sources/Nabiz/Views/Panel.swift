@@ -79,6 +79,7 @@ struct PanelContent: View {
     @AppStorage(Prefs.baseCurrency) private var base = "TRY"
     @AppStorage(Prefs.watchedCurrencies) private var watched = "USD,EUR,GBP"
     @AppStorage(Prefs.sectionOrder) private var order = ""
+    @AppStorage(Prefs.calendarEnabled) private var calendarOn = false
 
     var body: some View {
         let advice = monitor.advice
@@ -87,6 +88,7 @@ struct PanelContent: View {
         let codes = watched.split(separator: ",").map(String.init).filter { $0 != base }
         VStack(alignment: .leading, spacing: 0) {
             MetersView(monitor: monitor)
+            WhatsNewSection(actions: actions)
             ForEach(PanelSection.ordered) { section in
                 self.section(section, advice: advice, memory: memory, cpu: cpu, codes: codes)
             }
@@ -129,6 +131,13 @@ struct PanelContent: View {
         case .ai:
             if showAI {
                 CollapsibleSection(.ai, summary: Summary.ai()) { AISection(actions: actions) }
+            }
+        case .calendar:
+            if calendarOn && CalendarAgenda.shared.authorized {
+                let next = CalendarAgenda.shared.next
+                CollapsibleSection(.calendar, summary: next.map { "\($0.title) · \(CalendarAgenda.untilText($0))" } ?? L("Boş", "Free")) {
+                    CalendarSection()
+                }
             }
         case .memory:
             if showMemory && !memory.isEmpty {
@@ -424,6 +433,31 @@ private struct CurrencySection: View {
     }
 }
 
+/// What's left today: each event's time on the right; a meeting with a call link joins it on click.
+private struct CalendarSection: View {
+    private let agenda = CalendarAgenda.shared
+
+    var body: some View {
+        let events = agenda.upcoming.prefix(5)
+        if events.isEmpty {
+            PanelRow(icon: .symbol("calendar"), title: L("Bugün başka etkinlik yok", "Nothing else today"),
+                     action: { agenda.openInCalendar() }) { _ in EmptyView() }
+        }
+        ForEach(Array(events)) { event in
+            PanelRow(icon: .dot(event.color), title: event.title, titleColor: event.isNow ? Theme.text : nil,
+                     action: { event.meetingURL != nil ? agenda.join(event) : agenda.openInCalendar() }) { hovering in
+                if hovering && event.meetingURL != nil {
+                    Value(L("Katıl", "Join"), color: Theme.accent)
+                } else {
+                    Value(CalendarAgenda.timeText(event), color: event.isNow ? Theme.accent : Theme.textMuted)
+                }
+            }
+            .help(event.meetingURL != nil ? L("Toplantıya katılmak için tıkla · \(event.calendar)", "Click to join the call · \(event.calendar)")
+                                          : [event.location, event.calendar].compactMap { $0 }.joined(separator: " · "))
+        }
+    }
+}
+
 /// Watched Hyperliquid markets: 24-hour change and price; a click opens the market on Hyperliquid.
 private struct MarketsSection: View {
     let ids: [String]
@@ -701,18 +735,73 @@ private struct ToolTile: View {
     }
 }
 
+/// What came with this version, once, until it's closed: each row opens the thing it names.
+private struct WhatsNewSection: View {
+    let actions: PanelActions
+    @AppStorage(Prefs.seenVersion) private var seen = ""
+    @AppStorage(Prefs.onboarded) private var onboarded = false
+
+    var body: some View {
+        if WhatsNew.shouldShow(seen: seen, onboarded: onboarded) {
+            PanelDivider()
+            HStack(spacing: Theme.Spacing.s) {
+                Text(L("Bu sürümde yeni", "New in this version")).font(Theme.smallStrong).foregroundStyle(Theme.accent).lineLimit(1)
+                Spacer(minLength: Theme.Spacing.s)
+                Button(L("Hepsi", "All")) {
+                    actions.close()
+                    HelpWindow.show()
+                }
+                .buttonStyle(TextButtonStyle(font: Theme.small, color: Theme.textMuted))
+                Button { seen = WhatsNew.id } label: {
+                    Image(systemName: "xmark").font(Theme.smallStrong).frame(width: Theme.menuIcon - Theme.Spacing.xs)
+                }
+                .buttonStyle(TextButtonStyle(color: Theme.textMuted))
+                .help(L("Kapat", "Close"))
+                .accessibilityLabel(L("Kapat", "Close"))
+            }
+            .padding(.horizontal, Theme.menuInset - Theme.menuHighlightInset)
+            .frame(height: Theme.menuLine)
+            .padding(.horizontal, Theme.menuHighlightInset)
+            .padding(.vertical, Theme.Spacing.xs)
+            ForEach(WhatsNew.items) { item in
+                PanelRow(icon: .symbol(item.symbol), title: item.title, action: {
+                    actions.close()
+                    item.open()
+                }) { _ in Value(item.keys) }
+                .help(item.detail)
+            }
+        }
+    }
+}
+
 private struct AISection: View {
     let actions: PanelActions
     @AppStorage("ai.claude") private var claude = false
     @AppStorage("ai.codex") private var codex = false
     @AppStorage("ai.gemini") private var gemini = false
+    @AppStorage(Prefs.aiAsk) private var askOn = true
     private let store = AILimitsStore.shared
 
     var body: some View {
-        if !(claude || codex || gemini) {
-            PanelRow(icon: .symbol("sparkles"), title: L("AI limitlerini göster…", "Show AI limits…"), action: {
+        // The way in to the AI itself first; the subscription limits under it.
+        PanelRow(icon: .symbol("sparkles"), title: L("Sohbet", "Chat"), action: {
+            actions.close()
+            AIChatWindow.show()
+        }) { _ in Value(Prefs.bool(Prefs.aiChatHotkey) ? HotKey.label(.aiChat) : "") }
+        .help(L("Claude, Codex, Gemini, Grok ya da Apple'ın modeliyle sohbet penceresi.",
+                "The chat window: Claude, Codex, Gemini, Grok or Apple's model."))
+        if askOn {
+            PanelRow(icon: .symbol("questionmark.bubble"), title: L("Hızlı sor", "Quick question"), action: {
                 actions.close()
-                SettingsWindow.show(.ai)
+                LauncherPanel.shared.show(.ai)
+            }) { _ in Value(Prefs.bool(Prefs.aiHotkey) ? HotKey.label(.ai) : "") }
+            .help(L("Başlatıcıda sor; seçili ya da kopyalanan metni özetle, düzelt, çevir.",
+                    "Ask in the launcher; summarise, fix or translate selected or copied text."))
+        }
+        if !(claude || codex || gemini) {
+            PanelRow(icon: .symbol("gauge.with.dots.needle.33percent"), title: L("Abonelik limitlerini göster…", "Show subscription limits…"), action: {
+                actions.close()
+                SettingsWindow.show(.aiLimits)
             }) { _ in EmptyView() }
         } else if store.statuses.isEmpty {
             PanelRow(icon: .symbol("sparkles"), title: L("Okunuyor…", "Reading…")) { _ in ProgressView().controlSize(.mini) }
@@ -988,7 +1077,7 @@ private struct StatusPill: View {
         let color = danger ? Theme.danger : warning ? Theme.warning.fill : Theme.accent
         let text = advice.isEmpty ? L("Her şey yolunda", "All good")
             : danger ? L("Dikkat gerekiyor", "Needs attention")
-            : L("\(advice.count) öneri", "\(advice.count) suggestions")
+            : L("\(advice.count) öneri", advice.count == 1 ? "1 suggestion" : "\(advice.count) suggestions")
         HStack(spacing: Theme.Spacing.xs) {
             Circle().fill(color).frame(width: Theme.dot, height: Theme.dot)
             Text(verbatim: text).font(Theme.smallStrong).foregroundStyle(Theme.text)

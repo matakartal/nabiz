@@ -9,6 +9,8 @@ enum WelcomeWindow {
 
     static func showIfFirstLaunch(openPanel: @escaping @MainActor () -> Void) {
         guard !Prefs.bool(Prefs.onboarded) else { return }
+        // A new install meets everything here; the panel's "New in this version" is for people who update.
+        UserDefaults.standard.set(WhatsNew.id, forKey: Prefs.seenVersion)
         let view = WelcomeView {
             UserDefaults.standard.set(true, forKey: Prefs.onboarded)
             window?.close()
@@ -53,6 +55,10 @@ struct WelcomeView: View {
                 Feature(symbol: "bolt.heart",
                         title: L("Tek tuşla çözüm", "One-tap fixes"),
                         detail: L("Mac yavaşlarsa sebebini ve çözümünü gösterir.", "When the Mac slows down, it shows why and fixes it."))
+                Feature(symbol: "sparkles",
+                        title: L("AI ve başlatıcı", "AI and the launcher"),
+                        detail: L("\(HotKey.label(.launcher)) ile her şeyi bul ya da sor; \(HotKey.label(.aiChat)) ile AI sohbeti aç.",
+                                  "\(HotKey.label(.launcher)) finds anything or asks AI; \(HotKey.label(.aiChat)) opens the AI chat."))
                 Feature(symbol: "square.grid.2x2",
                         title: L("Araçlar ve piyasalar", "Tools and markets"),
                         detail: L("Hesap makinesi, döviz, Hyperliquid fiyatları, AI limitleri.",

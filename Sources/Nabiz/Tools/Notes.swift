@@ -143,6 +143,18 @@ final class NoteStore {
         }
     }
 
+    /// Notes from a backup: new ones are added; for one that exists on both sides, the newer edit stays.
+    func merge(_ incoming: [Note]) {
+        for note in incoming where !note.isEmpty {
+            if let index = notes.firstIndex(where: { $0.id == note.id }) {
+                if note.modified > notes[index].modified { notes[index] = note }
+            } else {
+                notes.append(note)
+            }
+        }
+        saveNow()
+    }
+
     func saveNow() {
         saveTask?.cancel()
         if let data = try? JSONEncoder().encode(notes) { try? data.write(to: Self.file, options: [.atomic, .completeFileProtection]) }
