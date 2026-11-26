@@ -26,6 +26,7 @@ enum Prefs {
     static let barBattery = "barBattery"
     static let barAI = "barAI"
     static let barCurrency = "barCurrency"
+    static let barWeather = "barWeather"
     /// "stacked": a small label over a bold value, two lines like the system's own items; "line": one line.
     static let barStyle = "barStyle"
     /// AI limits show what is left ("6% left") instead of what is used ("94%").
@@ -67,6 +68,11 @@ enum Prefs {
     static let menuBarHiderDelay = "menuBarHiderDelay"
     static let showApps = "showApps"
     static let showCurrency = "showCurrency"
+    static let showWeather = "showWeather"
+    /// The weather's city (JSON of `WeatherStore.Place`); empty: found from the time zone.
+    static let weatherPlace = "weatherPlace"
+    /// "system", "c" or "f".
+    static let weatherUnit = "weatherUnit"
     static let showTools = "showTools"
     static let showAI = "showAI"
     static let memoryAppCount = "memoryAppCount"
@@ -218,7 +224,7 @@ enum Prefs {
             showAdvice: true, showSimulators: true, showPorts: true, showProjects: true, projectCount: 5, showDocker: true,
             devEditor: "", devAgent: "claude", notaryWatch: true, notaryProfile: "", devStaleDays: 30,
             "expanded.projects": true, "expanded.docker": true, showDisplays: true, brightnessKeys: false,
-            menuBarHider: false, menuBarHiderDelay: 10, showApps: true, showCurrency: true, showTools: true, showAI: true,
+            menuBarHider: false, menuBarHiderDelay: 10, showApps: true, showCurrency: true, showWeather: true, barWeather: false, weatherUnit: "system", "expanded.weather": false, showTools: true, showAI: true,
             "ai.claude": false, "ai.codex": false, "ai.gemini": false,
             memoryAppCount: 5, cpuAppCount: 3,
             baseCurrency: "TRY", watchedCurrencies: "USD,EUR,GBP",
@@ -257,7 +263,7 @@ enum Prefs {
 
 /// The panel's foldable sections, in the order they appear.
 enum PanelSection: String, CaseIterable, Identifiable {
-    case system, advice, simulators, ports, projects, docker, displays, ai, calendar, memory, cpu, markets, currency, tools
+    case system, advice, simulators, ports, projects, docker, displays, ai, calendar, weather, memory, cpu, markets, currency, tools
 
     var id: String { rawValue }
 
@@ -272,6 +278,7 @@ enum PanelSection: String, CaseIterable, Identifiable {
         case .displays: L("Ekranlar", "Displays")
         case .ai: "AI"
         case .calendar: L("Takvim", "Calendar")
+        case .weather: L("Hava durumu", "Weather")
         case .memory: L("En çok bellek", "Top memory")
         case .cpu: L("En çok işlemci", "Top CPU")
         case .markets: L("Piyasalar", "Markets")
@@ -291,6 +298,7 @@ enum PanelSection: String, CaseIterable, Identifiable {
         case .displays: Prefs.showDisplays
         case .ai: Prefs.showAI
         case .calendar: Prefs.calendarEnabled
+        case .weather: Prefs.showWeather
         case .memory: Prefs.showApps
         case .cpu: Prefs.showCPUApps
         case .markets: Prefs.showMarkets
@@ -310,6 +318,7 @@ enum PanelSection: String, CaseIterable, Identifiable {
         case .displays: "sun.max"
         case .ai: "sparkles"
         case .calendar: "calendar"
+        case .weather: "cloud.sun"
         case .memory: "memorychip"
         case .cpu: "cpu"
         case .markets: "chart.line.uptrend.xyaxis"
@@ -322,8 +331,14 @@ enum PanelSection: String, CaseIterable, Identifiable {
 
     /// In the order chosen in Settings → Panel; sections added in later versions go to the end.
     static var ordered: [PanelSection] {
-        let saved = Prefs.string(Prefs.sectionOrder).split(separator: ",").compactMap { PanelSection(rawValue: String($0)) }
-        return saved + allCases.filter { !saved.contains($0) }
+        var list = Prefs.string(Prefs.sectionOrder).split(separator: ",").compactMap { PanelSection(rawValue: String($0)) }
+        guard !list.isEmpty else { return allCases }
+        // A section added in a later version goes right after the one it follows in the default order.
+        for (index, section) in allCases.enumerated() where !list.contains(section) {
+            let before = allCases[..<index].last { list.contains($0) }
+            list.insert(section, at: before.flatMap { list.firstIndex(of: $0) }.map { $0 + 1 } ?? 0)
+        }
+        return list
     }
 
     static func move(_ section: PanelSection, by offset: Int) {
@@ -348,7 +363,7 @@ enum PanelSection: String, CaseIterable, Identifiable {
 
 /// What the status item can show, in the order it shows them.
 enum MenuBarItem: String, CaseIterable, Identifiable {
-    case cpu, ram, gpu, swap, network, disk, battery, ai, market, currency
+    case cpu, ram, gpu, swap, network, disk, battery, ai, market, currency, weather
     /// Not a setting: shown automatically while a timer runs.
     case timer
 
@@ -366,6 +381,7 @@ enum MenuBarItem: String, CaseIterable, Identifiable {
         case .ai: Prefs.barAI
         case .market: Prefs.barMarket
         case .currency: Prefs.barCurrency
+        case .weather: Prefs.barWeather
         case .timer: "barTimer"
         }
     }
@@ -382,6 +398,7 @@ enum MenuBarItem: String, CaseIterable, Identifiable {
         case .ai: L("AI limiti", "AI limit")
         case .market: L("Piyasa fiyatı", "Market price")
         case .currency: L("Döviz kuru", "Exchange rate")
+        case .weather: L("Hava durumu", "Weather")
         case .timer: L("Zamanlayıcı", "Timer")
         }
     }

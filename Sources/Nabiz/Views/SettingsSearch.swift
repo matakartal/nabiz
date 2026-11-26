@@ -289,6 +289,10 @@ enum SettingsIndex {
         .init(.schedules, "schedules.add", "Görev ekle", "Add a task", "hatırlatma reminder"),
         // Calendar
         .init(.calendar, "calendar.main", "Takvimi göster", "Show the calendar", "etkinlik event"),
+        .init(.weather, "weather.main", "Hava durumunu panelde göster", "Show the weather in the panel", "hava weather sıcaklık temperature"),
+        .init(.weather, "weather.main", "Menü çubuğunda sıcaklık", "Temperature in the menu bar", "derece degrees hava weather"),
+        .init(.weather, "weather.main", "Sıcaklık birimi", "Temperature unit", "celsius fahrenheit santigrat °c °f"),
+        .init(.weather, "weather.city", "Hava durumu şehri", "Weather city", "konum location şehir city yer place"),
         .init(.calendar, "calendar.main", "Toplantıdan önce bildir", "Notify before a meeting", "hatırlatma reminder zoom meet teams"),
         .init(.calendar, "calendar.calendars", "Gösterilen takvimler", "Calendars shown", "gizle hide"),
         // Markets
@@ -327,6 +331,7 @@ extension SettingsPage {
         case .focus: "pomodoro odak focus engelle block gizle hide"
         case .schedules: "görev task zamanla schedule saat time gün day"
         case .calendar: "takvim calendar toplantı meeting etkinlik event katıl join zoom meet teams"
+        case .weather: "hava weather sıcaklık temperature yağmur rain derece forecast tahmin"
         case .markets: "piyasa market hyperliquid btc kripto crypto hisse stock fiyat price alarm alert"
         case .currency: "döviz currency kur rate usd eur try para money"
         case .about: "hakkında about sürüm version güncelleme update çökme crash"

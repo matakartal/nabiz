@@ -6,7 +6,7 @@ import Foundation
 /// Change `id` whenever the list changes, so people who closed the old one see the new one.
 @MainActor
 enum WhatsNew {
-    static let id = "1.9-ai"
+    static let id = "1.10-weather"
 
     struct Item: Identifiable {
         let id: String
@@ -24,6 +24,16 @@ enum WhatsNew {
 
     static var items: [Item] {
         [
+            Item(id: "weather", symbol: "cloud.sun", title: L("Hava durumu", "Weather"),
+                 detail: L("Şehrinde şu an, yağmur ve önümüzdeki günler; konum izni istemez.",
+                           "Now, rain on the way and the coming days for your city; no location permission."),
+                 keys: "") { SettingsWindow.show(.weather) },
+            Item(id: "web", symbol: "globe", title: L("AI sohbette web araması", "Web search in AI chat"),
+                 detail: L("Claude, Codex ve Grok güncel bilgiyi kaynağıyla bulur.", "Claude, Codex and Grok find current facts, with sources."),
+                 keys: Prefs.bool(Prefs.aiChatHotkey) ? HotKey.label(.aiChat) : "") { AIChatWindow.show() },
+            Item(id: "dock", symbol: "dock.rectangle", title: L("Dock'ta göster", "Show in Dock"),
+                 detail: L("İstersen Nabız Dock'ta ve ⌘⇥'de de durur.", "Optionally, Nabız sits in the Dock and ⌘⇥ too."),
+                 keys: "") { SettingsWindow.show(.general) },
             Item(id: "ai-chat", symbol: "sparkles", title: L("AI sohbet", "AI chat"),
                  detail: L("Claude, Codex, Gemini, Grok ya da Apple'ın ücretsiz modeliyle, kendi aboneliklerinle.",
                            "Claude, Codex, Gemini, Grok or Apple's free model, on your own subscriptions."),

@@ -11,7 +11,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
     case menuBar, panel, advice
     case ai, aiChat, dictation, aiLimits, mcp
     case launcher, extensions, developer, clipboard, snippets, windows, screenshot, focus, schedules
-    case calendar, markets, currency
+    case calendar, weather, markets, currency
     case about
 
     var id: String { rawValue }
@@ -42,6 +42,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
         case .focus: ("Odak", "Focus")
         case .schedules: ("Görevler", "Schedules")
         case .calendar: ("Takvim", "Calendar")
+        case .weather: ("Hava durumu", "Weather")
         case .markets: ("Piyasalar", "Markets")
         case .currency: ("Döviz", "Currency")
         case .about: ("Hakkında", "About")
@@ -72,6 +73,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
         case .focus: L("Pomodoro süreleri ve odakta gizlenecek uygulamalar.", "Pomodoro lengths, and the apps focus mode hides.")
         case .schedules: L("Belirli gün ve saatlerde kendiliğinden yapılacak işler.", "Things done on their own at set days and times.")
         case .calendar: L("Bugünkü toplantılar, hatırlatma ve tek tıkla katılma.", "Today's meetings, a heads-up and one-click join.")
+        case .weather: L("Şehir, birim ve menü çubuğunda sıcaklık.", "Your city, the unit and the temperature in the menu bar.")
         case .markets: L("Hyperliquid'den izlenecek piyasalar.", "The Hyperliquid markets to watch.")
         case .currency: L("Ana para birimi ve izlenen kurlar.", "Your main currency and the rates you watch.")
         case .about: ""
@@ -102,6 +104,7 @@ enum SettingsPage: String, CaseIterable, Identifiable, Hashable {
         case .focus: "brain.head.profile"
         case .schedules: "calendar.badge.clock"
         case .calendar: "calendar"
+        case .weather: "cloud.sun"
         case .markets: "chart.line.uptrend.xyaxis"
         case .currency: "dollarsign.arrow.circlepath"
         case .about: "info.circle.fill"
@@ -206,6 +209,7 @@ struct SettingsView: View {
                     case .focus: FocusPage()
                     case .schedules: SchedulesPage()
                     case .calendar: CalendarPage()
+                    case .weather: WeatherPage()
                     case .markets: MarketsPage()
                     case .currency: CurrencyPage()
                     case .about: AboutPage()
@@ -335,7 +339,7 @@ enum SettingsGroup: String, CaseIterable, Identifiable {
         case .bar: [.menuBar, .panel, .advice]
         case .ai: [.ai, .aiChat, .dictation, .aiLimits, .mcp]
         case .tools: [.launcher, .extensions, .developer, .clipboard, .snippets, .windows, .screenshot, .focus, .schedules]
-        case .tracking: [.calendar, .markets, .currency]
+        case .tracking: [.calendar, .weather, .markets, .currency]
         case .about: [.about]
         }
     }
@@ -754,6 +758,7 @@ private struct MenuBarPage: View {
                     }
                 }
                 BarToggle(item: .currency)
+                BarToggle(item: .weather)
             } header: {
                 Text(L("Diğer", "Other"))
             } footer: {
@@ -1193,6 +1198,93 @@ private struct MarketLabel: View {
                     .foregroundStyle((market.change ?? 0) >= 0 ? Palette.green.mark : Theme.warning.mark)
                 Text(verbatim: Format.price(market.price)).font(Theme.body).monospacedDigit().foregroundStyle(Theme.text)
             }
+        }
+    }
+}
+
+private struct WeatherPage: View {
+    @AppStorage(Prefs.showWeather) private var show = true
+    @AppStorage(Prefs.barWeather) private var bar = false
+    @AppStorage(Prefs.weatherUnit) private var unit = "system"
+    @AppStorage(Prefs.weatherPlace) private var placeData = Data()
+    @State private var query = ""
+    @State private var results: [WeatherStore.Place] = []
+    @State private var searching = false
+    @State private var searchTask: Task<Void, Never>?
+    private let store = WeatherStore.shared
+
+    var body: some View {
+        let place = WeatherStore.place
+        Form {
+            Section {} header: { PageHeader(page: .weather) }
+            SettingsSection("weather.main") {
+                Toggle(L("Panelde göster", "Show in the panel"), isOn: $show)
+                Toggle(L("Menü çubuğunda sıcaklık", "Temperature in the menu bar"), isOn: $bar)
+                Picker(L("Birim", "Unit"), selection: $unit) {
+                    Text(L("Sistem", "System")).tag("system")
+                    Text(verbatim: "°C").tag("c")
+                    Text(verbatim: "°F").tag("f")
+                }
+            }
+            SettingsSection("weather.city") {
+                LabeledContent(L("Şu an", "Now")) {
+                    if let report = store.report, report.place == place {
+                        Text(verbatim: "\(report.place.name) · \(Format.degrees(report.temperature)) · \(WeatherCode.title(report.code))")
+                            .foregroundStyle(Theme.textMuted)
+                    } else {
+                        Text(verbatim: place?.name ?? L("Saat diliminden bulunuyor…", "Finding it from your time zone…"))
+                            .foregroundStyle(Theme.textMuted)
+                    }
+                }
+                TextField(L("Şehir ara", "Search for a city"), text: $query)
+                    .onChange(of: query) { _, text in search(text) }
+                if searching {
+                    ProgressView().controlSize(.small)
+                }
+                ForEach(results) { result in
+                    Button {
+                        WeatherStore.choose(result)
+                        query = ""
+                        results = []
+                    } label: {
+                        LabeledContent {
+                            if result == place { Image(systemName: "checkmark").foregroundStyle(Theme.accent) }
+                        } label: {
+                            Text(verbatim: result.name)
+                            if !result.detail.isEmpty { Text(verbatim: result.detail) }
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+                if place != nil {
+                    Button(L("Saat dilimindeki şehri kullan", "Use the city of my time zone")) { WeatherStore.choose(nil) }
+                }
+            } header: {
+                SectionTitle(L("Şehir", "City"))
+            } footer: {
+                Footnote(L("Konum izni istenmez: hava durumu seçtiğin şehrin koordinatlarıyla Open-Meteo'dan (ücretsiz, hesapsız) alınır. Panelde bir satıra tıklamak Hava uygulamasını açar.",
+                           "No location permission: the forecast comes from Open-Meteo (free, no account) for the coordinates of the city you pick. Clicking a row in the panel opens the Weather app."))
+            }
+        }
+        .formStyle(.grouped)
+        .onAppear { store.refreshIfNeeded() }
+        .onChange(of: unit) { _, _ in store.refreshIfNeeded() }
+        .onChange(of: placeData) { _, _ in store.refreshIfNeeded() }
+    }
+
+    /// Waits for a pause in typing, then looks the name up.
+    private func search(_ text: String) {
+        searchTask?.cancel()
+        guard text.trimmingCharacters(in: .whitespaces).count >= 2 else { results = []; searching = false; return }
+        searching = true
+        searchTask = Task {
+            try? await Task.sleep(for: .milliseconds(350))
+            guard !Task.isCancelled else { return }
+            let found = await WeatherStore.search(text)
+            guard !Task.isCancelled else { return }
+            results = found
+            searching = false
         }
     }
 }

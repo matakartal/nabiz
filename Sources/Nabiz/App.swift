@@ -157,6 +157,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ShotLog.write("launch, screen access: \(ScreenAccess.granted)")
         ScreenAccess.checkAfterLaunch()
         if Prefs.bool(Prefs.aiAsk) { AIEngines.shared.refreshIfNeeded() }
+        AIRunner.sweepPromptFiles()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.target = self
         statusItem.button?.action = #selector(statusItemClicked)
@@ -183,6 +184,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 AILimitsStore.shared.refreshIfNeeded(maxAge: 300)
             }
             if Prefs.bool(Prefs.barCurrency) { RateStore.shared.refreshIfNeeded() }
+            if (monitor.panelVisible && Prefs.bool(Prefs.showWeather)) || Prefs.bool(Prefs.barWeather) { WeatherStore.shared.refreshIfNeeded() }
             Notifier.shared.check(monitor: monitor)
             Scheduler.shared.check()
             Updater.shared.check()
@@ -194,6 +196,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         MarketStore.shared.onPrices = { [weak self] in self?.updateButton() }
+        WeatherStore.shared.onChange = { [weak self] in self?.updateButton() }
+        if Prefs.bool(Prefs.showWeather) || Prefs.bool(Prefs.barWeather) { WeatherStore.shared.refreshIfNeeded() }
         RateStore.shared.refreshIfNeeded()
         Updater.shared.check()
         AppearanceMode.apply()
@@ -551,6 +555,7 @@ enum Snapshot {
         let monitor = Monitor(autostart: false)
         RateStore.shared.refreshIfNeeded()
         MarketStore.shared.refreshWatched(maxAge: 0)
+        WeatherStore.shared.refreshIfNeeded()
         ProjectStore.shared.refresh(force: true)
         DockerStore.shared.refresh()
         await monitor.tick(forceSimulators: true)

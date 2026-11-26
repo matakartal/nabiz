@@ -135,6 +135,8 @@ enum MenuBarText {
             let base = Prefs.string(Prefs.baseCurrency)
             guard let code = Prefs.watched.first(where: { $0 != base }) else { return nil }
             return make(code, RateStore.shared.convert(1, from: code, to: base).map { Format.number($0, maxDigits: 2, minDigits: 2) })
+        case .weather:
+            return make(L("Hava", "Temp"), WeatherStore.shared.report.map { Format.degrees($0.temperature) })
         }
     }
 

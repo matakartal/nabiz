@@ -347,6 +347,27 @@ final class LauncherModel {
             }
         }
 
+        if query.count >= 3, Prefs.bool(Prefs.showWeather) || Prefs.bool(Prefs.barWeather), let report = WeatherStore.shared.report {
+            let word = Fuzzy.fold(query)
+            let words = ["hava", "hava durumu", "weather", "sicaklik", "temperature", "yagmur", "rain", "forecast", "tahmin"]
+            if words.contains(where: { $0.hasPrefix(word) }) || ["hava ", "weather "].contains(where: { word.hasPrefix($0) }) {
+                var items = [LauncherItem(id: "weather:now", icon: .symbol(WeatherCode.symbol(report.code, day: report.isDay)),
+                                          title: "\(report.place.name) \(Format.degrees(report.temperature))",
+                                          subtitle: "\(WeatherCode.title(report.code)) · \(L("hissedilen", "feels like")) \(Format.degrees(report.feelsLike))",
+                                          accessory: L("Hava", "Weather"), primaryTitle: L("Hava'da aç", "Open in Weather"),
+                                          primary: { WeatherStore.openWeatherApp() }, remember: false)]
+                for (index, day) in report.upcomingDays.prefix(4).enumerated() where index > 0 {
+                    items.append(LauncherItem(id: "weather:\(index)", icon: .symbol(WeatherCode.symbol(day.code)),
+                                              title: report.dayName(day.date),
+                                              subtitle: WeatherCode.title(day.code),
+                                              accessory: "\(Format.degrees(day.high)) / \(Format.degrees(day.low))",
+                                              primaryTitle: L("Hava'da aç", "Open in Weather"),
+                                              primary: { WeatherStore.openWeatherApp() }, remember: false))
+                }
+                sections.append(LauncherSection(id: "weather", title: L("Hava durumu", "Weather"), items: items))
+            }
+        }
+
         if Prefs.bool(Prefs.aiAsk), let phrase = TranslateQuery.text(in: query) {
             let task = TranslateQuery.task(for: phrase)
             sections.append(LauncherSection(id: "translate", title: L("Çeviri", "Translate"), items: [

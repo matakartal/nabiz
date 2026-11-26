@@ -86,6 +86,7 @@ struct PanelContent: View {
     @AppStorage(Prefs.watchedCurrencies) private var watched = "USD,EUR,GBP"
     @AppStorage(Prefs.sectionOrder) private var order = ""
     @AppStorage(Prefs.calendarEnabled) private var calendarOn = false
+    @AppStorage(Prefs.showWeather) private var showWeather = true
 
     var body: some View {
         let advice = monitor.advice
@@ -166,6 +167,12 @@ struct PanelContent: View {
                 let next = CalendarAgenda.shared.next
                 CollapsibleSection(.calendar, summary: next.map { "\($0.title) · \(CalendarAgenda.untilText($0))" } ?? L("Boş", "Free")) {
                     CalendarSection()
+                }
+            }
+        case .weather:
+            if showWeather, let report = WeatherStore.shared.report {
+                CollapsibleSection(.weather, summary: "\(Format.degrees(report.temperature)) · \(WeatherCode.title(report.code))") {
+                    WeatherSection(report: report)
                 }
             }
         case .memory:
@@ -564,6 +571,51 @@ private struct CurrencySection: View {
         let names = ["TRY": "turkishlirasign", "USD": "dollarsign", "EUR": "eurosign", "GBP": "sterlingsign", "JPY": "yensign",
                      "CHF": "francsign", "INR": "indianrupeesign", "KRW": "wonsign", "CNY": "yensign"]
         return names[code].map { $0 + ".circle" } ?? "banknote"
+    }
+}
+
+/// Now, rain on the way, the next sunrise or sunset and the coming days, one line each. Any row opens Weather.
+private struct WeatherSection: View {
+    let report: WeatherStore.Report
+
+    var body: some View {
+        let open = { WeatherStore.openWeatherApp() }
+        let feels = L("hissedilen \(Format.degrees(report.feelsLike))", "feels like \(Format.degrees(report.feelsLike))")
+        PanelRow(icon: .symbol(WeatherCode.symbol(report.code, day: report.isDay)), title: report.place.name,
+                 subtitle: "\(WeatherCode.title(report.code)) · \(feels)", action: open) { _ in
+            Value(Format.degrees(report.temperature), color: Theme.text)
+        }
+        .help(details)
+        if let rain = report.nextRain {
+            PanelRow(icon: .symbol("umbrella"), title: WeatherCode.title(rain.code), subtitle: L("%\(rain.rain) ihtimal", "\(rain.rain)% chance"),
+                     action: open) { _ in
+                Value(report.clock(rain.date), color: Theme.warning.mark)
+            }
+        }
+        if let sun = report.nextSun {
+            PanelRow(icon: .symbol(sun.rise ? "sunrise" : "sunset"), title: sun.rise ? L("Gün doğumu", "Sunrise") : L("Gün batımı", "Sunset"),
+                     action: open) { _ in
+                Value(report.clock(sun.date))
+            }
+        }
+        ForEach(report.upcomingDays.prefix(4)) { day in
+            PanelRow(icon: .symbol(WeatherCode.symbol(day.code)), title: report.dayName(day.date),
+                     subtitle: WeatherCode.title(day.code), action: open) { _ in
+                TwoColumns(day.rain.map { $0 >= 20 ? L("☂ %\($0)", "☂ \($0)%") : "" } ?? "",
+                           "\(Format.degrees(day.high)) / \(Format.degrees(day.low))", color: Theme.text)
+            }
+        }
+    }
+
+    private var details: String {
+        var parts = [report.place.detail.isEmpty ? report.place.name : "\(report.place.name), \(report.place.detail)"]
+        if let humidity = report.humidity { parts.append(L("nem %\(humidity)", "humidity \(humidity)%")) }
+        if let wind = report.wind {
+            let unit = report.fahrenheit ? "mph" : L("km/sa", "km/h")
+            parts.append(L("rüzgâr \(Int(wind.rounded())) \(unit)", "wind \(Int(wind.rounded())) \(unit)"))
+        }
+        parts.append(L("Open-Meteo · Hava'da açmak için tıkla", "Open-Meteo · click to open Weather"))
+        return parts.joined(separator: " · ")
     }
 }
 
