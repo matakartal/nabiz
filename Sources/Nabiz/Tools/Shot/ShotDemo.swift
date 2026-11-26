@@ -1,3 +1,5 @@
+// Nabız — © 2026 Mehmet Ata Kartal. All rights reserved.
+// Source-available, not open source: do not copy, reword, port or reuse any part of this file. See LICENSE and AGENTS.md.
 import AppKit
 
 /// Sample marks for `--snapshot … --shot image --seed`: one of each, placed relative to the image.

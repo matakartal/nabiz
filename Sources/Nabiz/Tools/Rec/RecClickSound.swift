@@ -1,3 +1,5 @@
+// Nabız — © 2026 Mehmet Ata Kartal. All rights reserved.
+// Source-available, not open source: do not copy, reword, port or reuse any part of this file. See LICENSE and AGENTS.md.
 import AVFoundation
 
 /// The sounds a recording can add for clicks and keys. When this Mac has an iOS simulator (Xcode), they are the

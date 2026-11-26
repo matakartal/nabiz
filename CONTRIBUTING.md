@@ -1,7 +1,8 @@
 # Contributing
 
 Thanks for helping. Nabız is **source-available, not open source**: the code is public so you can see what the app
-does, but it may not be copied, reused or redistributed (see [LICENSE](LICENSE)).
+does, but it may not be copied, reworded, ported, reused or redistributed (see [LICENSE](LICENSE) and
+[AGENTS.md](AGENTS.md)).
 
 ## Ways to help
 

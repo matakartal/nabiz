@@ -41,7 +41,7 @@
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>
-	<string>© 2026 Finqt Veri Hizmetleri. All rights reserved.</string>
+	<string>© 2026 Mehmet Ata Kartal. All rights reserved.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Nabız listens only while you dictate, after you press its dictation shortcut, and types your words where the cursor is.</string>
 	<key>NSScreenCaptureUsageDescription</key>

@@ -1,3 +1,5 @@
+// Nabız — © 2026 Mehmet Ata Kartal. All rights reserved.
+// Source-available, not open source: do not copy, reword, port or reuse any part of this file. See LICENSE and AGENTS.md.
 // Builds docs/hero.jpg for the README from the screenshots in docs/: a desktop with Nabız in the menu bar, its panel
 // open under it, the AI chat window and the launcher.
 //

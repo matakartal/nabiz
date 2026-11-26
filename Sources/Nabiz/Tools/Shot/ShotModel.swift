@@ -1,3 +1,5 @@
+// Nabız — © 2026 Mehmet Ata Kartal. All rights reserved.
+// Source-available, not open source: do not copy, reword, port or reuse any part of this file. See LICENSE and AGENTS.md.
 import AppKit
 
 /// The screenshot editor's tools, in the order the bar shows them. Each has a one-key shortcut, like Shottr and

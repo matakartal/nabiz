@@ -1,3 +1,5 @@
+// Nabız — © 2026 Mehmet Ata Kartal. All rights reserved.
+// Source-available, not open source: do not copy, reword, port or reuse any part of this file. See LICENSE and AGENTS.md.
 import AppKit
 
 /// One thing shown in the menu bar: a short label and its value.

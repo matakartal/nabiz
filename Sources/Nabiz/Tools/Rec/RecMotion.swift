@@ -1,3 +1,5 @@
+// Nabız — © 2026 Mehmet Ata Kartal. All rights reserved.
+// Source-available, not open source: do not copy, reword, port or reuse any part of this file. See LICENSE and AGENTS.md.
 import Foundation
 
 // The motion of a styled recording: where the pointer is drawn, how it reacts to a click, and where the camera

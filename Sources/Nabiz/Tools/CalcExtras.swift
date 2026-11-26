@@ -1,3 +1,5 @@
+// Nabız — © 2026 Mehmet Ata Kartal. All rights reserved.
+// Source-available, not open source: do not copy, reword, port or reuse any part of this file. See LICENSE and AGENTS.md.
 import Foundation
 
 /// "tokyo", "time in london", "saat new york", "15:00 istanbul to tokyo", "9am pst to tsi".

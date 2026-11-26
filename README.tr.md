@@ -65,4 +65,5 @@ Nabız **kaynağı görülebilir, ama açık kaynak değildir.** Kodu okuyabilir
 yazılı izin olmadan kodu ya da bir parçasını kopyalayamaz, değiştiremez, başka projede kullanamaz, derleyemez ve
 dağıtamazsın. Bkz. [LICENSE](LICENSE).
 
-© 2026 Finqt Veri Hizmetleri Sanayi ve Ticaret Limited Şirketi. Tüm hakları saklıdır.
+© 2026 Mehmet Ata Kartal. Tüm hakları saklıdır. Kodu farklı kelimelerle yeniden yazmak ya da başka dile çevirmek de
+kopyalama sayılır; AI ajanları için kurallar [AGENTS.md](AGENTS.md) dosyasında.

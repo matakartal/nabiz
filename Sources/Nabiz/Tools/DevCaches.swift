@@ -1,3 +1,5 @@
+// Nabız — © 2026 Mehmet Ata Kartal. All rights reserved.
+// Source-available, not open source: do not copy, reword, port or reuse any part of this file. See LICENSE and AGENTS.md.
 import Foundation
 
 /// A Rust build cache: a Cargo `target` folder. Cargo marks each one with a CACHEDIR.TAG file carrying a fixed

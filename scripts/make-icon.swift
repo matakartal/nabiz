@@ -1,3 +1,5 @@
+// Nabız — © 2026 Mehmet Ata Kartal. All rights reserved.
+// Source-available, not open source: do not copy, reword, port or reuse any part of this file. See LICENSE and AGENTS.md.
 // Draws Nabız's app icon and writes Resources/AppIcon.icns.
 // Usage: swift scripts/make-icon.swift   (run from the repository root)
 //
