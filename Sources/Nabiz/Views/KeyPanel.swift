@@ -44,6 +44,8 @@ final class KeyPanel: NSPanel {
         effect.layer?.masksToBounds = true
         effect.layer?.borderWidth = 1
         effect.layer?.borderColor = NSColor(white: 1, alpha: 0.12).cgColor
+        // The mask shapes the window itself, so its shadow follows the rounded corners instead of a square box.
+        effect.maskImage = Self.roundedMask(Theme.radius)
         let controller = contentViewController
         contentViewController = nil
         contentView = effect
@@ -59,12 +61,32 @@ final class KeyPanel: NSPanel {
         animationBehavior = .utilityWindow
     }
 
+    /// A stretchable rounded rectangle; only its corners are drawn, the middle stretches.
+    static func roundedMask(_ radius: CGFloat) -> NSImage {
+        let edge = radius * 2 + 1
+        let image = NSImage(size: NSSize(width: edge, height: edge), flipped: false) { rect in
+            NSColor.black.setFill()
+            NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
+            return true
+        }
+        image.capInsets = NSEdgeInsets(top: radius, left: radius, bottom: radius, right: radius)
+        image.resizingMode = .stretch
+        return image
+    }
+
+    /// The shadow is computed from the shape; recompute it whenever the panel grows or shrinks.
+    override func setFrame(_ frameRect: NSRect, display flag: Bool) {
+        super.setFrame(frameRect, display: flag)
+        invalidateShadow()
+    }
+
     /// Keeps a hosting controller alive after its view moved inside the material view.
     private var retainedController: NSViewController?
     override func cancelOperation(_ sender: Any?) { orderOut(nil) }
 
     func present() {
         makeKeyAndOrderFront(nil)
+        invalidateShadow()
         guard monitors.isEmpty else { return }
         // Clicks in other apps.
         if let monitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown], handler: { [weak self] _ in
