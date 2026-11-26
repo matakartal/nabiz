@@ -17,3 +17,5 @@ https://github.com/matakartal/nabiz/issues.
 
 **Working in this repository for the copyright holder** (his own sessions, at his request) is allowed. Keep every
 source file's copyright header, and never move code from here into another repository unless he asks for it.
+Follow [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/DESIGN.md](docs/DESIGN.md) for every change, and review pull
+requests against them and the checklist in `.github/PULL_REQUEST_TEMPLATE.md`.
