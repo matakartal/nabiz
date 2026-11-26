@@ -14,8 +14,8 @@ enum WelcomeWindow {
         UserDefaults.standard.set(WhatsNew.id, forKey: Prefs.seenVersion)
         let view = WelcomeView {
             UserDefaults.standard.set(true, forKey: Prefs.onboarded)
-            window?.close()
-            window = nil
+            Self.window?.close()
+            Self.window = nil
             openPanel()
         }
         let window = NSWindow(contentViewController: NSHostingController(rootView: view))
