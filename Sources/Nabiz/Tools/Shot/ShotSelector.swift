@@ -27,7 +27,8 @@ final class ShotSelector {
 
     /// Freezes every screen and lets the user pick. `nil` when cancelled (or the screen couldn't be read).
     static func begin(windowMode: Bool = false, denied: @escaping () -> Void = {}, done: @escaping (Result?) -> Void) {
-        guard current == nil else { return }
+        // Pressing the shortcut again while picking cancels, like macOS's own.
+        if let current { current.cancel(); return }
         let previous = NSWorkspace.shared.frontmostApplication
         Task {
             let frozen = await freeze()
@@ -145,9 +146,8 @@ final class ShotSelector {
             windows.append(window)
             window.orderFrontRegardless()
         }
-        NSApp.activate()
         let underMouse = windows.first { $0.frame.contains(NSEvent.mouseLocation) } ?? windows.first
-        underMouse?.makeKey()
+        underMouse?.makeKeyAndOrderFront(nil)
         NSCursor.crosshair.set()
         refresh()
     }
@@ -193,11 +193,13 @@ final class ShotSelector {
             .integral.intersection(CGRect(x: 0, y: 0, width: shot.image.width, height: shot.image.height))
         guard pixels.width >= 1, pixels.height >= 1, let cropped = shot.image.cropping(to: pixels) else { cancel(); return }
         close()
+        ShotLog.write("picked \(cropped.width)×\(cropped.height)")
         done(Result(image: cropped, scale: shot.scale))
     }
 
     func cancel() {
         guard !finished else { return }
+        ShotLog.write("picker cancelled")
         close()
         done(nil)
     }
@@ -208,7 +210,7 @@ final class ShotSelector {
         windows = []
         Self.current = nil
         NSCursor.arrow.set()
-        if let previous, previous != NSRunningApplication.current { previous.activate() }
+        if NSApp.isActive, let previous, previous != NSRunningApplication.current { previous.activate() }
     }
 
     /// The colour of the pixel under the pointer, as "#RRGGBB".
@@ -226,12 +228,17 @@ final class ShotSelector {
 
 // MARK: - The window over each screen
 
-final class ShotSelectorWindow: NSWindow {
+/// A non-activating panel: it takes the keyboard and the first click at once, without waiting for macOS to bring
+/// Nabız (a menu bar app) to the front, which it may refuse to do straight away.
+final class ShotSelectorWindow: NSPanel {
     let overlay: ShotSelectorOverlay
 
     init(shot: ShotSelector.Frozen, selector: ShotSelector) {
         overlay = ShotSelectorOverlay(shot: shot, selector: selector)
-        super.init(contentRect: shot.screen.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        super.init(contentRect: shot.screen.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        isFloatingPanel = true
+        becomesKeyOnlyIfNeeded = false
+        hidesOnDeactivate = false
         setFrame(shot.screen.frame, display: false)
         level = .screenSaver
         isOpaque = true
