@@ -4,9 +4,10 @@
 
 # Nabız
 
-**Your Mac's pulse in the menu bar — and the tools you reach for all day.**
+**The menu bar app every developer should have — and the friendliest one for vibecoders.**
 
-A small, native menu bar app for macOS — free to use, with its source open to read: a system monitor with one-tap fixes, AI chat with your own
+Your Mac's pulse in the menu bar. A small, native app for macOS — free to use, with its source open to read: a system
+monitor with one-tap fixes, AI chat with your own
 subscriptions or Apple's free on-device model, a launcher, screenshots and Screen Studio–style recordings, the weather,
 and tools made for developers.
 
@@ -17,6 +18,7 @@ and tools made for developers.
 <img src="https://img.shields.io/badge/Swift%206-SwiftUI%20%2B%20AppKit-F05138?logo=swift&logoColor=white" alt="Swift 6">
 <img src="https://img.shields.io/badge/notarized-Developer%20ID-1DB954" alt="Notarized">
 <img src="https://img.shields.io/badge/license-source--available-blue" alt="Source-available">
+<a href="https://x.com/mehmetatakartal"><img src="https://img.shields.io/badge/follow-%40mehmetatakartal-000?logo=x&logoColor=white" alt="Follow @mehmetatakartal on X"></a>
 
 [Features](#features) · [Shortcuts](#shortcuts) · [Privacy](#privacy) · [Build](#build) · [Türkçe](README.tr.md)
 
@@ -38,6 +40,22 @@ and tools made for developers.
 <td width="25%" valign="top"><b>Private and readable</b><br>No analytics, no account. The source is public, so you can see exactly what it does.</td>
 </tr>
 </table>
+
+## Built for people who ship with AI
+
+You prompt, agents build, and your Mac quietly fills up. Nabız keeps up with how you work now:
+
+- **Forgotten dev servers and port clashes:** every server an agent started, with its project and port — stop it in
+  one click, or ask `:3000` who holds a port. AI apps can ask Nabız over **MCP** too, so Claude Code and Cursor reuse
+  a running server instead of starting a second one.
+- **Your AI limits before you hit them:** Claude, Codex and Gemini windows in the menu bar, with a warning when one
+  burns fast — and another AI one click away in the chat.
+- **The mess agents leave behind:** finished worktrees, build folders, idle `node_modules`, extra simulators — sized,
+  listed and cleaned only after asking. Unpushed commits and projects show at a glance.
+- **Ship and show it:** notarization finishes as a notification, screenshots get arrows and steps, and recordings come
+  out launch-ready with smooth zooms — for your demo, README or post on X.
+- **No context switching:** ask a quick question (⌃⌥A), dictate a prompt (⌃⌥D), keep notes over your editor (⌃⌥M) and
+  find anything from the launcher (⌃⌥Space).
 
 ## Features
 
@@ -237,6 +255,13 @@ Every user-facing string is written in both languages side by side: `L("Türkçe
 </details>
 
 Bug reports and ideas are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
+
+## Author
+
+Made by **Mehmet Ata Kartal** — follow [@mehmetatakartal on X](https://x.com/mehmetatakartal) for updates.
+
+Nabız is free. If you trade crypto, signing up on [Bybit with my referral link](https://www.bybit.com/register?affiliate_id=971&group_id=971&group_type=1) supports its development
+(it's a referral link; you pay nothing extra).
 
 ## License
 

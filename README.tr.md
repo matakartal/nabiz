@@ -4,7 +4,7 @@
 
 # Nabız
 
-**Mac'inin nabzı menü çubuğunda — gün boyu elinin altında olan araçlarla.**
+**Her geliştiricinin Mac'inde olması gereken menü çubuğu uygulaması — vibecoder'lar için de en kullanışlısı.**
 
 macOS için küçük, yerel ve ücretsiz bir menü çubuğu uygulaması; kaynak kodu okunmaya açık: tek tuşla çözüm sunan sistem izleyici, kendi
 aboneliklerinle ya da Apple'ın ücretsiz cihaz içi modeliyle AI sohbeti, başlatıcı, ekran görüntüsü ve ekran kaydı, hava
@@ -12,13 +12,25 @@ durumu, geliştirici araçları.
 
 <a href="../../releases/latest"><img src="https://img.shields.io/badge/%C4%B0ndir-Nab%C4%B1z%201.10.0-1DB954?style=for-the-badge&logo=apple&logoColor=white" alt="Nabız'ı indir"></a>
 
-[English](README.md)
+[English](README.md) · [X'te takip et: @mehmetatakartal](https://x.com/mehmetatakartal)
 
 <br>
 
 <img src="docs/hero.jpg" alt="Nabız: menü çubuğu, panel, AI sohbet penceresi ve başlatıcı">
 
 </div>
+
+## AI ile üretenler için
+
+Sen yazıyorsun, ajanlar kuruyor, Mac'in sessizce doluyor. Nabız bu çalışma şekline ayak uydurur:
+
+- **Unutulan sunucular ve port çakışmaları:** ajanların açtığı her sunucu projesi ve portuyla; tek tıkla durdur ya da
+  `:3000` yazıp portu kimin tuttuğunu gör. Claude Code ve Cursor da **MCP** ile sorar, ikinci sunucu açmaz.
+- **AI limitlerin bitmeden:** Claude, Codex ve Gemini limitleri menü çubuğunda; hızlı biterken uyarı.
+- **Ajanların bıraktığı dağınıklık:** bitmiş worktree'ler, build klasörleri, eski `node_modules`, fazla simülatörler —
+  boyutlarıyla listelenir, sorulmadan silinmez.
+- **Yayınla ve göster:** notarize bitince bildirim, oklu ekran görüntüleri ve yakınlaşan, paylaşmaya hazır ekran
+  kayıtları.
 
 ## Neler var
 
@@ -63,6 +75,13 @@ Mac'inle ilgili her şey Mac'in içinde ölçülür; analitik ve hesap yoktur. �
 döviz kurları, Hyperliquid fiyatları, hava durumu (yalnızca şehrin koordinatları), güncelleme kontrolü, açtığın AI sağlayıcılarının kendi sunucuları ve senin
 istediğin işler (web araması, video indirme, hız testi). Apple'ın cihaz içi modeli Mac'ten hiç çıkmaz. Pano geçmişi
 ve AI sohbetleri diskte şifrelidir.
+
+## Geliştiren
+
+**Mehmet Ata Kartal** — güncellemeler için [X'te @mehmetatakartal](https://x.com/mehmetatakartal).
+
+Nabız ücretsiz. Kripto alım satımı yapıyorsan [Bybit'e referans bağlantımla](https://www.bybit.com/register?affiliate_id=971&group_id=971&group_type=1) kaydolarak gelişimine destek olabilirsin
+(referans bağlantısıdır; sana ek bir maliyeti yoktur).
 
 ## Lisans
 
