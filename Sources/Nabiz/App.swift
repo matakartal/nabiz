@@ -55,10 +55,14 @@ enum Entry {
                 let video = AVURLAsset(url: RecStore.video(for: meta.id))
                 let tracks = (try? await video.load(.tracks)) ?? []
                 print("source tracks: \(tracks.map(\.mediaType.rawValue))")
+                // Exercise the speed-ups and a fixed shape too.
+                var edit = meta.edit
+                edit.speeds = [RecSpeed(start: 0.5, end: 2.5, rate: 2)]
+                edit.style.aspect = "16:9"
                 for kind in [RecExport.Kind.hd, .gif] {
                     let out = folder.appendingPathComponent("test.\(kind == .gif ? "gif" : "mp4")")
                     try? FileManager.default.removeItem(at: out)
-                    let url = await RecExport.run(meta, edit: meta.edit, kind: kind, to: out) { _ in }
+                    let url = await RecExport.run(meta, edit: edit, kind: kind, to: out) { _ in }
                     let size = (try? FileManager.default.attributesOfItem(atPath: out.path)[.size] as? Int) ?? 0
                     if kind != .gif, url != nil {
                         let asset = AVURLAsset(url: out)

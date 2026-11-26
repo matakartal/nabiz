@@ -16,9 +16,34 @@ struct RecTrack: Codable, Sendable {
         var index: Int
     }
 
+    /// A shortcut pressed (⌘C, ⌃⌥R, ↩…): what it looked like, never ordinary typing.
+    struct Key: Codable, Sendable {
+        var t: Double
+        var text: String
+    }
+
     var moves: [Point] = []
     var clicks: [Point] = []
     var shapes: [Shape] = []
+    var keys: [Key] = []
+    /// When ordinary keys were typed, without what they were: lets the editor speed up typing.
+    var typing: [Double] = []
+
+    init() {}
+
+    init(moves: [Point], clicks: [Point]) {
+        self.moves = moves
+        self.clicks = clicks
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        moves = try c.decodeIfPresent([Point].self, forKey: .moves) ?? []
+        clicks = try c.decodeIfPresent([Point].self, forKey: .clicks) ?? []
+        shapes = try c.decodeIfPresent([Shape].self, forKey: .shapes) ?? []
+        keys = try c.decodeIfPresent([Key].self, forKey: .keys) ?? []
+        typing = try c.decodeIfPresent([Double].self, forKey: .typing) ?? []
+    }
 }
 
 /// One pointer image seen during the recording (arrow, I-beam, hand…), in points, with its hot spot.
@@ -43,6 +68,8 @@ struct RecMeta: Codable, Sendable {
     var track: RecTrack
     var edit: RecEdit
     var cursors: [RecCursor] = []
+    /// The camera's own file starts this many seconds after the screen's first frame (nil: no camera).
+    var cameraOffset: Double?
 }
 
 /// The look of a recording: frame, pointer, zoom. Saved with it and remembered for the next one.
@@ -58,6 +85,54 @@ struct RecStyle: Codable, Sendable, Equatable {
     var clickRings = true
     var autoZoom = true
     var zoomLevel = 2.0
+    /// The pointer fades out after 2 s without moving.
+    var hideIdleCursor = true
+    var motionBlur = true
+    /// "auto" (the recording's own shape), "16:9", "9:16", "1:1" or "4:3".
+    var aspect = "auto"
+    /// Shortcuts pressed, shown at the bottom.
+    var showKeys = true
+    var camera = true
+    /// The camera bubble's height, as a share of the frame's.
+    var cameraSize = 0.22
+    /// "bottomRight", "bottomLeft", "topRight", "topLeft".
+    var cameraCorner = "bottomRight"
+    var cameraCircle = true
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = RecStyle()
+        background = try c.decodeIfPresent(Int.self, forKey: .background) ?? d.background
+        padding = try c.decodeIfPresent(Double.self, forKey: .padding) ?? d.padding
+        radius = try c.decodeIfPresent(Double.self, forKey: .radius) ?? d.radius
+        shadow = try c.decodeIfPresent(Bool.self, forKey: .shadow) ?? d.shadow
+        cursorSize = try c.decodeIfPresent(Double.self, forKey: .cursorSize) ?? d.cursorSize
+        smoothCursor = try c.decodeIfPresent(Bool.self, forKey: .smoothCursor) ?? d.smoothCursor
+        clickRings = try c.decodeIfPresent(Bool.self, forKey: .clickRings) ?? d.clickRings
+        autoZoom = try c.decodeIfPresent(Bool.self, forKey: .autoZoom) ?? d.autoZoom
+        zoomLevel = try c.decodeIfPresent(Double.self, forKey: .zoomLevel) ?? d.zoomLevel
+        hideIdleCursor = try c.decodeIfPresent(Bool.self, forKey: .hideIdleCursor) ?? d.hideIdleCursor
+        motionBlur = try c.decodeIfPresent(Bool.self, forKey: .motionBlur) ?? d.motionBlur
+        aspect = try c.decodeIfPresent(String.self, forKey: .aspect) ?? d.aspect
+        showKeys = try c.decodeIfPresent(Bool.self, forKey: .showKeys) ?? d.showKeys
+        camera = try c.decodeIfPresent(Bool.self, forKey: .camera) ?? d.camera
+        cameraSize = try c.decodeIfPresent(Double.self, forKey: .cameraSize) ?? d.cameraSize
+        cameraCorner = try c.decodeIfPresent(String.self, forKey: .cameraCorner) ?? d.cameraCorner
+        cameraCircle = try c.decodeIfPresent(Bool.self, forKey: .cameraCircle) ?? d.cameraCircle
+    }
+
+    /// Width ÷ height of the finished frame, nil for the recording's own shape.
+    var aspectRatio: Double? {
+        switch aspect {
+        case "16:9": 16.0 / 9
+        case "9:16": 9.0 / 16
+        case "1:1": 1
+        case "4:3": 4.0 / 3
+        default: nil
+        }
+    }
 
     static var saved: RecStyle {
         guard let data = UserDefaults.standard.data(forKey: "rec.style"),
@@ -78,15 +153,52 @@ struct RecZoom: Codable, Sendable, Equatable, Identifiable {
     var scale: Double
 }
 
+/// A stretch played faster (typing, waiting for something to load).
+struct RecSpeed: Codable, Sendable, Equatable, Identifiable {
+    var id = UUID()
+    var start: Double
+    var end: Double
+    var rate: Double
+}
+
 /// Everything changed in the editor; the video itself is never touched.
 struct RecEdit: Codable, Sendable, Equatable {
     var style = RecStyle.saved
     var zooms: [RecZoom] = []
-    /// Kept part, in seconds; `trimEnd` 0 means the end.
+    var speeds: [RecSpeed] = []
+    /// Kept part, in seconds of the recording; `trimEnd` 0 means the end.
     var trimStart = 0.0
     var trimEnd = 0.0
     /// Set once the zooms were made from the clicks, so a user's deletions stay deleted.
     var zoomsMade = false
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        style = try c.decodeIfPresent(RecStyle.self, forKey: .style) ?? RecStyle()
+        zooms = try c.decodeIfPresent([RecZoom].self, forKey: .zooms) ?? []
+        speeds = try c.decodeIfPresent([RecSpeed].self, forKey: .speeds) ?? []
+        trimStart = try c.decodeIfPresent(Double.self, forKey: .trimStart) ?? 0
+        trimEnd = try c.decodeIfPresent(Double.self, forKey: .trimEnd) ?? 0
+        zoomsMade = try c.decodeIfPresent(Bool.self, forKey: .zoomsMade) ?? false
+    }
+
+    /// Stretches of steady typing (keys less than 1.2 s apart, at least 2 s long), to play 3× faster.
+    static func typingSpeeds(_ typing: [Double]) -> [RecSpeed] {
+        var speeds: [RecSpeed] = []
+        var start: Double?
+        var last = -10.0
+        for t in typing.sorted() {
+            if t - last > 1.2 {
+                if let s = start, last - s >= 2 { speeds.append(RecSpeed(start: s, end: last + 0.3, rate: 3)) }
+                start = t
+            }
+            last = t
+        }
+        if let s = start, last - s >= 2 { speeds.append(RecSpeed(start: s, end: last + 0.3, rate: 3)) }
+        return speeds
+    }
 
     /// Zooms around bursts of clicks: from a moment before the first click to a little after the last.
     static func autoZooms(from clicks: [RecTrack.Point], duration: Double, scale: Double) -> [RecZoom] {

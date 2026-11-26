@@ -17,10 +17,14 @@ enum RecDemo {
             return RecTrack.Point(t: t, x: Double(width) * (0.5 + 0.3 * cos(angle)), y: Double(height) * (0.5 + 0.25 * sin(angle)))
         }
         track.clicks = [at(2.0), at(2.6)]
+        track.keys = [RecTrack.Key(t: 1.0, text: "⌘⇧4"), RecTrack.Key(t: 3.0, text: "⌘C")]
         var edit = RecEdit()
         edit.style = RecStyle()
+        edit.style.aspect = "16:9"
         edit.zooms = RecEdit.autoZooms(from: track.clicks, duration: 6, scale: edit.style.zoomLevel)
-        return RecMeta(id: UUID(), created: Date(), duration: 6, width: width, height: height, scale: 2, track: track, edit: edit)
+        var meta = RecMeta(id: UUID(), created: Date(), duration: 6, width: width, height: height, scale: 2, track: track, edit: edit)
+        meta.cameraOffset = 0
+        return meta
     }
 
     static func frames(picture: URL, times: [Double]) -> CGImage? {
@@ -28,7 +32,11 @@ enum RecDemo {
         let meta = meta(width: Int(image.extent.width), height: Int(image.extent.height))
         let plan = RecPlan(meta: meta, edit: meta.edit, maxWidth: 900)
         let context = CIContext()
-        let rendered = times.compactMap { context.createCGImage(plan.frame(source: image, time: $0), from: CGRect(origin: .zero, size: plan.output)) }
+        // A stand-in for the camera: a warm gradient.
+        let face = CIFilter(name: "CIRadialGradient", parameters: ["inputCenter": CIVector(x: 640, y: 360), "inputRadius0": 40, "inputRadius1": 500,
+                                                                   "inputColor0": CIColor(red: 1, green: 0.8, blue: 0.6), "inputColor1": CIColor(red: 0.3, green: 0.2, blue: 0.5)])?
+            .outputImage?.cropped(to: CGRect(x: 0, y: 0, width: 1280, height: 720))
+        let rendered = times.compactMap { context.createCGImage(plan.frame(source: image, camera: face, time: $0), from: CGRect(origin: .zero, size: plan.output)) }
         let width = Int(plan.output.width), height = Int(plan.output.height)
         guard let sheet = CGContext(data: nil, width: width * rendered.count, height: height, bitsPerComponent: 8, bytesPerRow: 0,
                                     space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }

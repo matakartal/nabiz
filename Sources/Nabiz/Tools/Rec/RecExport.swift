@@ -43,18 +43,19 @@ enum RecExport {
     }
 
     static func run(_ meta: RecMeta, edit: RecEdit, kind: Kind, to url: URL? = nil, progress: @escaping @MainActor (Double) -> Void) async -> URL? {
-        let asset = AVURLAsset(url: RecStore.video(for: meta.id))
+        guard let built = await RecPlan.build(meta: meta, speeds: edit.speeds) else { return nil }
         let plan = RecPlan(meta: meta, edit: edit, maxWidth: kind.maxWidth)
-        let start = max(0, edit.trimStart)
-        let end = edit.trimEnd > start ? edit.trimEnd : meta.duration
+        // The kept part, moved onto the sped-up timeline.
+        let start = plan.map.played(max(0, edit.trimStart))
+        let end = plan.map.played(edit.trimEnd > edit.trimStart ? edit.trimEnd : meta.duration)
         let range = CMTimeRange(start: CMTime(seconds: start, preferredTimescale: 600), end: CMTime(seconds: end, preferredTimescale: 600))
         if kind == .gif {
-            let video = RecStore.video(for: meta.id)
-            return await gif(video: video, plan: plan, range: range, to: url ?? newFile("gif"), progress: progress)
+            return await gif(built: built, plan: plan, range: range, to: url ?? newFile("gif"), progress: progress)
         }
         let output = url ?? newFile("mp4")
-        guard let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetHighestQuality) else { return nil }
-        session.videoComposition = plan.composition(for: asset)
+        guard let session = AVAssetExportSession(asset: built.asset, presetName: AVAssetExportPresetHighestQuality) else { return nil }
+        session.videoComposition = plan.composition(for: built)
+        session.audioTimePitchAlgorithm = .spectral
         session.outputURL = output
         session.outputFileType = .mp4
         session.timeRange = range
@@ -75,11 +76,10 @@ enum RecExport {
     }
 
     /// 15 frames a second, looping, at most 960 px wide; made off the main thread.
-    private nonisolated static func gif(video: URL, plan: RecPlan, range: CMTimeRange, to url: URL,
+    private nonisolated static func gif(built: RecPlan.Built, plan: RecPlan, range: CMTimeRange, to url: URL,
                                         progress: @escaping @MainActor (Double) -> Void) async -> URL? {
-        let asset = AVURLAsset(url: video)
-        let generator = AVAssetImageGenerator(asset: asset)
-        generator.videoComposition = plan.composition(for: asset)
+        let generator = AVAssetImageGenerator(asset: built.asset)
+        generator.videoComposition = plan.composition(for: built)
         generator.requestedTimeToleranceBefore = .zero
         generator.requestedTimeToleranceAfter = .zero
         let fps = 15.0

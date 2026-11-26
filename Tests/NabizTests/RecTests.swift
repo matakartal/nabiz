@@ -43,4 +43,36 @@ struct RecTests {
         #expect(plan.camera(at: 2.5).0 > 1.8)
         #expect(plan.camera(at: 5.8).0 < 1.1)
     }
+
+    @Test func speedMapGoesBothWays() {
+        let map = RecTimeMap([RecSpeed(start: 2, end: 6, rate: 2)], duration: 10)
+        #expect(abs(map.played(10) - 8) < 0.0001)
+        #expect(abs(map.played(4) - 3) < 0.0001)
+        for t in stride(from: 0.0, through: 10, by: 0.37) {
+            #expect(abs(map.source(map.played(t)) - t) < 0.0001)
+        }
+    }
+
+    @Test func steadyTypingIsFound() {
+        let typing = stride(from: 5.0, through: 9, by: 0.3).map { $0 } + [20]
+        let speeds = RecEdit.typingSpeeds(typing)
+        #expect(speeds.count == 1)
+        #expect(speeds[0].start == 5 && speeds[0].rate == 3)
+    }
+
+    @Test func aspectWidensTheFrame() {
+        var edit = RecEdit()
+        edit.style = RecStyle()
+        edit.style.aspect = "9:16"
+        let meta = RecMeta(id: UUID(), created: Date(), duration: 2, width: 1280, height: 800, scale: 2, track: RecTrack(), edit: edit)
+        let plan = RecPlan(meta: meta, edit: edit, maxWidth: nil)
+        #expect(abs(plan.output.width / plan.output.height - 9.0 / 16) < 0.01)
+        #expect(plan.content.minX >= 0 && plan.content.maxX <= plan.output.width)
+    }
+
+    @Test func oldRecordingsStillLoad() throws {
+        let json = #"{"background":2,"padding":0.05,"radius":0.01,"shadow":true,"cursorSize":1.5,"smoothCursor":true,"clickRings":true,"autoZoom":true,"zoomLevel":1.8}"#
+        let style = try JSONDecoder().decode(RecStyle.self, from: Data(json.utf8))
+        #expect(style.background == 2 && style.aspect == "auto" && style.hideIdleCursor)
+    }
 }
