@@ -10,7 +10,7 @@ Free and open source. A native macOS menu bar app with a system monitor that fix
 and an AI chat (Apple's on-device model, or your own Claude, Codex, Grok or Gemini), dev servers and ports, and a
 launcher, clipboard, screenshots and Screen Studio–style recordings.
 
-<a href="../../releases/latest"><img src="https://img.shields.io/badge/download_free-v1.10.0-1DB954?style=for-the-badge&logo=apple&logoColor=white" alt="Download Nabız"></a>
+<a href="../../releases/latest"><img src="docs/download.svg" width="272" alt="Download Nabız free"></a>
 
 <img src="https://img.shields.io/badge/macOS-14%2B-111?logo=apple&logoColor=white" alt="macOS 14+">
 <img src="https://img.shields.io/github/downloads/matakartal/nabiz/total?label=downloads&color=1DB954" alt="Downloads">
