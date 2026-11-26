@@ -123,7 +123,7 @@ struct ScreenAccessView: View {
         VStack(alignment: .leading, spacing: Theme.Spacing.l) {
             HStack(spacing: Theme.Spacing.m) {
                 Image(systemName: state.ready ? "checkmark.circle.fill" : "camera.viewfinder")
-                    .font(.system(size: 26, weight: .regular))
+                    .font(Theme.input).imageScale(.large)
                     .foregroundStyle(state.ready ? Palette.green.fill : Theme.accent)
                     .frame(width: 36)
                 VStack(alignment: .leading, spacing: 2) {

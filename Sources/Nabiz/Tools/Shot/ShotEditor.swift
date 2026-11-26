@@ -366,7 +366,7 @@ struct ShotToolButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 13, weight: active ? .semibold : .regular))
+                .font(active ? Theme.bodyStrong : Theme.body)
                 .foregroundStyle(active ? Theme.accent : (hovering ? Theme.text : Theme.textMuted))
                 .frame(width: 28, height: 24)
                 .background(active ? Theme.accent.opacity(0.16) : (hovering ? Theme.hover : .clear),

@@ -191,7 +191,7 @@ struct ShotThumbnailView: View {
 
     private func corner(_ symbol: String, _ help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
+            Image(systemName: symbol).font(Theme.smallStrong).foregroundStyle(.white)
                 .frame(width: 24, height: 24)
                 .background(.ultraThinMaterial, in: Circle())
                 .overlay(Circle().strokeBorder(Color.white.opacity(0.18)))
