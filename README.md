@@ -1,174 +1,220 @@
-<p align="center"><img src="Resources/AppIcon-1024.png" width="128" alt="Nabız icon"></p>
+<div align="center">
 
-<h1 align="center">Nabız</h1>
+<img src="Resources/AppIcon-1024.png" width="112" alt="Nabız icon">
 
-<p align="center">Your Mac's pulse in the menu bar. A small, native, open-source system monitor for macOS, with the tools you reach for every day: a launcher, AI chat with your own subscriptions, screenshots and screen recordings, clipboard history, notes and developer tools.</p>
+# Nabız
 
-<p align="center"><img src="docs/menubar.png" width="166" alt="Nabız in the menu bar: CPU, RAM, Claude limit and BTC price, two lines"></p>
+**Your Mac's pulse in the menu bar — and the tools you reach for all day.**
 
-<p align="center">
-  <img src="docs/panel.png" width="320" alt="The panel: meters, system, markets and exchange rates">
-  &nbsp;
-  <img src="docs/tools.png" width="320" alt="The panel with the tools grid open">
-</p>
+A small, native, open-source menu bar app for macOS: a system monitor with one-tap fixes, AI chat with your own
+subscriptions, a launcher, screenshots and Screen Studio–style recordings, and tools made for developers.
 
-<p align="center"><img src="docs/ai-chat.png" width="760" alt="AI chat: pinned chats, folders and an answer from Apple's on-device model"></p>
+<a href="../../releases/latest"><img src="https://img.shields.io/badge/Download-Nab%C4%B1z%201.9.0-1DB954?style=for-the-badge&logo=apple&logoColor=white" alt="Download Nabız"></a>
 
-<p align="center"><img src="docs/launcher.png" width="620" alt="The launcher finding apps and commands for &quot;sa&quot;"></p>
+<img src="https://img.shields.io/badge/macOS-14%2B-111?logo=apple&logoColor=white" alt="macOS 14+">
+<img src="https://img.shields.io/badge/Apple%20silicon%20%2B%20Intel-universal-111" alt="Universal">
+<img src="https://img.shields.io/badge/Swift%206-SwiftUI%20%2B%20AppKit-F05138?logo=swift&logoColor=white" alt="Swift 6">
+<img src="https://img.shields.io/badge/notarized-Developer%20ID-1DB954" alt="Notarized">
+<img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT">
 
-<p align="center"><img src="docs/launcher-dev.png" width="620" alt="The launcher listing every listening port and who holds it"></p>
+[Features](#features) · [Shortcuts](#shortcuts) · [Privacy](#privacy) · [Build](#build) · [Türkçe](README.tr.md)
 
-<p align="center"><img src="docs/screenshot-editor.png" width="760" alt="The screenshot editor: arrows, boxes, steps, text and a gradient frame"></p>
+<br>
 
-<p align="center"><img src="docs/settings.png" width="620" alt="Settings: the General page with Open at login and Show in Dock"></p>
+<img src="docs/hero.jpg" alt="Nabız: the menu bar item, its panel, the AI chat window and the launcher">
 
-<p align="center"><i>Türkçe aşağıda.</i></p>
+</div>
 
-## Install
+<br>
 
-Download the latest `Nabiz-x.y.z.dmg` from [Releases](../../releases), open it and drag Nabız to Applications. Releases are signed with a Developer ID and notarized by Apple, so Nabız opens without warnings. It needs macOS 14 or later and runs natively on Apple silicon and Intel.
+## Why Nabız
 
-On first launch, a short welcome explains where things are and offers to open Nabız at login. Later versions show an **Update** button in the panel that installs the new release and reopens Nabız.
+<table>
+<tr>
+<td width="25%" valign="top"><b>Native and light</b><br>SwiftUI + AppKit, the system's own menu material and grid. Idle at 0–1% CPU.</td>
+<td width="25%" valign="top"><b>Fixes, not just numbers</b><br>When memory runs out it says why and offers the one step that frees the most.</td>
+<td width="25%" valign="top"><b>Your AI, your plans</b><br>Claude, Codex, Grok and Gemini through their own CLIs, or Apple's free on-device model.</td>
+<td width="25%" valign="top"><b>Private by default</b><br>No analytics, no account. Everything about your Mac stays on your Mac.</td>
+</tr>
+</table>
 
-## What it does
+## Features
 
-### Monitor
+<table>
+<tr>
+<td width="44%"><img src="docs/panel.png" alt="The panel"></td>
+<td valign="top">
 
-- **Menu bar:** the values you pick, two lines (a small label over a bold value) or one line: CPU, RAM, GPU, swap,
-  network, free disk, battery, an AI limit, a market price, an exchange rate.
-- **Live meters:** CPU, RAM and GPU with a two-minute graph; memory pressure, swap, disk, network, battery health,
-  heat and security under them.
-- **Suggestions with one-tap fixes:** when memory runs out Nabız says what is using it and offers the single step that
-  frees the most (shut down the simulators, quit the biggest app). It also warns about a full disk, a low battery, a
-  hot Mac, unpushed commits and gigabytes of developer leftovers.
-- **Top apps:** the apps using the most memory and CPU, grouped by app. Hover to quit one or show it in Finder.
-- **History:** CPU, RAM, GPU and AI usage for the last hour, day or week.
-- **External displays:** a brightness slider for each display, and optionally the brightness keys work on the display
-  under the pointer.
-- **Hide crowded menu bar icons** (opt-in): ⌘-drag icons behind an arrow that folds them away.
-- **Show in Dock** (opt-in): Nabız also sits in the Dock and ⌘⇥ with its own menus; clicking the icon opens the panel.
+### A panel that tells you what to do
 
-### AI
+- **Menu bar:** CPU, RAM, GPU, network, disk, battery, an AI limit, a market price or an exchange rate — two lines
+  or one.
+- **Live meters** with a two-minute graph; memory pressure, swap, battery health, heat and security.
+- **Suggestions with one-tap fixes:** shut down idle simulators, quit the biggest app, push forgotten commits, clear
+  gigabytes of developer leftovers.
+- **Top apps**, a week of **history**, **external display brightness**, **calendar** with one-click join,
+  **Hyperliquid markets** and **exchange rates**.
+- Sections fold to a one-line summary; hide crowded menu bar icons; optionally show in the Dock.
 
-- **AI chat** (⌃⌥I) with your own subscriptions: Claude, Codex, Grok and Gemini through their CLIs on this Mac, or
-  Apple's free on-device model. Each provider's models and thinking levels, pinned chats, folders, archive, search
-  (⌘K), find in chat (⌘F), images and PDFs, side chats (⌥⌘S), quoting, a queue while it writes, branching from any
-  answer, "Summarize and continue", and a ring that shows how full the chat is. Claude, Codex and Grok can search the
-  web for current facts, with sources. Chats are stored encrypted.
-- **Quick questions** (⌃⌥A or `?` in the launcher), ready-made tasks and your own AI commands for selected or copied
-  text, and translation (`translate …`).
-- **AI limits** (opt-in): Claude, ChatGPT/Codex and Gemini subscription windows with time to reset, in the panel and
-  the menu bar, and a warning before a limit runs out.
-- **Dictation** (⌃⌥D): speak, press again, and the words are typed where the cursor is; on-device when macOS has the
-  language.
-- **MCP server** (opt-in): Claude Code, Claude Desktop, Cursor and other AI apps can read this Mac's status, AI limits,
-  calendar, notes, dev servers, ports, projects and Docker, and start timers, focus mode or screen recordings.
+</td>
+</tr>
+</table>
+
+<table>
+<tr>
+<td valign="top">
+
+### AI chat with your own subscriptions
+
+- **⌃⌥I** opens a chat window like the providers' own apps: Claude, Codex, Grok, Gemini or Apple's on-device model,
+  each with its real models and thinking levels.
+- **Web search** with sources for Claude, Codex and Grok — and no other tools, no files, no commands.
+- Pinned chats, folders, search (⌘K), images and PDFs, side chats (⌥⌘S), quoting, branching, a queue while it
+  writes, "Summarize and continue", and a ring that shows how full the chat is.
+- **Quick questions** (⌃⌥A), your own AI commands on selected text, **dictation** (⌃⌥D) and **AI limits** with a
+  warning before they run out. Chats are stored encrypted.
+
+</td>
+<td width="56%"><img src="docs/ai-chat.png" alt="AI chat"></td>
+</tr>
+</table>
+
+<table>
+<tr>
+<td width="56%"><img src="docs/screenshot-editor.png" alt="Screenshot editor"></td>
+<td valign="top">
 
 ### Screenshots and recordings
 
-- **Screenshots with markup** (⌃⌥S): area, window or screen; then arrows, lines, boxes, pen, highlighter, text,
-  numbered steps, blur, spotlight and crop, plus a gradient frame. Copy the text in the image, pin it over every app,
-  or drag it out as a file.
-- **Screen recording** (⌃⌥R): the screen, a window or an area with sound and the camera. The editor draws a smooth,
-  larger pointer, rings each click and zooms in where you clicked, with backgrounds, rounded corners, captions made on
-  this Mac, cuts and speed-ups. Export MP4 (up to 4K) or GIF.
+- **⌃⌥S:** area, window or screen, then arrows, boxes, text, numbered steps, blur, spotlight, crop and a gradient
+  frame. Copy the text in it, pin it over every app, drag it out.
+- **⌃⌥R:** record the screen, a window or an area with sound and your camera. The editor draws a smooth pointer,
+  rings each click and zooms where you clicked; add backgrounds, captions made on this Mac, cuts and speed-ups.
+  Export MP4 up to 4K or GIF.
 
-### Launcher (⌃⌥Space)
+</td>
+</tr>
+</table>
 
-One field for everything, keyboard first (↑↓, ↩, ⌘K for every action on a row):
+<table>
+<tr>
+<td valign="top">
 
-- apps, files, notes, emoji, your Shortcuts and scripts; system commands (lock, sleep, empty Trash, restart…)
-- maths, money and units: `12*4`, `20% of 150`, `100 usd`, `5 bin tl`, `0.5 btc`, `5 km mi`, `tokyo`,
-  `today + 30 days`
-- sound and Bluetooth: `volume 40`, switch the output, connect AirPods
-- quicklinks (`g words`, `gh`, `yt`…), snippets with `{date}` and `{clipboard}`, video links saved with yt-dlp
-- your own shortcut or alias for any row (⌘K → "Set a shortcut…")
-- developer answers: `:3000` or `port` (who holds a port, stop or open it), projects, JWT decode, Unix time,
-  `sha256`, `uuid`, `case`, colours as HEX / RGB / SwiftUI, cron explained, `http 429`, `base64`, `brew`
+### A launcher for everything
 
-### Developer tools
+**⌃⌥Space**, keyboard first, ⌘K for every action on a row.
 
-- **Dev servers:** every server you started (vite, next, wrangler…) with its project, ports and uptime; open, reveal or
-  stop it, or open it on your phone with a QR code.
-- **Projects:** every git repository in ~/Developer with its branch, changes and unpushed commits; open it in your
-  editor or Terminal, start Claude Code there, run its scripts.
-- **Docker:** one row per compose project; start, stop, restart, logs and a shell.
-- **Simulators:** shut them down, a 9:41 status bar, dark mode, screenshots, recordings, test pushes.
-- **Clean-up:** finished worktrees, build folders, extra iOS runtimes, DerivedData, unused simulators, idle
-  node_modules, package caches, Docker volumes — each with its size, cleaned only after asking.
-- **Notarization:** a running `notarytool submit` shows in the panel and Apple's answer arrives as a notification.
+- Apps, files, notes, emoji, Shortcuts, scripts and system commands.
+- Maths, money and units: `20% of 150`, `100 usd`, `0.5 btc`, `5 km mi`, `tokyo`, `today + 30 days`.
+- Quicklinks, snippets, clipboard history (⌃⌥V), sound output and Bluetooth, video links via yt-dlp.
+- Your own shortcut or alias for any row.
 
-### Everyday tools
+</td>
+<td width="56%"><img src="docs/launcher.png" alt="Launcher"></td>
+</tr>
+</table>
 
-- **Tools grid:** AI chat, launcher, clipboard, notes, Pomodoro, focus, keep awake, timer, sleep timer, pick a colour,
-  screenshot, record, read text or QR, video download, mic mute, dictate, display off, dark mode, speed test, IP,
-  password and UUID, eject disks, Xcode and Rust caches, clean-up, hidden files, desktop icons.
-- **Clipboard history** (⌃⌥V): text, links, colours, files and images; search, pin, ↩ pastes into the app you were
-  in. Password managers' secret copies and apps you exclude are never recorded.
-- **Notes** (⌃⌥M): notes that float above every app, with live Markdown and checklists; or Apple Notes if you prefer.
-- **Pomodoro and focus mode:** the countdown in the menu bar; focus hides chat apps and can block websites.
-- **Calendar:** today's meetings in the panel, a heads-up before each, one click to join the call.
-- **Window layouts:** halves, thirds, centre and your own layouts and sets, each with a shortcut.
-- **Markets (Hyperliquid) and price alerts:** crypto, stocks, indices and commodities, with repeating alerts.
-- **Exchange rates:** your currencies in your main currency, with the daily change.
-- **Schedules and backup:** weekly clean-ups and other tasks; one backup file for every setting, note and snippet.
+<table>
+<tr>
+<td width="56%"><img src="docs/launcher-dev.png" alt="Listening ports in the launcher"></td>
+<td valign="top">
 
-### Look and settings
+### Made for developers
 
-The panel uses the native menu material and the native menu grid: icons 16 pt in, text 40 pt in, values 16 pt from
-the edge. Sections fold to a one-line summary. Accent colours, theme, typeface, density and panel order are yours to
-pick. Settings has a searchable sidebar (in Turkish or English, without accents, with typos forgiven), and **What can
-it do?** lists every shortcut and tool. Idle, Nabız uses about 0–1% CPU.
+- **Ports:** `:3000` tells you who holds it and lets you stop or open it.
+- **Dev servers** with their project and uptime — open one on your phone with a QR code.
+- **Projects** with branch, changes and unpushed commits; open in your editor, start Claude Code, run scripts.
+- **Docker**, **simulator** tools, careful **clean-up** that shows what it frees, and **notarization** in the panel.
+- **MCP server:** Claude Code, Claude Desktop and Cursor read your Mac's status, ports and projects.
+- Launcher answers: JWT, Unix time, hashes, UUIDs, colours, cron, HTTP codes, Base64.
+
+</td>
+</tr>
+</table>
+
+<table>
+<tr>
+<td valign="top">
+
+### And the everyday tools
+
+Pomodoro and focus mode (with website blocking), keep awake, timers, notes that float over every app (⌃⌥M), window
+layouts, pick a colour, read text or QR on screen, speed test, password and UUID, eject disks, cache cleaners,
+hidden files, desktop icons, schedules and a one-file backup.
+
+Settings has a searchable sidebar in Turkish and English, and **What can it do?** lists every shortcut and tool.
+
+</td>
+<td width="44%"><img src="docs/tools.png" alt="Tools grid"></td>
+</tr>
+</table>
+
+## Install
+
+1. Download `Nabiz-x.y.z.dmg` from [Releases](../../releases/latest).
+2. Open it and drag Nabız to Applications.
+3. Open Nabız. A short welcome shows where things are and offers to open it at login.
+
+Releases are signed with a Developer ID and notarized by Apple. New versions show an **Update** button in the panel
+that installs them and reopens Nabız. Requires macOS 14 or later; universal for Apple silicon and Intel.
+
+## Shortcuts
+
+| Keys | What | Keys | What |
+| --- | --- | --- | --- |
+| ⌃⌥Space | Launcher | ⌃⌥I | AI chat |
+| ⌃⌥V | Clipboard history | ⌃⌥A | Ask AI |
+| ⌃⌥M | Notes | ⌃⌥D | Dictation |
+| ⌃⌥S | Screenshot | ⌃⌥R | Screen recording |
+
+Every shortcut can be changed or turned off in Settings → Shortcuts, and any launcher row can get its own.
 
 ## Privacy
 
-Everything about your Mac is measured locally, and Nabız has no analytics. It goes online only for:
+Everything about your Mac is measured locally. Nabız has no analytics and no account. It goes online only for:
 
-- **Exchange rates:** the European Central Bank's daily rates from [frankfurter.dev](https://frankfurter.dev).
-- **Market prices:** Hyperliquid's public info API (`api.hyperliquid.xyz`). No account involved.
-- **Updates:** the latest release on GitHub.
-- **AI limits:** only for providers you turn on, through that provider's own usage endpoint with the sign-in its
-  official CLI already keeps on your Mac. Nabız never stores, refreshes or forwards that sign-in.
-- **AI chat:** your messages go to the provider you pick through its own CLI; Apple's on-device model never leaves the
-  Mac. Web search is used only by Claude, Codex and Grok, only when on, and they get no other tools.
-- **Things you ask for:** web searches, video downloads (yt-dlp) and the speed test.
+| What | Where | When |
+| --- | --- | --- |
+| Exchange rates | [frankfurter.dev](https://frankfurter.dev) (ECB daily rates) | When rates are shown |
+| Market prices | `api.hyperliquid.xyz` | When markets are shown or alerts are set |
+| Updates | GitHub releases | Periodically |
+| AI limits | Each provider's own usage endpoint, with the sign-in its CLI already keeps | Only for providers you turn on |
+| AI chat | The provider you pick, through its own CLI | When you chat; Apple's on-device model never leaves the Mac |
+| Your requests | Web search, yt-dlp, speed test | Only when you ask |
 
-Nabız reads only your own user's processes and never asks for administrator rights. Some tools ask macOS once:
-screen recording (screenshots, recordings), Accessibility (pasting, window layouts), microphone and speech
-(dictation), calendar, and control of System Events (dark mode). The clipboard history and AI chats are encrypted on
-disk with a key kept in your Keychain. The MCP server listens on a socket only your user can open. Crash reports stay
-on your Mac until you choose to send one.
+Nabız reads only your own user's processes and never asks for administrator rights. Some tools ask macOS once for
+screen recording, Accessibility, the microphone, speech, the calendar or System Events. Clipboard history and AI
+chats are encrypted on disk with a key in your Keychain; the MCP server listens on a socket only your user can open;
+crash reports stay on your Mac until you choose to send one.
 
 ## Build
 
-You need macOS 14 or later and Swift 6 (Xcode 16 or later).
+macOS 14 or later and Swift 6 (Xcode 16 or later).
 
 ```bash
 ./build.sh            # build/Nabiz.app, universal
 ./build.sh install    # also copies it to ~/Applications and opens it
 ./build.sh dmg        # also packages build/Nabiz-<version>.dmg
+swift test            # unit tests
+./release.sh publish  # test, sign, notarize, staple and publish the GitHub release
 ```
 
-Run `swift test` for the unit tests. Builds are ad-hoc signed by default; `./release.sh publish` runs the tests,
-signs with your Developer ID, notarizes, staples and publishes the GitHub release with notes from CHANGELOG.md:
+<details>
+<summary><b>Development helpers</b></summary>
 
-```bash
-xcrun notarytool store-credentials nabiz        # once
-./release.sh publish
-```
-
-The GitHub workflow builds the universal app and the DMG on every push and pull request. To regenerate the app icon,
-run `swift scripts/make-icon.swift`.
-
-Development helpers:
-
-- `Nabiz --snapshot out.png [--dark]` renders the panel with live data; add `--settings --page general`,
+- `Nabiz --snapshot out.png [--dark]` renders the panel with live data. Add `--settings --page general`,
   `--launcher "100 usd"`, `--ai-window "question"`, `--shot image.png --seed` or `--help` for other windows, and
-  `--chrome` for a real titled window. The images above are made this way.
+  `--chrome` for a real titled window. The screenshots here are made this way; `swift scripts/make-hero.swift`
+  builds the cover image from them.
 - `Nabiz --calc "5 km mi"` prints what the calculator would show.
 - `Nabiz --mcp` runs the MCP server for AI apps.
+- `swift scripts/make-icon.swift` regenerates the app icon.
+- Signing for releases: `xcrun notarytool store-credentials nabiz` once, then `./release.sh publish`.
 
-## Project layout
+</details>
+
+<details>
+<summary><b>Project layout</b></summary>
 
 | Path | What |
 | --- | --- |
@@ -180,44 +226,12 @@ Development helpers:
 | `Sources/Nabiz/Support/` | Settings keys, the `L("tr", "en")` helper, menu bar text, updates |
 | `Sources/Nabiz/DesignSystem/Theme.swift` | Colours, type, spacing, menu grid |
 
-Every user-facing string is written in both languages, side by side: `L("Türkçe", "English")`.
+Every user-facing string is written in both languages side by side: `L("Türkçe", "English")`.
+
+</details>
+
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
 
 ## License
 
 MIT. See [LICENSE](LICENSE).
-
----
-
-## Türkçe
-
-Nabız, Mac'inin nabzını menü çubuğunda tutan küçük, yerel ve açık kaynak bir sistem izleyicisi. Yanında her gün
-işine yarayacak araçlar gelir: başlatıcı, kendi aboneliklerinle AI sohbeti, ekran görüntüsü ve ekran kaydı, pano
-geçmişi, notlar ve geliştirici araçları.
-
-**Kurulum:** [Releases](../../releases) sayfasından `Nabiz-x.y.z.dmg` dosyasını indir, aç ve Nabız'ı Programlar
-klasörüne sürükle. Sürümler imzalı ve Apple onaylıdır, uyarısız açılır. macOS 14 veya üstü gerekir; Apple Silicon ve
-Intel'de çalışır.
-
-**Neler var:**
-
-- **İzleme:** menü çubuğunda seçtiğin değerler (CPU, RAM, GPU, ağ, disk, pil, AI limiti, piyasa, döviz); canlı
-  grafikler; bellek dolunca tek tuşla çözüm; en çok kaynak kullanan uygulamalar; geçmiş; harici ekran parlaklığı;
-  kalabalık menü çubuğu simgelerini gizleme; istersen Dock'ta da görünme.
-- **AI sohbet (⌃⌥I):** Claude, Codex, Grok, Gemini ya da Apple'ın ücretsiz cihaz içi modeli. Sabitlenmiş sohbetler,
-  klasörler, arama (⌘K), görsel ve PDF, yan sohbet, alıntı, dallanma, özetle ve sürdür. Claude, Codex ve Grok
-  gerekince web'de arar ve kaynak gösterir. Sohbetler şifreli saklanır.
-- **Hızlı soru (⌃⌥A), dikte (⌃⌥D), AI limitleri ve MCP sunucusu:** AI uygulamaları Mac'in durumunu, portları,
-  projeleri ve Docker'ı okuyabilir.
-- **Ekran görüntüsü (⌃⌥S):** ok, kutu, yazı, numara, bulanıklaştırma ve çerçeveyle düzenle.
-- **Ekran kaydı (⌃⌥R):** tıkladığın yere yakınlaşan, imleci yumuşatan, altyazıyı Mac'te çıkaran editör; MP4 ya da GIF.
-- **Başlatıcı (⌃⌥Boşluk):** uygulama, dosya, komut, hesap ve çeviri (`100 usd`), ses ve Bluetooth, parçacıklar,
-  kısayol ve takma ad, geliştirici cevapları (`:3000`, JWT, Unix zamanı, renk, cron…).
-- **Geliştirici araçları:** çalışan sunucular (telefonda QR ile aç), projeler, Docker, simülatörler, sorarak yapılan
-  temizlik, notarize takibi.
-- **Günlük araçlar:** pano geçmişi (⌃⌥V), notlar (⌃⌥M), Pomodoro ve odak modu, takvim, pencere düzenleri, piyasalar ve
-  fiyat alarmları, döviz, zamanlanmış görevler ve yedek.
-- **Ayarlar:** aranabilir kenar çubuğu; Türkçe ve İngilizce.
-
-**Gizlilik:** Mac'inle ilgili her şey Mac'in içinde ölçülür; analitik yoktur. İnternete yalnızca döviz kurları,
-Hyperliquid fiyatları, güncelleme kontrolü, açtığın AI sağlayıcılarının kendi sunucuları ve senin istediğin işler
-(web araması, video indirme, hız testi) için çıkar. Apple'ın cihaz içi modeli Mac'ten hiç çıkmaz.
