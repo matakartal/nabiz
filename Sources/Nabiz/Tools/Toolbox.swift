@@ -434,7 +434,10 @@ final class Toolbox {
     /// For schedules: no dialog. Xcode rebuilds DerivedData on the next build.
     func cleanDerivedDataUnattended() {
         let path = Self.derivedData.path
+        // Never under a running build or an open Xcode: it would break the build in progress.
+        guard !NSWorkspace.shared.runningApplications.contains(where: { $0.bundleIdentifier == "com.apple.dt.Xcode" }) else { return }
         Task {
+            guard await Task.detached(priority: .utility, operation: { !DevCleanup.xcodeBuilding }).value else { return }
             await Task.detached(priority: .utility) {
                 let fm = FileManager.default
                 for item in (try? fm.contentsOfDirectory(atPath: path)) ?? [] {

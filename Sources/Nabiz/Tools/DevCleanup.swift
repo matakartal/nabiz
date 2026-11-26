@@ -33,7 +33,7 @@ struct CleanupItem: Identifiable, Sendable, Hashable {
         case .nodeModules: L("Eski projelerin node_modules'ü", "node_modules of idle projects")
         case .pnpmStore: L("pnpm deposu (kullanılmayanlar)", "pnpm store (unused packages)")
         case .npmCache: L("npm önbelleği", "npm cache")
-        case .brewCache: L("Homebrew indirmeleri", "Homebrew downloads")
+        case .brewCache: L("Homebrew indirmeleri ve eski sürümler", "Homebrew downloads and old versions")
         case .playwright: L("Eski Playwright tarayıcıları", "Old Playwright browsers")
         case .dockerVolumes: L("Kullanılmayan Docker volume'ları", "Unused Docker volumes")
         case .dockerImages: L("Sahipsiz Docker imajları", "Dangling Docker images")
@@ -49,14 +49,19 @@ struct CleanupItem: Identifiable, Sendable, Hashable {
         case .simRuntimes: L("Aynı iOS sürümünün eski build'leri; en yenisi ve en son kullanılan kalır.", "Older builds of the same iOS version; the newest and the last used stay.")
         case .xcodePreviews: L("SwiftUI önizlemelerinin cihazları; Xcode yeniden kurar.", "Devices SwiftUI previews run on; Xcode rebuilds them.")
         case .derivedData: L("Xcode'un derleme önbelleği; ilk derleme biraz uzun sürer.", "Xcode's build cache; the next build takes a little longer.")
-        case .buildCopies: L("-derivedDataPath ile proje içine yazılmış derlemeler (ajan ve CI çalışmaları).", "Builds written into projects with -derivedDataPath (agent and CI runs).")
-        case .worktrees: L("Değişikliği kalmamış ve işi ana dala geçmiş worktree'ler. Değişikliği olanlara dokunulmaz.", "Worktrees with no changes whose work is already on the main branch. Ones with changes are left alone.")
-        case .nodeModules: L("Lockfile'ı olan ve uzun süredir dokunulmamış projeler; `install` ile geri gelir.", "Projects with a lockfile, untouched for a while; `install` brings them back.")
+        case .buildCopies: L("-derivedDataPath ile proje içine yazılmış derlemeler (ajan ve CI çalışmaları). Yalnızca Build, Logs ve önbellek klasörleri silinir; kaynak kodun yanında olsa bile ona dokunulmaz.",
+                             "Builds written into projects with -derivedDataPath (agent and CI runs). Only the Build, Logs and cache folders go; source code next to them is never touched.")
+        case .worktrees: L("Ajanların açtığı, değişikliği ve saklanan dosyası (.env gibi) kalmamış, işi ana dala geçmiş worktree'ler. Silmeden hemen önce yeniden kontrol edilir.",
+                           "Worktrees agents made, with no changes or kept files (like .env) left, whose work is already on the main branch. Checked again right before removal.")
+        case .nodeModules: L("Lockfile'ı olan, kaydedilmemiş değişikliği olmayan ve uzun süredir dokunulmamış projeler; `install` ile geri gelir.",
+                             "Projects with a lockfile, no uncommitted changes, untouched for a while; `install` brings them back.")
         case .pnpmStore: L("Hiçbir projenin kullanmadığı paketler (`pnpm store prune`).", "Packages no project uses (`pnpm store prune`).")
         case .npmCache: L("İndirilmiş paket arşivleri; npm gerekince yeniden indirir.", "Downloaded package archives; npm fetches them again when needed.")
-        case .brewCache: L("Kurulumdan kalan indirmeler (`brew cleanup -s`).", "Downloads left from installs (`brew cleanup -s`).")
+        case .brewCache: L("Kurulumdan kalan indirmeler ve paketlerin eski sürümleri (`brew cleanup -s`); sabitlenenler kalır.",
+                           "Downloads left from installs and older versions of packages (`brew cleanup -s`); pinned ones stay.")
         case .playwright: L("Her tarayıcının yalnızca en yeni sürümü kalır.", "Only the newest version of each browser stays.")
-        case .dockerVolumes: L("Hiçbir konteynerin bağlı olmadığı volume'lar. İçlerindeki veriler silinir.", "Volumes no container uses. Their data is deleted.")
+        case .dockerVolumes: L("Tarama sırasında hiçbir konteynerin bağlı olmadığı, adı listelenen volume'lar; o an hâlâ boşta olanlar silinir. İçlerindeki veriler gider.",
+                               "The volumes listed by name that no container used at the scan, if still unused. Their data is deleted.")
         case .dockerImages: L("Etiketi kalmamış ara imajlar (`docker image prune`).", "Untagged leftover images (`docker image prune`).")
         case .claudeTranscripts: L("Klasörü artık olmayan projelerin sohbet kayıtları; Çöp'e taşınır.", "Chat logs of projects whose folder is gone; moved to the Trash.")
         case .mergedBranches: L("Ana dala birleşmiş dallar (`git branch -d`); birleşmemiş olan silinmez.", "Branches already merged into main (`git branch -d`); unmerged ones are never deleted.")
@@ -79,7 +84,7 @@ struct CleanupItem: Identifiable, Sendable, Hashable {
     /// Safe to run unattended (the scheduled clean-up): everything comes back by itself, nothing of the user's is lost.
     var isSafe: Bool {
         switch kind {
-        case .simUnavailable, .xcodePreviews, .buildCopies, .pnpmStore, .npmCache, .brewCache, .playwright, .dockerImages: true
+        case .xcodePreviews, .buildCopies, .pnpmStore, .npmCache, .brewCache, .playwright, .dockerImages: true
         default: false
         }
     }
@@ -184,7 +189,7 @@ enum DevCleanup {
                     let child = path + "/" + name
                     if isXcodeBuildFolder(child) {
                         // A build writing into it right now (an agent's xcodebuild) is left alone.
-                        if !modified(child, within: 3600) { found.append(child) }
+                        if !buildBusy(child) { found.append(child) }
                         continue
                     }
                     var isDirectory: ObjCBool = false
@@ -192,11 +197,44 @@ enum DevCleanup {
                 }
             }
         }
-        let sized = zip(found, sizes(found)).filter { $0.1 > 100 << 20 }
+        // Only the build parts are counted (and removed), never what sits next to them.
+        let sized = zip(found, found.map { sizes(buildParts(of: $0)).reduce(0, +) }).filter { $0.1 > 100 << 20 }
         guard !sized.isEmpty else { return [] }
         return [CleanupItem(kind: .buildCopies, size: sized.reduce(0) { $0 + $1.1 }, targets: sized.map(\.0),
                             detail: summary(sized.map { short($0.0) }))]
     }
+
+    /// What `-derivedDataPath` writes; only these go, so a project folder holding a build is never removed itself.
+    static let buildPartNames = ["Build", "Logs", "Index.noindex", "ModuleCache.noindex", "SourcePackages",
+                                 "CompilationCache.noindex", "SDKStatCaches.noindex", "TextIndex"]
+
+    static func buildParts(of folder: String) -> [String] {
+        buildPartNames.map { folder + "/" + $0 }.filter { FileManager.default.fileExists(atPath: $0) }
+    }
+
+    /// Written to in the last hour anywhere a build writes (not only the top level), or Xcode is building.
+    private static func buildBusy(_ path: String) -> Bool {
+        let fm = FileManager.default
+        let places = [path, path + "/Build", path + "/Build/Products", path + "/Build/Intermediates.noindex", path + "/Logs",
+                      path + "/Logs/Build", path + "/Index.noindex"].filter { fm.fileExists(atPath: $0) }
+        return places.contains { modified($0, within: 3600) }
+    }
+
+    /// Xcode or a command-line build is running: build folders and DerivedData wait.
+    static var xcodeBuilding: Bool {
+        let names: Set<String> = ["xcodebuild", "XCBBuildService", "SWBBuildService"]
+        return ProcInfo.allPIDs().contains { pid in ProcInfo.bsdInfo(pid).map { names.contains(ProcInfo.name($0)) } ?? false }
+    }
+
+    /// Working folders of this user's processes: an agent, an editor's shell or a dev server sitting there.
+    static func busyFolders() -> [String] {
+        ProcInfo.allPIDs().compactMap { pid -> String? in
+            guard let info = ProcInfo.bsdInfo(pid), info.pbi_uid == getuid() else { return nil }
+            return ProcInfo.workingFolder(pid)
+        }
+    }
+
+    static func isBusy(_ path: String, busy: [String]) -> Bool { busy.contains { $0 == path || $0.hasPrefix(path + "/") } }
 
     static func isXcodeBuildFolder(_ path: String) -> Bool {
         let fm = FileManager.default
@@ -207,27 +245,45 @@ enum DevCleanup {
     /// `.claude/worktrees/*` (and any linked worktree) with nothing uncommitted whose HEAD is already in the main branch.
     private static func worktrees(projects: [String]) -> [CleanupItem] {
         // A worktree a running agent, editor or server sits in is in use, however clean it looks.
-        let busy = Set(ProcInfo.allPIDs().compactMap { pid -> String? in
-            guard let info = ProcInfo.bsdInfo(pid), info.pbi_uid == getuid() else { return nil }
-            return ProcInfo.workingFolder(pid)
-        })
+        let busy = busyFolders()
         var done: [(project: String, path: String)] = []
         for project in projects {
             let list = Shell.run("git", ["worktree", "list", "--porcelain"], in: project, timeout: 15)
             guard list.ok else { continue }
             let paths = list.output.split(separator: "\n").filter { $0.hasPrefix("worktree ") }.map { String($0.dropFirst(9)) }.filter { $0 != project }
             guard !paths.isEmpty, let main = defaultBranch(project) else { continue }
-            for path in paths where FileManager.default.fileExists(atPath: path) {
-                guard !busy.contains(where: { $0 == path || $0.hasPrefix(path + "/") }), !recentlyUsed(path) else { continue }
-                let status = Shell.run("git", ["--no-optional-locks", "status", "--porcelain"], in: path, timeout: 15)
-                guard status.ok, status.output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
-                let merged = Shell.run("git", ["merge-base", "--is-ancestor", "HEAD", main], in: path, timeout: 15)
-                if merged.status == 0 { done.append((project, path)) }
-            }
+            for path in paths where worktreeIsDone(path, main: main, busy: busy) { done.append((project, path)) }
         }
         guard !done.isEmpty else { return [] }
         return [CleanupItem(kind: .worktrees, size: sizes(done.map(\.path)).reduce(0, +), targets: done.map { "\($0.project)|\($0.path)" },
                             detail: summary(done.map { short($0.path) }))]
+    }
+
+    /// Only worktrees agents make; one a person made for a hotfix is theirs to remove.
+    static func isAgentWorktree(_ path: String) -> Bool {
+        ["/.claude/worktrees/", "/.codex/", "/.cursor/", "/.conductor/", "/worktrees/"].contains { path.contains($0) }
+    }
+
+    /// Ignored files that rebuild themselves; any other ignored file (.env, a local database, keys) keeps the worktree.
+    static let regenerable: Set<String> = ["node_modules", ".next", ".turbo", ".svelte-kit", ".nuxt", ".expo", ".build", "build",
+                                           "DerivedData", ".swiftpm", ".DS_Store", ".gradle", "target", "__pycache__", ".pytest_cache",
+                                           ".venv", ".cache", ".parcel-cache", "coverage", ".eslintcache", "tsconfig.tsbuildinfo"]
+
+    /// `git status --porcelain --ignored`: nothing changed or untracked, and only regenerable ignored files.
+    static func onlyRegenerable(_ status: String) -> Bool {
+        status.split(separator: "\n").allSatisfy { line in
+            guard line.hasPrefix("!! ") else { return false }
+            let path = line.dropFirst(3).trimmingCharacters(in: CharacterSet(charactersIn: "\"/"))
+            return path.split(separator: "/").last.map { regenerable.contains(String($0)) } ?? false
+        }
+    }
+
+    /// Checked at the scan and again right before removal: an agent may have started in it since.
+    static func worktreeIsDone(_ path: String, main: String, busy: [String]) -> Bool {
+        guard FileManager.default.fileExists(atPath: path), isAgentWorktree(path), !isBusy(path, busy: busy), !recentlyUsed(path) else { return false }
+        let status = Shell.run("git", ["--no-optional-locks", "status", "--porcelain", "--ignored"], in: path, timeout: 15)
+        guard status.ok, onlyRegenerable(status.output) else { return false }
+        return Shell.run("git", ["merge-base", "--is-ancestor", "HEAD", main], in: path, timeout: 15).status == 0
     }
 
     /// Anything in its top level changed in the last day: an agent may have just made it.
@@ -243,10 +299,11 @@ enum DevCleanup {
     private static func nodeModules(projects: [String]) -> [CleanupItem] {
         let fm = FileManager.default
         let days = max(Prefs.int(Prefs.devStaleDays), 7)
+        let busy = busyFolders()
         var targets: [String] = []
         var names: [String] = []
         for project in projects {
-            guard let last = lastTouched(project), Date().timeIntervalSince(last) > Double(days) * 86_400 else { continue }
+            guard projectIdle(project, days: days, busy: busy) else { continue }
             // The project and its workspace packages one level down (apps/*, packages/*).
             var folders = [project]
             for group in ["apps", "packages", "services"] {
@@ -256,14 +313,15 @@ enum DevCleanup {
             var found = false
             for folder in folders {
                 for name in ["node_modules", ".next", ".turbo", ".svelte-kit", ".nuxt", ".expo"] where fm.fileExists(atPath: folder + "/" + name) {
-                    targets.append(folder + "/" + name)
+                    targets.append(project + "|" + folder + "/" + name)
                     found = true
                 }
             }
             if found { names.append(short(project)) }
         }
         guard !targets.isEmpty else { return [] }
-        return [CleanupItem(kind: .nodeModules, size: sizes(targets).reduce(0, +), targets: targets, detail: summary(names))]
+        let paths = targets.compactMap { $0.split(separator: "|", maxSplits: 1).last.map(String.init) }
+        return [CleanupItem(kind: .nodeModules, size: sizes(paths).reduce(0, +), targets: targets, detail: summary(names))]
     }
 
     private static func packageCaches(home: String) -> [CleanupItem] {
@@ -304,14 +362,21 @@ enum DevCleanup {
             guard let json = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: String],
                   let type = json["Type"], let reclaimable = json["Reclaimable"].flatMap(dockerBytes), reclaimable > 50 << 20 else { continue }
             if type == "Local Volumes" {
-                let count = Shell.run(cli, ["volume", "ls", "-q", "--filter", "dangling=true"], timeout: 15).output.split(separator: "\n").count
-                items.append(CleanupItem(kind: .dockerVolumes, size: reclaimable, targets: [], detail: L("\(count) volume", "\(count) volumes")))
+                let names = dangling(cli)
+                if !names.isEmpty {
+                    items.append(CleanupItem(kind: .dockerVolumes, size: reclaimable, targets: names, detail: summary(names)))
+                }
             } else if type == "Images" {
                 let dangling = Shell.run(cli, ["images", "-q", "--filter", "dangling=true"], timeout: 15).output.split(separator: "\n").count
                 if dangling > 0 { items.append(CleanupItem(kind: .dockerImages, size: reclaimable, targets: [], detail: L("\(dangling) imaj", "\(dangling) images"))) }
             }
         }
         return items
+    }
+
+    private static func dangling(_ cli: String) -> [String] {
+        Shell.run(cli, ["volume", "ls", "-q", "--filter", "dangling=true"], timeout: 15).output
+            .split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
     }
 
     private static func claudeTranscripts(home: String) -> [CleanupItem] {
@@ -360,13 +425,30 @@ enum DevCleanup {
 
     // MARK: Clean
 
-    /// Runs one clean-up; returns how many bytes it freed (an estimate for the store prunes). Blocking.
+    struct Outcome: Sendable {
+        var freed: UInt64
+        /// Targets left alone because they changed or came into use since the scan, or the tool refused.
+        var skipped = 0
+    }
+
+    /// Runs one clean-up, checking each target again first. Blocking.
     @discardableResult
-    static func clean(_ item: CleanupItem) -> UInt64 {
+    static func clean(_ item: CleanupItem) -> Outcome {
         let fm = FileManager.default
+        var skipped = 0
         switch item.kind {
         case .simUnavailable:
-            Shell.run("/usr/bin/xcrun", ["simctl", "delete", "unavailable"], timeout: 120)
+            // Only the devices the scan listed, and only if still unavailable (not every device an Xcode switch hides).
+            let devices = Shell.run("/usr/bin/xcrun", ["simctl", "list", "devices", "-j"], timeout: 30)
+            let still: Set<String> = {
+                guard devices.ok, let json = try? JSONSerialization.jsonObject(with: Data(devices.output.utf8)) as? [String: Any],
+                      let byRuntime = json["devices"] as? [String: [[String: Any]]] else { return [] }
+                return Set(byRuntime.values.flatMap { $0 }.filter { ($0["isAvailable"] as? Bool) == false }.compactMap { $0["udid"] as? String })
+            }()
+            for udid in item.targets {
+                if still.contains(udid), Shell.run("/usr/bin/xcrun", ["simctl", "delete", udid], timeout: 60).ok { continue }
+                skipped += 1
+            }
         case .simNeverUsed:
             for udid in item.targets { Shell.run("/usr/bin/xcrun", ["simctl", "delete", udid], timeout: 60) }
         case .simRuntimes:
@@ -374,26 +456,48 @@ enum DevCleanup {
         case .xcodePreviews:
             Shell.run("/usr/bin/xcrun", ["simctl", "--set", "previews", "delete", "all"], timeout: 120)
         case .derivedData:
-            for path in item.targets { removeChildren(of: path) }
+            if xcodeBuilding { skipped = item.targets.count } else { for path in item.targets { removeChildren(of: path) } }
         case .buildCopies:
-            for path in item.targets where isXcodeBuildFolder(path) { try? fm.removeItem(atPath: path) }
+            let building = xcodeBuilding
+            for path in item.targets {
+                guard !building, isXcodeBuildFolder(path), !buildBusy(path) else { skipped += 1; continue }
+                for part in buildParts(of: path) { try? fm.removeItem(atPath: part) }
+                // A folder that held nothing but the build goes too; one with anything else stays.
+                let rest = ((try? fm.contentsOfDirectory(atPath: path)) ?? []).filter { !["info.plist", ".ds_store"].contains($0.lowercased()) }
+                if rest.isEmpty { try? fm.removeItem(atPath: path) }
+            }
         case .worktrees:
+            let busy = busyFolders()
             for target in item.targets {
                 let parts = target.split(separator: "|", maxSplits: 1).map(String.init)
-                guard parts.count == 2 else { continue }
-                // `git worktree remove` refuses one with changes, so nothing unsaved can go.
-                Shell.run("git", ["worktree", "remove", parts[1]], in: parts[0], timeout: 60)
+                guard parts.count == 2, let main = defaultBranch(parts[0]), worktreeIsDone(parts[1], main: main, busy: busy),
+                      Shell.run("git", ["worktree", "remove", parts[1]], in: parts[0], timeout: 60).ok else { skipped += 1; continue }
             }
         case .nodeModules:
             let allowed: Set<String> = ["node_modules", ".next", ".turbo", ".svelte-kit", ".nuxt", ".expo"]
-            for path in item.targets where allowed.contains((path as NSString).lastPathComponent) { try? fm.removeItem(atPath: path) }
+            let days = max(Prefs.int(Prefs.devStaleDays), 7)
+            let busy = busyFolders()
+            var idle: [String: Bool] = [:]
+            for target in item.targets {
+                let parts = target.split(separator: "|", maxSplits: 1).map(String.init)
+                guard parts.count == 2, allowed.contains((parts[1] as NSString).lastPathComponent), parts[1].hasPrefix(parts[0] + "/") else { skipped += 1; continue }
+                let ok = idle[parts[0]] ?? projectIdle(parts[0], days: days, busy: busy)
+                idle[parts[0]] = ok
+                if ok { try? fm.removeItem(atPath: parts[1]) } else { skipped += 1 }
+            }
         case .pnpmStore: Shell.run("pnpm", ["store", "prune"], timeout: 600)
         case .npmCache: Shell.run("npm", ["cache", "clean", "--force"], timeout: 600)
         case .brewCache: Shell.run("brew", ["cleanup", "-s", "--prune=all"], timeout: 600)
         case .playwright:
             for path in item.targets where path.contains("/ms-playwright/") { try? fm.removeItem(atPath: path) }
         case .dockerVolumes:
-            if let cli = Docker.cli { Shell.run(cli, ["volume", "prune", "-a", "-f"], timeout: 300) }
+            // By name, and only the listed ones still unused now; never a prune of whatever is loose at this moment.
+            guard let cli = Docker.cli else { skipped = item.targets.count; break }
+            let now = Set(dangling(cli))
+            for name in item.targets {
+                if now.contains(name), Shell.run(cli, ["volume", "rm", name], timeout: 120).ok { continue }
+                skipped += 1
+            }
         case .dockerImages:
             if let cli = Docker.cli { Shell.run(cli, ["image", "prune", "-f"], timeout: 300) }
         case .claudeTranscripts:
@@ -401,13 +505,22 @@ enum DevCleanup {
                 try? fm.trashItem(at: URL(fileURLWithPath: path), resultingItemURL: nil)
             }
         case .mergedBranches:
+            var stillMerged: [String: Set<String>] = [:]
             for target in item.targets {
                 let parts = target.split(separator: "|", maxSplits: 1).map(String.init)
-                guard parts.count == 2 else { continue }
-                Shell.run("git", ["branch", "-d", parts[1]], in: parts[0], timeout: 15)
+                guard parts.count == 2 else { skipped += 1; continue }
+                // Still in main and checked out nowhere, as decided now (`-d` alone only checks the upstream).
+                if stillMerged[parts[0]] == nil {
+                    let main = defaultBranch(parts[0])
+                    let merged = main.map { Shell.run("git", ["branch", "--merged", $0, "--format", "%(refname:short)%09%(HEAD)%09%(worktreepath)"],
+                                                      in: parts[0], timeout: 15) }
+                    stillMerged[parts[0]] = merged.flatMap { $0.ok ? Set(deletableBranches($0.output, main: main ?? "")) : nil } ?? []
+                }
+                guard stillMerged[parts[0]]?.contains(parts[1]) == true,
+                      Shell.run("git", ["branch", "-d", parts[1]], in: parts[0], timeout: 15).ok else { skipped += 1; continue }
             }
         }
-        return item.size
+        return Outcome(freed: skipped == 0 ? item.size : item.size / 2, skipped: skipped)
     }
 
     // MARK: Rules (pure, tested)
@@ -531,10 +644,30 @@ enum DevCleanup {
         return nil
     }
 
+    /// Untouched for `days`, nothing uncommitted, and no process working in it (a dev server needs its modules).
+    static func projectIdle(_ project: String, days: Int, busy: [String]) -> Bool {
+        guard !isBusy(project, busy: busy), let last = lastTouched(project), Date().timeIntervalSince(last) > Double(days) * 86_400 else { return false }
+        let status = Shell.run("git", ["--no-optional-locks", "status", "--porcelain"], in: project, timeout: 15)
+        return !status.ok || status.output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// The newest change: git's own files (wherever the git dir is, worktrees too), package.json and the source
+    /// folders' top levels, so weeks of uncommitted editing count as use.
     private static func lastTouched(_ project: String) -> Date? {
         let fm = FileManager.default
-        let candidates = [project + "/.git/logs/HEAD", project + "/.git/index", project + "/package.json"]
-        return candidates.compactMap { (try? fm.attributesOfItem(atPath: $0))?[.modificationDate] as? Date }.max()
+        var paths = [project + "/package.json"]
+        let gitDir = Shell.run("git", ["rev-parse", "--absolute-git-dir"], in: project, timeout: 10)
+        if gitDir.ok {
+            let dir = gitDir.output.trimmingCharacters(in: .whitespacesAndNewlines)
+            paths += [dir + "/logs/HEAD", dir + "/index", dir + "/HEAD"]
+        }
+        for folder in ["", "/src", "/app", "/pages", "/lib", "/components", "/server", "/apps", "/packages"] {
+            let dir = project + folder
+            for name in (try? fm.contentsOfDirectory(atPath: dir)) ?? [] where !name.hasPrefix(".") && name != "node_modules" {
+                paths.append(dir + "/" + name)
+            }
+        }
+        return paths.compactMap { (try? fm.attributesOfItem(atPath: $0))?[.modificationDate] as? Date }.max()
     }
 
     private static func hasLockfile(_ project: String) -> Bool {
@@ -612,12 +745,14 @@ final class DevCleanupStore {
         }
         cleaning.insert(item.kind)
         Task {
-            await Task.detached(priority: .userInitiated) { DevCleanup.clean(item) }.value
+            let outcome = await Task.detached(priority: .userInitiated) { DevCleanup.clean(item) }.value
             cleaning.remove(item.kind)
             items.removeAll { $0.kind == item.kind }
             lastTotal = total
             UserDefaults.standard.set(Double(total), forKey: "devCleanup.total")
-            Monitor.panelActions.flash(L("\(item.title): temizlendi", "\(item.title): cleaned"))
+            Monitor.panelActions.flash(outcome.skipped == 0 ? L("\(item.title): temizlendi", "\(item.title): cleaned")
+                : L("\(item.title): \(outcome.skipped) tanesi kullanımda ya da değişmiş, bırakıldı", "\(item.title): \(outcome.skipped) in use or changed, left alone"))
+            if outcome.skipped > 0 { scan() }
         }
     }
 
@@ -631,7 +766,7 @@ final class DevCleanupStore {
             let safe = items.filter(\.isSafe)
             guard !safe.isEmpty else { return }
             for item in safe { cleaning.insert(item.kind) }
-            let freed = await Task.detached(priority: .utility) { safe.reduce(UInt64(0)) { $0 + DevCleanup.clean($1) } }.value
+            let freed = await Task.detached(priority: .utility) { safe.reduce(UInt64(0)) { $0 + DevCleanup.clean($1).freed } }.value
             for item in safe { cleaning.remove(item.kind) }
             items.removeAll(where: \.isSafe)
             lastTotal = total

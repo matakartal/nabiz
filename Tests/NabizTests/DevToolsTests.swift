@@ -286,4 +286,25 @@ struct DevToolsTests {
         ])
         #expect(apps.map(\.name) == ["Alpha", "OrtakBul"])
     }
+
+    @Test func cleanUpLeavesWhatCannotComeBack() throws {
+        // A worktree keeps its .env or a local database; only rebuildable leftovers may be ignored.
+        #expect(DevCleanup.onlyRegenerable(""))
+        #expect(DevCleanup.onlyRegenerable("!! node_modules/\n!! apps/web/.next/\n!! .DS_Store"))
+        #expect(!DevCleanup.onlyRegenerable("!! .env"))
+        #expect(!DevCleanup.onlyRegenerable("!! node_modules/\n!! dev.sqlite"))
+        #expect(!DevCleanup.onlyRegenerable("?? notes.md"))
+        #expect(!DevCleanup.onlyRegenerable(" M Sources/App.swift"))
+        // Only agents' worktrees; a person's hotfix worktree is theirs.
+        #expect(DevCleanup.isAgentWorktree("/Users/me/Developer/app/.claude/worktrees/fix-1"))
+        #expect(!DevCleanup.isAgentWorktree("/Users/me/Developer/app-hotfix"))
+        // A project folder holding a build: only the build parts go.
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("nabiz-build-\(UUID().uuidString)").path
+        defer { try? FileManager.default.removeItem(atPath: folder) }
+        for sub in ["Build/Intermediates.noindex", "Logs/Build", "Sources"] {
+            try FileManager.default.createDirectory(atPath: folder + "/" + sub, withIntermediateDirectories: true)
+        }
+        #expect(DevCleanup.isXcodeBuildFolder(folder))
+        #expect(Set(DevCleanup.buildParts(of: folder).map { ($0 as NSString).lastPathComponent }) == ["Build", "Logs"])
+    }
 }
