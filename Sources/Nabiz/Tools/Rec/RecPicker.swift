@@ -98,6 +98,9 @@ final class RecPickerPanel: NSPanel {
         backgroundColor = .clear
         isOpaque = false
         hasShadow = false
+        // Said out loud, so the see-through parts (the lit window, the area) take clicks too instead of passing
+        // them to the app underneath.
+        ignoresMouseEvents = false
         acceptsMouseMovedEvents = true
         isFloatingPanel = true
         becomesKeyOnlyIfNeeded = false
@@ -124,6 +127,8 @@ final class RecPickerView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
+        // An all-but-invisible coat, so no pixel is fully clear and every click lands here.
+        layer?.backgroundColor = CGColor(gray: 0, alpha: 0.003)
         shade.fillRule = .evenOdd
         shade.fillColor = CGColor(gray: 0, alpha: 0.38)
         outline.fillColor = nil
