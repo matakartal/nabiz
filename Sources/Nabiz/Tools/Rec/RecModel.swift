@@ -325,4 +325,9 @@ enum RecStore {
     static func delete(_ id: UUID) {
         try? FileManager.default.removeItem(at: folder(for: id))
     }
+
+    /// Moves a recording to the Trash (it can still be put back from there).
+    static func trash(_ id: UUID) -> Bool {
+        (try? FileManager.default.trashItem(at: folder(for: id), resultingItemURL: nil)) != nil
+    }
 }

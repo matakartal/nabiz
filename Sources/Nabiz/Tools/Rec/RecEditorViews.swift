@@ -65,6 +65,7 @@ struct RecEditorView: View {
             BarButton(symbol: "folder", help: L("Kaydın dosyası", "The recording's file")) {
                 NSWorkspace.shared.activateFileViewerSelecting([RecStore.video(for: model.meta.id)])
             }
+            BarButton(symbol: "trash", help: L("Kaydı sil", "Delete the recording")) { RecEditor.confirmDelete(model.meta.id) }
             if let progress = model.exportProgress {
                 HStack(spacing: Theme.Spacing.s) {
                     ProgressView(value: progress).progressViewStyle(.linear).frame(width: 110).controlSize(.small)

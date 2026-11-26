@@ -58,6 +58,20 @@ enum RecEditor {
         return true
     }
 
+    /// Asks, then closes the editor and moves the recording to the Trash. Exported videos stay.
+    static func confirmDelete(_ id: UUID) {
+        let alert = NSAlert()
+        alert.messageText = L("Kayıt silinsin mi?", "Delete this recording?")
+        alert.informativeText = L("Kayıt ve düzenlemeleri Çöp Sepeti'ne gider. Dışa aktardığın videolar kalır.",
+                                  "The recording and its edits go to the Trash. Videos you exported stay.")
+        alert.addButton(withTitle: L("Sil", "Delete"))
+        alert.addButton(withTitle: L("Vazgeç", "Cancel"))
+        alert.buttons.first?.hasDestructiveAction = true
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        _ = closeIfOpen(id)
+        if !RecStore.trash(id) { Monitor.panelActions.flash(L("Kayıt silinemedi", "Couldn't delete the recording")) }
+    }
+
     /// The most recent recording, if any.
     static func showLatest() {
         if let latest = RecStore.all().first { show(latest) } else { Monitor.panelActions.flash(L("Henüz kayıt yok", "No recordings yet")) }
