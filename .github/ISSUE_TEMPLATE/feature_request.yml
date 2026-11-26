@@ -2,10 +2,46 @@ name: Feature request
 description: An idea for a new tool, section or setting.
 labels: [enhancement]
 body:
+  - type: markdown
+    attributes:
+      value: Nabız stays small, native and calm — see "What Nabız is (and isn't)" in CONTRIBUTING.md. Not sure yet? Start in Discussions.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Panel or menu bar
+        - Developer tools
+        - AI
+        - MCP
+        - Launcher or clipboard
+        - Screenshots or recordings
+        - Other tools
+        - Settings
+        - Something new
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What's hard or slow today? Who runs into it, and how often?
+    validations:
+      required: true
   - type: textarea
     id: idea
     attributes:
-      label: What would you like Nabız to do?
-      description: The problem first, then the idea. Who would use it, and how often?
+      label: The idea
+      description: What Nabız could do about it. A sketch or a screenshot of something similar helps.
     validations:
       required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you do now instead
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Helping
+      options:
+        - label: I'd like to build this myself (read CONTRIBUTING.md and docs/DESIGN.md first).

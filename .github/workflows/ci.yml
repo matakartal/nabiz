@@ -1,0 +1,41 @@
+name: CI
+
+# Every pull request and every push to main: the repository's rules on the changed lines, then tests and a build.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rules:
+    name: Rules (header, design, words)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check the changed lines
+        run: python3 scripts/pr-check.py "${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}"
+
+  test:
+    name: Tests and build
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use the newest Xcode on the runner
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)" && swift --version
+      - name: Run the tests
+        run: swift test
+      - name: Build the universal app
+        run: ./build.sh
+      - name: Check the calculator
+        run: |
+          test "$(build/Nabiz.app/Contents/MacOS/Nabiz --calc '12*4')" = "= 48"
+          test "$(build/Nabiz.app/Contents/MacOS/Nabiz --calc '5 km mi')" != "—"

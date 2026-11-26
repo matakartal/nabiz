@@ -1,16 +1,20 @@
 ## What this changes
 
-<!-- One or two sentences about what users will notice, and why. Link the issue it closes. -->
+<!-- One or two sentences about what users will notice, and why. Link the issue it closes: "Closes #12". -->
 
 ## Screenshots
 
 <!-- Before and after, light and dark, for anything visible. Delete if nothing visible changed. -->
 
+## AI
+
+<!-- Which parts were written with an AI tool, if any. You are still the author: you read and tested every line. -->
+
 ## Checked
 
 - [ ] I read [CONTRIBUTING.md](../CONTRIBUTING.md) and [docs/DESIGN.md](../docs/DESIGN.md)
 - [ ] `./build.sh` builds without warnings and `swift test` passes; new logic has tests
-- [ ] `python3 scripts/lint-ui.py <changed files>` reports nothing for code I touched
+- [ ] `python3 scripts/pr-check.py` reports nothing (CI runs it too)
 - [ ] Looked at it in light and dark mode, frosted and opaque, Turkish and English
 - [ ] New strings use `L("Türkçe", "English")`; sizes, colours and spacing come from `Theme`
 - [ ] Every row is one line; orange only for running low, red only for danger

@@ -1,0 +1,7 @@
+* text=auto eol=lf
+*.swift diff=swift
+*.png binary
+*.jpg binary
+*.icns binary
+*.dmg binary
+docs/** linguist-documentation

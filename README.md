@@ -272,7 +272,7 @@ Every user-facing string is written in both languages side by side: `L("Türkçe
 
 </details>
 
-Bug reports and ideas are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md), the design rules in
+Bug reports, ideas and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md), [SUPPORT.md](SUPPORT.md), the design rules in
 [docs/DESIGN.md](docs/DESIGN.md) and [SECURITY.md](SECURITY.md).
 
 ## Author

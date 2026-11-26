@@ -1,1 +1,8 @@
 blank_issues_enabled: false
+contact_links:
+  - name: Question or idea to talk through
+    url: https://github.com/matakartal/nabiz/discussions
+    about: Ask and share in Discussions; issues are for bugs and concrete feature requests.
+  - name: Security problem
+    url: https://github.com/matakartal/nabiz/security/advisories/new
+    about: Report it privately, never in a public issue.

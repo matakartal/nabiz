@@ -1,7 +1,8 @@
 # Contributing
 
 Thanks for helping. Nabız is open source under the [GPL v3 or later](LICENSE); the name and icon are kept apart
-([TRADEMARK.md](TRADEMARK.md)).
+([TRADEMARK.md](TRADEMARK.md)). Everyone taking part follows the [code of conduct](CODE_OF_CONDUCT.md); questions go
+to [Discussions](../../discussions) (see [SUPPORT.md](SUPPORT.md)).
 
 ## Ways to help
 
@@ -11,8 +12,28 @@ Thanks for helping. Nabız is open source under the [GPL v3 or later](LICENSE); 
 - **Propose a change** with a pull request. By sending one you agree that it is your own work (or you may send it)
   and that it is licensed under the GPL v3 or later, like the rest of Nabız.
 
+New here? Pick an issue labelled [good first issue](../../issues?q=is%3Aopen+label%3A%22good+first+issue%22) and
+say you're taking it, so two people don't do the same work.
+
 Open an issue before a large change, so we can agree on it before you spend time on it. Pull requests that don't
 follow these rules are closed or sent back; that's not personal.
+
+## How decisions are made
+
+Nabız has one maintainer, who decides what goes in, how it looks and when it ships. A "no" usually means the idea
+doesn't fit what Nabız is (below), not that it's a bad idea. Reviews happen when there's time — usually within a week.
+Releases, version numbers, signing and the changelog's final wording are the maintainer's.
+
+## AI-assisted contributions
+
+Using Claude, Codex, Copilot or any other tool is fine. You are still the author:
+
+- read and understand every line you send, and be ready to explain it;
+- say in the pull request which parts were written with AI;
+- run the checks yourself — a pull request that obviously wasn't built or tested is closed;
+- keep it small; a large generated change that touches many unrelated files won't be reviewed.
+
+Agents working in this repository read [AGENTS.md](AGENTS.md), which points them at these rules.
 
 ## What Nabız is (and isn't)
 
@@ -78,16 +99,24 @@ screenshots in light and dark mode.
 ## Commits and pull requests
 
 - One topic per pull request, small enough to review in one sitting. Rebase on `main`; no merge commits.
+- No drive-by reformatting, renaming or "clean-up" of code you didn't otherwise change, and no new dependencies.
 - Commit messages: `feat: …`, `fix: …`, `docs: …`, `chore: …`, then a short plain sentence about the user-visible
   effect ("fix: the weather no longer asks the server every few seconds while offline").
 - The pull request says what changes and why, how you checked it, and shows screenshots for anything visible.
 - Releases, version numbers and signing are done by the maintainer.
+
+## Automatic checks
+
+Every pull request runs [CI](.github/workflows/ci.yml): `scripts/pr-check.py` on the lines you added (copyright
+header, design tokens, `L("tr", "en")` for user-facing text, no `try!`, no secrets or huge files), then the tests and a
+universal build on macOS. A red check means the pull request isn't ready yet. Older code that predates the rules
+doesn't block you; only what you add is checked.
 
 ## Checking your change
 
 ```bash
 ./build.sh                                   # builds without warnings
 swift test                                   # all tests pass
-python3 scripts/lint-ui.py <changed files>   # 0 design findings in code you touched
+python3 scripts/pr-check.py                  # the same rules CI runs, on what you changed
 build/Nabiz.app/Contents/MacOS/Nabiz --snapshot panel.png --dark
 ```

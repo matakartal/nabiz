@@ -1,7 +1,7 @@
 name: Build
 
-# Run by hand only (Actions → Build → Run workflow): private-repo macOS minutes are paid, and without them every
-# automatic run fails before starting and sends an email. release.sh runs the same tests locally before each release.
+# By hand (Actions → Build → Run workflow): a universal DMG as a download, for testing a branch. Pull requests and
+# main are checked by ci.yml; releases are built, signed and notarized locally by release.sh.
 on:
   workflow_dispatch:
 
