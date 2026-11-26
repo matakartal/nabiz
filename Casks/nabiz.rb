@@ -1,5 +1,5 @@
 # Nabız — © 2026 Mehmet Ata Kartal. Licensed under GPL-3.0-or-later; see LICENSE.
-# Install: brew install --cask matakartal/nabiz/nabiz   (after: brew tap matakartal/nabiz https://github.com/matakartal/nabiz)
+# Install: brew install --cask matakartal/nabiz/nabiz   (after: brew tap matakartal/nabiz https://github.com/matakartal/nabiz && brew trust matakartal/nabiz)
 cask "nabiz" do
   version "1.10.0"
   sha256 "a8dd6d252608093f62bcbfca76cf263b90916da09ce84806f502da05e1df2cab"
@@ -15,7 +15,7 @@ cask "nabiz" do
   end
 
   auto_updates true
-  depends_on macos: ">= :sonoma"
+  depends_on macos: :sonoma
 
   app "Nabiz.app"
 

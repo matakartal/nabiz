@@ -36,7 +36,7 @@ Claude、Codex、Grok、Gemini 订阅）、开发服务器与端口、启动器�
 ## 安装
 
 ```bash
-brew tap matakartal/nabiz https://github.com/matakartal/nabiz && brew install --cask matakartal/nabiz/nabiz
+brew tap matakartal/nabiz https://github.com/matakartal/nabiz && brew trust matakartal/nabiz && brew install --cask matakartal/nabiz/nabiz
 ```
 
 或从 [Releases](../../releases/latest) 下载 `Nabiz-x.y.z.dmg`，拖入“应用程序”文件夹。已签名并经 Apple 公证，

@@ -63,7 +63,7 @@ Sen yazıyorsun, ajanlar kuruyor, Mac'in sessizce doluyor. Nabız bu çalışma 
 ## Kurulum
 
 ```bash
-brew tap matakartal/nabiz https://github.com/matakartal/nabiz && brew install --cask matakartal/nabiz/nabiz
+brew tap matakartal/nabiz https://github.com/matakartal/nabiz && brew trust matakartal/nabiz && brew install --cask matakartal/nabiz/nabiz
 ```
 
 Ya da:

@@ -18,7 +18,7 @@ launcher, clipboard, screenshots and Screen Studio–style recordings.
 <a href="https://x.com/mehmetatakartal"><img src="https://img.shields.io/badge/follow-%40mehmetatakartal-000?logo=x&logoColor=white" alt="Follow @mehmetatakartal on X"></a>
 
 ```bash
-brew tap matakartal/nabiz https://github.com/matakartal/nabiz && brew install --cask matakartal/nabiz/nabiz
+brew tap matakartal/nabiz https://github.com/matakartal/nabiz && brew trust matakartal/nabiz && brew install --cask matakartal/nabiz/nabiz
 ```
 
 [Features](#features) · [Install](#install) · [Use it from Claude Code](#use-it-from-claude-code-and-cursor) · [Privacy](#privacy) · [Türkçe](README.tr.md) · [简体中文](README.zh-CN.md)
@@ -178,7 +178,7 @@ Settings has a searchable sidebar in Turkish and English, and **What can it do?*
 **Homebrew:**
 
 ```bash
-brew tap matakartal/nabiz https://github.com/matakartal/nabiz && brew install --cask matakartal/nabiz/nabiz
+brew tap matakartal/nabiz https://github.com/matakartal/nabiz && brew trust matakartal/nabiz && brew install --cask matakartal/nabiz/nabiz
 ```
 
 **Or download** `Nabiz-x.y.z.dmg` from [Releases](../../releases/latest), open it and drag Nabız to Applications.
