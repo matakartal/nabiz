@@ -289,6 +289,7 @@ enum SettingsIndex {
         // Calendar
         .init(.calendar, "calendar.main", "Takvimi göster", "Show the calendar", "etkinlik event"),
         .init(.weather, "weather.main", "Hava durumunu panelde göster", "Show the weather in the panel", "hava weather sıcaklık temperature"),
+        .init(.weather, "weather.main", "Nem ve rüzgâr satırı", "Humidity and wind row", "nem humidity rüzgâr rüzgar wind"),
         .init(.weather, "weather.main", "Menü çubuğunda sıcaklık", "Temperature in the menu bar", "derece degrees hava weather"),
         .init(.weather, "weather.main", "Sıcaklık birimi", "Temperature unit", "celsius fahrenheit santigrat °c °f"),
         .init(.weather, "weather.city", "Hava durumu şehri", "Weather city", "konum location şehir city yer place"),

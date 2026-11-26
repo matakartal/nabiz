@@ -4,6 +4,8 @@
 
 - **Open source:** Nabız is now free software under the GPL v3. The name and icon stay with the author; forks use their
   own (see TRADEMARK.md).
+- **Weather:** the menu bar temperature now has the sky's symbol next to it, and the panel can show a humidity and
+  wind row (Settings → Weather).
 
 ## 1.10.0
 

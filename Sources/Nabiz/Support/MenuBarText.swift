@@ -10,6 +10,8 @@ struct MenuBarPart {
     let label: String
     let value: String
     var tone: Tone = .normal
+    /// An SF Symbol drawn just before the value in the stacked layout (the weather's condition).
+    var symbol: String? = nil
 
     var color: NSColor {
         switch tone {
@@ -28,8 +30,10 @@ struct MenuBarPart {
 enum MenuBarText {
     static var stacked: Bool { Prefs.string(Prefs.barStyle) != "line" }
 
-    static func parts(monitor: Monitor?) -> [MenuBarPart] {
-        var parts = MenuBarItem.allCases.filter { Prefs.bool($0.key) }.compactMap { part(for: $0, monitor: monitor) }
+    /// `weather` and `rate` default to the live stores; tests pass fixed ones.
+    static func parts(monitor: Monitor?, weather: WeatherStore.Report? = WeatherStore.shared.report,
+                      rate: (_ from: String, _ to: String) -> Double? = { RateStore.shared.convert(1, from: $0, to: $1) }) -> [MenuBarPart] {
+        var parts = MenuBarItem.allCases.filter { Prefs.bool($0.key) }.compactMap { part(for: $0, monitor: monitor, weather: weather, rate: rate) }
         // A running timer always shows first: it is what the user is waiting on.
         if let left = CountdownTimer.shared.remainingText {
             parts.insert(MenuBarPart(item: .timer, label: L("Süre", "Timer"), value: left), at: 0)
@@ -77,7 +81,8 @@ enum MenuBarText {
         return line
     }
 
-    private static func part(for item: MenuBarItem, monitor: Monitor?) -> MenuBarPart? {
+    private static func part(for item: MenuBarItem, monitor: Monitor?, weather: WeatherStore.Report?,
+                             rate: (String, String) -> Double?) -> MenuBarPart? {
         let system = monitor?.system
         /// CPU/GPU: red when pegged, orange when busy.
         func load(_ value: Double?) -> MenuBarPart.Tone {
@@ -133,9 +138,12 @@ enum MenuBarText {
         case .currency:
             let base = Prefs.string(Prefs.baseCurrency)
             guard let code = Prefs.watched.first(where: { $0 != base }) else { return nil }
-            return make(code, RateStore.shared.convert(1, from: code, to: base).map { Format.number($0, maxDigits: 2, minDigits: 2) })
+            return make(code, rate(code, base).map { Format.number($0, maxDigits: 2, minDigits: 2) })
         case .weather:
-            return make(L("Hava", "Temp"), WeatherStore.shared.report.map { Format.degrees($0.temperature) })
+            guard let weather else { return nil }
+            var part = make(L("Hava", "Temp"), Format.degrees(weather.temperature))
+            part?.symbol = WeatherCode.symbol(weather.code, day: weather.isDay)
+            return part
         }
     }
 
@@ -144,7 +152,7 @@ enum MenuBarText {
         let labelFont = NSFont.systemFont(ofSize: 9, weight: .medium)
         let valueFont = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
         let coloured = Prefs.bool(Prefs.barColors) && parts.contains { $0.tone != .normal }
-        let columns = parts.map { part -> (label: NSAttributedString, value: NSAttributedString, width: CGFloat, roll: BarRoll.Frame?) in
+        let columns = parts.map { part -> (label: NSAttributedString, value: NSAttributedString, symbol: NSImage?, width: CGFloat, roll: BarRoll.Frame?) in
             // Template images draw in black and the system tints them; coloured ones use the menu bar's label colour.
             let color: NSColor = coloured ? .labelColor : .black
             let valueColor: NSColor = coloured ? part.color : .black
@@ -153,7 +161,9 @@ enum MenuBarText {
             let label = NSAttributedString(string: part.label, attributes: [.font: labelFont, .foregroundColor: color])
             let value = NSAttributedString(string: part.value, attributes: valueAttributes)
             let roll = part.item == .network ? nil : BarRoll.shared.frame(key: "\(part.item.rawValue).\(part.label)", value: part.value)
-            return (label, value, ceil(max(label.size().width, value.size().width)), roll)
+            let symbol = part.symbol.flatMap { symbolImage($0, color: valueColor) }
+            let valueWidth = value.size().width + (symbol.map { $0.size.width + symbolGap } ?? 0)
+            return (label, value, symbol, ceil(max(label.size().width, valueWidth)), roll)
         }
         let iconSize: CGFloat = 16, iconGap: CGFloat = 5, columnGap: CGFloat = 8
         let width = (icon == nil ? 0 : iconSize + (columns.isEmpty ? 0 : iconGap))
@@ -182,11 +192,19 @@ enum MenuBarText {
             let overlap: CGFloat = 2
             let bottom = (height - (labelHeight + valueHeight - overlap)) / 2
             for column in columns {
-                let box = NSRect(x: x, y: bottom, width: column.width, height: valueHeight)
+                // The symbol sits on the value line, centred on its digits.
+                var valueX = x
+                if let symbol = column.symbol {
+                    let digits = valueFont.capHeight
+                    let y = bottom - valueFont.descender + (digits - symbol.size.height) / 2
+                    symbol.draw(in: NSRect(x: x, y: y, width: symbol.size.width, height: symbol.size.height))
+                    valueX += symbol.size.width + symbolGap
+                }
+                let box = NSRect(x: valueX, y: bottom, width: column.width - (valueX - x), height: valueHeight)
                 if let roll = column.roll {
                     BarRoll.draw(roll, value: column.value, in: box)
                 } else {
-                    column.value.draw(at: NSPoint(x: x, y: bottom))
+                    column.value.draw(at: NSPoint(x: valueX, y: bottom))
                 }
                 column.label.draw(at: NSPoint(x: x, y: bottom + valueHeight - overlap))
                 x += column.width + columnGap
@@ -196,6 +214,20 @@ enum MenuBarText {
         // Template (tinted by the system) unless coloured values are on and something has a colour to show.
         image.isTemplate = !(Prefs.bool(Prefs.barColors) && parts.contains { $0.tone != .normal })
         return image
+    }
+
+    private static let symbolGap: CGFloat = 2
+
+    /// A small symbol filled with one colour, so it can be drawn into the menu bar image like the text.
+    private static func symbolImage(_ name: String, color: NSColor) -> NSImage? {
+        guard let symbol = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 10, weight: .semibold)) else { return nil }
+        return NSImage(size: symbol.size, flipped: false) { rect in
+            symbol.draw(in: rect)
+            color.set()
+            rect.fill(using: .sourceAtop)
+            return true
+        }
     }
 }
 

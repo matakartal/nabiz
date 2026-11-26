@@ -1205,6 +1205,7 @@ private struct WeatherPage: View {
     @AppStorage(Prefs.showWeather) private var show = true
     @AppStorage(Prefs.barWeather) private var bar = false
     @AppStorage(Prefs.weatherUnit) private var unit = "system"
+    @AppStorage(Prefs.weatherDetails) private var details = false
     @AppStorage(Prefs.weatherPlace) private var placeData = Data()
     @State private var query = ""
     @State private var results: [WeatherStore.Place] = []
@@ -1218,6 +1219,7 @@ private struct WeatherPage: View {
             Section {} header: { PageHeader(page: .weather) }
             SettingsSection("weather.main") {
                 Toggle(L("Panelde göster", "Show in the panel"), isOn: $show)
+                Toggle(L("Nem ve rüzgâr satırı", "Humidity and wind row"), isOn: $details)
                 Toggle(L("Menü çubuğunda sıcaklık", "Temperature in the menu bar"), isOn: $bar)
                 Picker(L("Birim", "Unit"), selection: $unit) {
                     Text(L("Sistem", "System")).tag("system")

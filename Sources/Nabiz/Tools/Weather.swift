@@ -52,6 +52,17 @@ final class WeatherStore {
         var utcOffset: Int?
 
         var timeZone: TimeZone { utcOffset.flatMap { TimeZone(secondsFromGMT: $0) } ?? .current }
+
+        /// "humidity 71% · wind 9 km/h", or just the one Open-Meteo sent; nil when it sent neither.
+        var humidityAndWind: String? {
+            var parts: [String] = []
+            if let humidity { parts.append(L("nem %\(humidity)", "humidity \(humidity)%")) }
+            if let wind {
+                let unit = fahrenheit ? "mph" : L("km/sa", "km/h")
+                parts.append(L("rüzgâr \(Int(wind.rounded())) \(unit)", "wind \(Int(wind.rounded())) \(unit)"))
+            }
+            return parts.isEmpty ? nil : parts.joined(separator: " · ")
+        }
     }
 
     private(set) var report: Report?

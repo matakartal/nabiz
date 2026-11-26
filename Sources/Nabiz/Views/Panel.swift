@@ -576,6 +576,7 @@ private struct CurrencySection: View {
 /// Now, rain on the way, the next sunrise or sunset and the coming days, one line each. Any row opens Weather.
 private struct WeatherSection: View {
     let report: WeatherStore.Report
+    @AppStorage(Prefs.weatherDetails) private var showDetails = false
 
     var body: some View {
         let open = { WeatherStore.openWeatherApp() }
@@ -585,6 +586,9 @@ private struct WeatherSection: View {
             Value(Format.degrees(report.temperature), color: Theme.text)
         }
         .help(details)
+        if showDetails, let line = report.humidityAndWind {
+            PanelRow(icon: .symbol("humidity"), title: line, action: open) { _ in EmptyView() }
+        }
         if let rain = report.nextRain {
             PanelRow(icon: .symbol("umbrella"), title: WeatherCode.title(rain.code), subtitle: L("%\(rain.rain) ihtimal", "\(rain.rain)% chance"),
                      action: open) { _ in
@@ -608,11 +612,7 @@ private struct WeatherSection: View {
 
     private var details: String {
         var parts = [report.place.detail.isEmpty ? report.place.name : "\(report.place.name), \(report.place.detail)"]
-        if let humidity = report.humidity { parts.append(L("nem %\(humidity)", "humidity \(humidity)%")) }
-        if let wind = report.wind {
-            let unit = report.fahrenheit ? "mph" : L("km/sa", "km/h")
-            parts.append(L("rüzgâr \(Int(wind.rounded())) \(unit)", "wind \(Int(wind.rounded())) \(unit)"))
-        }
+        if let line = report.humidityAndWind { parts.append(line) }
         parts.append(L("Open-Meteo · Hava'da açmak için tıkla", "Open-Meteo · click to open Weather"))
         return parts.joined(separator: " · ")
     }

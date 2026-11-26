@@ -72,6 +72,8 @@ enum Prefs {
     static let weatherPlace = "weatherPlace"
     /// "system", "c" or "f".
     static let weatherUnit = "weatherUnit"
+    /// A panel row with the humidity and wind.
+    static let weatherDetails = "weatherDetails"
     static let showTools = "showTools"
     static let showAI = "showAI"
     static let memoryAppCount = "memoryAppCount"
@@ -223,7 +225,7 @@ enum Prefs {
             showAdvice: true, showSimulators: true, showPorts: true, showProjects: true, projectCount: 5, showDocker: true,
             devEditor: "", devAgent: "claude", notaryWatch: true, notaryProfile: "", devStaleDays: 30,
             "expanded.projects": true, "expanded.docker": true, showDisplays: true, brightnessKeys: false,
-            menuBarHider: false, menuBarHiderDelay: 10, showApps: true, showCurrency: true, showWeather: true, barWeather: false, weatherUnit: "system", "expanded.weather": false, showTools: true, showAI: true,
+            menuBarHider: false, menuBarHiderDelay: 10, showApps: true, showCurrency: true, showWeather: true, barWeather: false, weatherUnit: "system", weatherDetails: false, "expanded.weather": false, showTools: true, showAI: true,
             "ai.claude": false, "ai.codex": false, "ai.gemini": false,
             memoryAppCount: 5, cpuAppCount: 3,
             baseCurrency: "TRY", watchedCurrencies: "USD,EUR,GBP",
