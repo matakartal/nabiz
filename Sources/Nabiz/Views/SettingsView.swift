@@ -594,11 +594,6 @@ private struct ScreenshotPage: View {
                 Footnote(L("Kısayola bas, alanı seç: önizlemeden düzenleyiciyi açar, ok, metin, bulanıklık ve çerçeve eklersin.",
                            "Press the shortcut and pick an area: from the thumbnail open the editor to add arrows, text, blur and a frame."))
             }
-            SettingsSection("screenshot.classic") {
-                ClassicShotRow()
-            } header: {
-                SectionTitle(L("macOS kısayolları", "macOS shortcuts"))
-            }
         }
         .formStyle(.grouped)
     }
@@ -2840,51 +2835,6 @@ private struct LayoutPreview: View {
 }
 
 /// One global shortcut: on/off, and a button that records a new key combination.
-/// ⌘⇧3 / ⌘⇧4 answered by Nabız: turning it on turns macOS's own off (and back on when turned off or on quit).
-private struct ClassicShotRow: View {
-    @AppStorage(Prefs.shotClassic) private var on = false
-    @State private var systemOn = true
-    @State private var working = false
-
-    var body: some View {
-        LabeledContent {
-            HStack(spacing: Theme.Spacing.m) {
-                if working { ProgressView().controlSize(.small) }
-                Toggle(L("macOS kısayolları", "macOS shortcuts"), isOn: Binding(get: { on }, set: change))
-                    .labelsHidden().toggleStyle(.switch).controlSize(.small)
-                    .disabled(working)
-            }
-        } label: {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(L("⌘⇧3 ve ⌘⇧4 Nabız'da", "⌘⇧3 and ⌘⇧4 in Nabız"))
-                if on && systemOn && !working {
-                    HStack(spacing: Theme.Spacing.xs) {
-                        Text(L("macOS'unkiler hâlâ açık, önce onlar çalışıyor.", "macOS's own are still on and win."))
-                            .font(Theme.small).foregroundStyle(Theme.warning.mark)
-                        Button(L("Ayarları aç", "Open Settings")) { SystemScreenshotKeys.openSettings() }
-                            .buttonStyle(TextButtonStyle(font: Theme.small, color: Theme.accent))
-                    }
-                } else {
-                    Text(L("⌘⇧3 tüm ekran, ⌘⇧4 alan (Boşluk: pencere) dosyaya; ⌃ ile panoya. ⌘⇧5 macOS'ta kalır.",
-                           "⌘⇧3 whole screen, ⌘⇧4 area (then Space: window) to a file; with ⌃ to the clipboard. ⌘⇧5 stays with macOS."))
-                        .font(Theme.small).foregroundStyle(Theme.textMuted)
-                }
-            }
-        }
-        .onAppear { systemOn = SystemScreenshotKeys.anyOn }
-    }
-
-    private func change(_ next: Bool) {
-        working = true
-        Task {
-            _ = await SystemScreenshotKeys.set(on: !next)
-            on = next
-            systemOn = SystemScreenshotKeys.anyOn
-            working = false
-        }
-    }
-}
-
 private struct HotKeyRow: View {
     let title: String
     let shortcut: HotKey.Shortcut

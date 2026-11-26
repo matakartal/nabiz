@@ -127,8 +127,6 @@ enum HotKey {
     enum Shortcut: UInt32, CaseIterable {
         case launcher = 1, panel = 2, clipboard = 3, note = 4, ai = 5, dictation = 6, screenshot = 7, aiChat = 8
         case leftHalf = 10, rightHalf, topHalf, bottomHalf, maximize, center
-        /// macOS's own screenshot keys, taken over: ⌘⇧3, ⌘⇧4, ⌃⌘⇧3, ⌃⌘⇧4.
-        case classicScreen = 20, classicArea, classicScreenCopy, classicAreaCopy
 
         var key: Int {
             switch self {
@@ -140,8 +138,6 @@ enum HotKey {
             case .aiChat: kVK_ANSI_I
             case .dictation: kVK_ANSI_D
             case .screenshot: kVK_ANSI_S
-            case .classicScreen, .classicScreenCopy: kVK_ANSI_3
-            case .classicArea, .classicAreaCopy: kVK_ANSI_4
             case .leftHalf: kVK_LeftArrow
             case .rightHalf: kVK_RightArrow
             case .topHalf: kVK_UpArrow
@@ -165,18 +161,6 @@ enum HotKey {
 
         static var windows: [Shortcut] { allCases.filter { $0.window != nil } }
 
-        /// What a taken-over macOS screenshot key does: the same as in macOS, with Nabız's thumbnail and editor.
-        var capture: CaptureMode? {
-            switch self {
-            case .classicScreen: .screenFile
-            case .classicArea: .areaFile
-            case .classicScreenCopy: .screen
-            case .classicAreaCopy: .area
-            default: nil
-            }
-        }
-
-        static var classics: [Shortcut] { allCases.filter { $0.capture != nil } }
     }
 
     /// A key and its modifiers (Carbon flags), with how it reads: "⌃⌥Space".
@@ -198,11 +182,6 @@ enum HotKey {
     static let customizable: [Shortcut] = [.launcher, .clipboard, .note, .panel, .ai, .aiChat, .dictation, .screenshot]
 
     static func combo(_ shortcut: Shortcut) -> Combo {
-        if shortcut.capture != nil {
-            let copy = shortcut == .classicScreenCopy || shortcut == .classicAreaCopy
-            let digit = shortcut.key == kVK_ANSI_3 ? "3" : "4"
-            return Combo(keyCode: shortcut.key, modifiers: cmdKey | shiftKey | (copy ? controlKey : 0), label: (copy ? "⌃⌘⇧" : "⌘⇧") + digit)
-        }
         if let data = UserDefaults.standard.data(forKey: "hotkey.\(shortcut.rawValue)"),
            let saved = try? JSONDecoder().decode(Combo.self, from: data) { return saved }
         return Combo(keyCode: shortcut.key, modifiers: controlKey | optionKey, label: "⌃⌥" + keyName(shortcut.key, nil))
@@ -237,7 +216,7 @@ enum HotKey {
             refs[shortcut] = ref
             registered[shortcut] = combo
         }
-        if shortcut == .screenshot || shortcut.capture != nil { ShotLog.write("registered \(combo.label): \(ref != nil)") }
+        if shortcut == .screenshot { ShotLog.write("registered \(combo.label): \(ref != nil)") }
     }
 
     /// Shortcuts people gave to launcher rows, by hot key id (from 1000 up).
@@ -322,7 +301,7 @@ enum HotKey {
             GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil,
                               MemoryLayout<EventHotKeyID>.size, nil, &id)
             let pressed = id.id
-            if pressed == HotKey.Shortcut.screenshot.rawValue || HotKey.Shortcut(rawValue: pressed)?.capture != nil { ShotLog.write("hot key \(pressed)") }
+            if pressed == HotKey.Shortcut.screenshot.rawValue { ShotLog.write("hot key \(pressed)") }
             Task { @MainActor in
                 guard !HotKey.suspended else { return }
                 if let item = HotKey.itemRefs[pressed] {
@@ -339,8 +318,7 @@ enum HotKey {
                 case .aiChat: AIChatWindow.toggle()
                 case .dictation: Dictation.shared.toggle()
                 case .screenshot: Capture.run(.area)
-                default:
-                    if let mode = shortcut.capture { Capture.run(mode) } else { shortcut.window?.run() }
+                default: shortcut.window?.run()
                 }
             }
             return noErr

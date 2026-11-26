@@ -18,8 +18,7 @@
   spotlight and crop; every mark stays movable and editable, with undo, one-key tools (A, R, T, N…), 1–8 for
   colours and [ ] for size. A frame option adds a gradient background, padding, rounded corners and a shadow.
   Copy text from the image (⇧⌘C), pin it over every app, share it, or mark up the copied image or any file from the
-  launcher. Optionally ⌘⇧3 / ⌘⇧4 (and ⌃ to copy) go to Nabız too: macOS's own are turned off while Nabız runs
-  and come back when it quits.
+  launcher.
 - **MCP server** (Settings → MCP, off until turned on): Claude Code, Claude Desktop, Cursor and other AI apps can use
   Nabız through `Nabiz --mcp`: this Mac's status and busiest apps, AI limits, calendar, maths and conversions, markets,
   rates, notifications, opening apps, window layouts, volume, timers, focus mode, your notes and snippets, and (only

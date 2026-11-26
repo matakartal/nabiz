@@ -130,8 +130,6 @@ enum Prefs {
     static let shotHotkey = "shotHotkey"
     /// After a capture: "preview" (the thumbnail), "editor", or "none".
     static let shotAfter = "shotAfter"
-    /// ⌘⇧3 / ⌘⇧4 (and with ⌃) go to Nabız; macOS's own are turned off while this is on.
-    static let shotClassic = "shotClassic"
     static let dictationLanguage = "dictationLanguage"
     /// A copy of the settings, snippets and notes in iCloud Drive once a day.
     static let autoBackup = "autoBackup"
@@ -186,7 +184,7 @@ enum Prefs {
             noteOnTop: true, noteHotkey: true, notesApp: "nabiz",
             pomodoroWork: 25, pomodoroShort: 5, pomodoroLong: 15, pomodoroLongEvery: 4, pomodoroAuto: true, pomodoroFocus: true,
             focusBlocked: "", focusHideOthers: false, focusHideDesktop: false, focusShortcutOn: "", focusShortcutOff: "", focusBlockSites: false, focusSites: "", mcpEnabled: false, mcpCommands: true, mcpNotes: true, mcpClipboard: false,
-            calendarEnabled: false, calendarHidden: "", calendarAlert: true, dictationHotkey: false, shotHotkey: true, shotAfter: "preview", shotClassic: false, dictationLanguage: "system", autoBackup: false,
+            calendarEnabled: false, calendarHidden: "", calendarAlert: true, dictationHotkey: false, shotHotkey: true, shotAfter: "preview", dictationLanguage: "system", autoBackup: false,
             downloadQuality: "best", downloadFolder: "",
             appearanceMode: "system", fontDesign: "standard", density: "normal", meterStyle: "thin",
             barSymbol: "gauge.with.dots.needle.33percent", customAccent: "#1DB954", sectionOrder: "",

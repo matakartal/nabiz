@@ -161,7 +161,6 @@ enum SettingsIndex {
         // Screenshots
         .init(.screenshot, "screenshot.keys", "Ekran görüntüsü kısayolu", "Screenshot shortcut", "screen capture ss yakala"),
         .init(.screenshot, "screenshot.keys", "Ekran görüntüsünden sonra", "After a screenshot", "önizleme preview düzenleyici editor"),
-        .init(.screenshot, "screenshot.classic", "⌘⇧3 ve ⌘⇧4 Nabız'da", "⌘⇧3 and ⌘⇧4 in Nabız", "macos kısayol cmd shift 3 4"),
         // Backup & upkeep
         .init(.maintenance, "maintenance.backup", "Yedekle", "Back up", "backup dışa aktar export dosya"),
         .init(.maintenance, "maintenance.backup", "Yedekten yükle", "Load a backup", "restore geri yükle içe aktar import"),

@@ -82,7 +82,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ShotExport.cleanCache()
         ShotLog.write("launch, screen access: \(ScreenAccess.granted)")
         ScreenAccess.checkAfterLaunch()
-        if Prefs.bool(Prefs.shotClassic) && SystemScreenshotKeys.anyOn { Task { _ = await SystemScreenshotKeys.set(on: false) } }
         if Prefs.bool(Prefs.aiAsk) { AIEngines.shared.refreshIfNeeded() }
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.target = self
@@ -157,16 +156,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         WelcomeWindow.showIfFirstLaunch { [weak self] in self?.togglePanel() }
     }
 
-    /// While Nabız answers ⌘⇧3 / ⌘⇧4, macOS's own are off; they come back on while Nabız isn't running.
-    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard Prefs.bool(Prefs.shotClassic) else { return .terminateNow }
-        Task {
-            _ = await SystemScreenshotKeys.set(on: true)
-            NSApp.reply(toApplicationShouldTerminate: true)
-        }
-        return .terminateLater
-    }
-
     func applicationWillTerminate(_ notification: Notification) {
         MCPServer.shared.stop()
         KeepAwake.shared.stop()
@@ -188,7 +177,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         HotKey.update(.note, enabled: Prefs.bool(Prefs.noteHotkey))
         HotKey.update(.dictation, enabled: Prefs.bool(Prefs.dictationHotkey))
         HotKey.update(.screenshot, enabled: Prefs.bool(Prefs.shotHotkey))
-        for shortcut in HotKey.Shortcut.classics { HotKey.update(shortcut, enabled: Prefs.bool(Prefs.shotClassic)) }
         HotKey.update(.ai, enabled: Prefs.bool(Prefs.aiHotkey) && Prefs.bool(Prefs.aiAsk))
         HotKey.update(.aiChat, enabled: Prefs.bool(Prefs.aiChatHotkey))
         for shortcut in HotKey.Shortcut.windows { HotKey.update(shortcut, enabled: Prefs.bool(Prefs.windowHotkeys)) }

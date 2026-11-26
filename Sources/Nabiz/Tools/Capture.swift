@@ -277,39 +277,3 @@ enum Recognizer {
     }
 }
 
-/// macOS's own screenshot shortcuts (System Settings → Keyboard → Keyboard Shortcuts → Screenshots), turned off while
-/// Nabız answers ⌘⇧3 and ⌘⇧4 itself, and back on when it stops. ⌘⇧5 (the toolbar, recording) stays with macOS.
-@MainActor
-enum SystemScreenshotKeys {
-    /// The symbolic hot key ids and their default keys: ⌘⇧3, ⌃⌘⇧3, ⌘⇧4, ⌃⌘⇧4.
-    private static let keys: [(id: Int, parameters: String)] = [
-        (28, "(51, 20, 1179648)"), (29, "(51, 20, 1441792)"), (30, "(52, 21, 1179648)"), (31, "(52, 21, 1441792)"),
-    ]
-
-    /// Whether any of them is still on in macOS (they are, unless someone turned them off).
-    static var anyOn: Bool {
-        CFPreferencesAppSynchronize("com.apple.symbolichotkeys" as CFString)
-        let all = CFPreferencesCopyAppValue("AppleSymbolicHotKeys" as CFString, "com.apple.symbolichotkeys" as CFString) as? [String: Any]
-        return keys.contains { key in
-            guard let entry = all?[String(key.id)] as? [String: Any] else { return true }
-            return (entry["enabled"] as? NSNumber)?.boolValue ?? true
-        }
-    }
-
-    /// Turns them on or off and tells macOS to take the change now, without logging out. False if it didn't stick.
-    static func set(on: Bool) async -> Bool {
-        for key in keys {
-            let value = "{ enabled = \(on ? 1 : 0); value = { parameters = \(key.parameters); type = standard; }; }"
-            _ = await Toolbox.run("/usr/bin/defaults", ["write", "com.apple.symbolichotkeys", "AppleSymbolicHotKeys", "-dict-add", String(key.id), value])
-        }
-        let activate = "/System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings"
-        if FileManager.default.isExecutableFile(atPath: activate) { _ = await Toolbox.run(activate, ["-u"]) }
-        CFPreferencesAppSynchronize("com.apple.symbolichotkeys" as CFString)
-        return anyOn == on
-    }
-
-    /// System Settings → Keyboard, where the shortcuts can be changed by hand.
-    static func openSettings() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension") { NSWorkspace.shared.open(url) }
-    }
-}

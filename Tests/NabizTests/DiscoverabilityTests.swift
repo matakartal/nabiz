@@ -22,8 +22,8 @@ struct DiscoverabilityTests {
     @Test func aiChatHasItsOwnShortcutAndTile() {
         #expect(Prefs.bool(Prefs.aiChatHotkey))
         #expect(HotKey.customizable.contains(.aiChat))
-        #expect(HotKey.Shortcut.allCases.filter { $0.capture == nil && $0.window == nil }.map(\.key).count
-            == Set(HotKey.Shortcut.allCases.filter { $0.capture == nil && $0.window == nil }.map(\.key)).count)
+        let keys: [Int] = HotKey.Shortcut.allCases.filter { $0.window == nil }.map(\.key)
+        #expect(keys.count == Set(keys).count)
         #expect(ToolKind.everyday.contains(.aiChat))
         #expect(ToolKind.everyday.count == 9)
     }
