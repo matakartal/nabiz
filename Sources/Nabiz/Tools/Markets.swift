@@ -44,6 +44,8 @@ final class MarketStore {
     @ObservationIgnored private var pricesAt: Date?
     @ObservationIgnored private var catalogAt: Date?
     @ObservationIgnored private var fetching = false
+    /// Called after fresh prices land, so the menu bar redraws right away instead of on the next tick.
+    @ObservationIgnored var onPrices: (() -> Void)?
 
     var watchedIDs: [String] { Prefs.string(Prefs.watchedMarkets).split(separator: ",").map(String.init) }
     var watched: [Market] { watchedIDs.compactMap { markets[$0] } }
@@ -62,7 +64,7 @@ final class MarketStore {
         Task {
             let ok = await load(dexes: Array(needed))
             failed = !ok
-            if ok { PriceAlerts.shared.check(markets) }
+            if ok { PriceAlerts.shared.check(markets); onPrices?() }
             // A failed fetch is retried on the next tick instead of waiting out maxAge.
             pricesAt = ok ? Date() : nil
             fetching = false

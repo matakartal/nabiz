@@ -78,13 +78,18 @@ enum MenuBarText {
 
     private static func part(for item: MenuBarItem, monitor: Monitor?) -> MenuBarPart? {
         let system = monitor?.system
+        /// CPU/GPU: red when pegged, orange when busy.
+        func load(_ value: Double?) -> MenuBarPart.Tone {
+            guard let value else { return .normal }
+            return value >= 0.9 ? .danger : value >= 0.7 ? .warning : .normal
+        }
         func make(_ label: String, _ value: String?, _ tone: MenuBarPart.Tone = .normal) -> MenuBarPart? {
             value.map { MenuBarPart(item: item, label: label, value: $0, tone: tone) }
         }
 
         switch item {
         case .cpu:
-            return make("CPU", system.map { Format.percent($0.cpu) }, (system?.cpu ?? 0) > 0.85 ? .warning : .normal)
+            return make("CPU", system.map { Format.percent($0.cpu) }, load(system?.cpu))
         case .ram:
             let tone: MenuBarPart.Tone = switch system?.pressure {
             case .critical: .danger
@@ -93,7 +98,7 @@ enum MenuBarText {
             }
             return make("RAM", system.map { Format.percent($0.memoryFraction) }, tone)
         case .gpu:
-            return make("GPU", system?.gpu.map { Format.percent($0) }, (system?.gpu ?? 0) > 0.85 ? .warning : .normal)
+            return make("GPU", system?.gpu.map { Format.percent($0) }, load(system?.gpu))
         case .swap:
             return make(L("Takas", "Swap"), system.map { Format.bytes($0.swapUsed) },
                         (system?.swapFraction ?? 0) > 0.6 ? .warning : .normal)
@@ -109,8 +114,12 @@ enum MenuBarText {
         case .ai:
             guard let status = AILimitsStore.shared.statuses.first(where: { !$0.limits.isEmpty }),
                   let top = status.headline else { return nil }
-            let tone: MenuBarPart.Tone = top.remaining < 0.1 || top.pace?.status == .behind ? .danger
-                : top.remaining < 0.25 ? .warning : .normal
+            // Coloured by what is left, whichever number is shown: plenty left is green, running out is red.
+            // A fast burn (pace behind) only matters once half the limit is gone.
+            let behind = top.pace?.status == .behind && top.remaining < 0.5
+            let tone: MenuBarPart.Tone = top.remaining < 0.1 ? .danger
+                : top.remaining < 0.25 || behind ? .warning
+                : top.remaining >= 0.5 ? .up : .normal
             return make(status.provider.shortName, top.shortText, tone)
         case .market:
             let store = MarketStore.shared
@@ -132,7 +141,7 @@ enum MenuBarText {
         let labelFont = NSFont.systemFont(ofSize: 9, weight: .medium)
         let valueFont = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
         let coloured = Prefs.bool(Prefs.barColors) && parts.contains { $0.tone != .normal }
-        let columns = parts.map { part -> (label: NSAttributedString, value: NSAttributedString, width: CGFloat) in
+        let columns = parts.map { part -> (label: NSAttributedString, value: NSAttributedString, width: CGFloat, roll: BarRoll.Frame?) in
             // Template images draw in black and the system tints them; coloured ones use the menu bar's label colour.
             let color: NSColor = coloured ? .labelColor : .black
             let valueColor: NSColor = coloured ? part.color : .black
@@ -140,7 +149,8 @@ enum MenuBarText {
             let valueAttributes: [NSAttributedString.Key: Any] = [.font: part.item == .network ? labelFont : valueFont, .foregroundColor: valueColor]
             let label = NSAttributedString(string: part.label, attributes: [.font: labelFont, .foregroundColor: color])
             let value = NSAttributedString(string: part.value, attributes: valueAttributes)
-            return (label, value, ceil(max(label.size().width, value.size().width)))
+            let roll = part.item == .network ? nil : BarRoll.shared.frame(key: "\(part.item.rawValue).\(part.label)", value: part.value)
+            return (label, value, ceil(max(label.size().width, value.size().width)), roll)
         }
         let iconSize: CGFloat = 16, iconGap: CGFloat = 5, columnGap: CGFloat = 8
         let width = (icon == nil ? 0 : iconSize + (columns.isEmpty ? 0 : iconGap))
@@ -169,7 +179,12 @@ enum MenuBarText {
             let overlap: CGFloat = 2
             let bottom = (height - (labelHeight + valueHeight - overlap)) / 2
             for column in columns {
-                column.value.draw(at: NSPoint(x: x, y: bottom))
+                let box = NSRect(x: x, y: bottom, width: column.width, height: valueHeight)
+                if let roll = column.roll {
+                    BarRoll.draw(roll, value: column.value, in: box)
+                } else {
+                    column.value.draw(at: NSPoint(x: x, y: bottom))
+                }
                 column.label.draw(at: NSPoint(x: x, y: bottom + valueHeight - overlap))
                 x += column.width + columnGap
             }
@@ -178,6 +193,82 @@ enum MenuBarText {
         // Template (tinted by the system) unless coloured values are on and something has a colour to show.
         image.isTemplate = !(Prefs.bool(Prefs.barColors) && parts.contains { $0.tone != .normal })
         return image
+    }
+}
+
+/// A small odometer for the stacked menu bar: when a value changes, the digits that changed roll in
+/// (up when the number grew, down when it shrank) over a third of a second.
+@MainActor
+final class BarRoll {
+    static let shared = BarRoll()
+
+    struct Frame {
+        let old: String
+        let progress: CGFloat
+        let up: Bool
+    }
+
+    private struct Change { let old: String; let start: Date; let up: Bool }
+    private static let duration: TimeInterval = 0.35
+
+    private var shown: [String: String] = [:]
+    private var changes: [String: Change] = [:]
+
+    var enabled: Bool { Prefs.bool(Prefs.barAnimate) && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    /// Something is still rolling: the status item should redraw again soon.
+    var isAnimating: Bool {
+        let now = Date()
+        changes = changes.filter { now.timeIntervalSince($0.value.start) < Self.duration }
+        return !changes.isEmpty
+    }
+
+    func frame(key: String, value: String) -> Frame? {
+        let previous = shown[key]
+        shown[key] = value
+        guard enabled else { changes[key] = nil; return nil }
+        if let previous, previous != value {
+            // A value that changes again mid-roll starts from what is on screen now.
+            changes[key] = Change(old: previous, start: Date(), up: Self.grew(from: previous, to: value))
+        }
+        guard let change = changes[key] else { return nil }
+        let t = min(max(Date().timeIntervalSince(change.start) / Self.duration, 0), 1)
+        guard t < 1 else { changes[key] = nil; return nil }
+        // Ease out: quick start, soft landing.
+        let eased = 1 - pow(1 - t, 3)
+        return Frame(old: change.old, progress: CGFloat(eased), up: change.up)
+    }
+
+    private static func grew(from old: String, to new: String) -> Bool {
+        let a = old.filter(\.isNumber), b = new.filter(\.isNumber)
+        return a.count == b.count ? b > a : b.count > a.count
+    }
+
+    /// Draws `value` with each changed character rolling in from `frame.old`, clipped to `box`.
+    static func draw(_ frame: Frame, value: NSAttributedString, in box: NSRect) {
+        let attributes = value.attributes(at: 0, effectiveRange: nil)
+        let new = Array(value.string), old = Array(frame.old)
+        let shift = box.height * frame.progress * (frame.up ? 1 : -1)
+        let height = box.height * (frame.up ? 1 : -1)
+        NSGraphicsContext.saveGraphicsState()
+        NSBezierPath(rect: box.insetBy(dx: -1, dy: 0)).addClip()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        guard new.count == old.count else {
+            // A different length (e.g. 9% → 10%): roll the whole value.
+            NSAttributedString(string: frame.old, attributes: attributes).draw(at: NSPoint(x: box.minX, y: box.minY + shift))
+            value.draw(at: NSPoint(x: box.minX, y: box.minY + shift - height))
+            return
+        }
+        var x = box.minX
+        for (index, character) in new.enumerated() {
+            let glyph = NSAttributedString(string: String(character), attributes: attributes)
+            if character == old[index] {
+                glyph.draw(at: NSPoint(x: x, y: box.minY))
+            } else {
+                NSAttributedString(string: String(old[index]), attributes: attributes).draw(at: NSPoint(x: x, y: box.minY + shift))
+                glyph.draw(at: NSPoint(x: x, y: box.minY + shift - height))
+            }
+            x += glyph.size().width
+        }
     }
 }
 

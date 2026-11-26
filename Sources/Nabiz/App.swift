@@ -64,13 +64,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Notifier.shared.check(monitor: monitor)
             Scheduler.shared.check()
             Updater.shared.check()
-            // Market prices: every 10 s with the panel open, every 30 s for the menu bar.
-            if monitor.panelVisible && Prefs.bool(Prefs.showMarkets) {
-                MarketStore.shared.refreshWatched(maxAge: 10)
-            } else if Prefs.bool(Prefs.barMarket) || !PriceAlerts.shared.markets.isEmpty {
+            // Market prices: every 4 s when shown (panel or menu bar), every 30 s for price alerts alone.
+            if (monitor.panelVisible && Prefs.bool(Prefs.showMarkets)) || Prefs.bool(Prefs.barMarket) {
+                MarketStore.shared.refreshWatched(maxAge: 4)
+            } else if !PriceAlerts.shared.markets.isEmpty {
                 MarketStore.shared.refreshWatched(maxAge: 30)
             }
         }
+        MarketStore.shared.onPrices = { [weak self] in self?.updateButton() }
         RateStore.shared.refreshIfNeeded()
         Updater.shared.check()
         AppearanceMode.apply()
@@ -176,6 +177,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.menu = nil
     }
 
+    @ObservationIgnored private var rollTimer: Timer?
+
+    /// While digits are rolling, redraw at ~60 fps; stops on its own when the roll ends.
+    private func scheduleRollFrame() {
+        guard BarRoll.shared.isAnimating, rollTimer == nil else { return }
+        rollTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.rollTimer = nil
+                self?.updateButton()
+            }
+        }
+    }
+
     private func updateButton() {
         guard let button = statusItem.button else { return }
         let font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
@@ -193,6 +207,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             button.image = MenuBarText.image(parts: parts, icon: showIcon ? icon : nil, height: NSStatusBar.system.thickness)
             button.imagePosition = .imageOnly
             button.title = ""
+            scheduleRollFrame()
             return
         }
         let text = MenuBarText.compose(monitor: monitor)

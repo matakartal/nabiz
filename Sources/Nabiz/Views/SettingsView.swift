@@ -1094,6 +1094,7 @@ private struct AppearancePage: View {
     @AppStorage(Prefs.meterStyle) private var meterStyle = "thin"
     @AppStorage(Prefs.appearanceMode) private var mode = "system"
     @AppStorage(Prefs.barColors) private var barColors = false
+    @AppStorage(Prefs.barAnimate) private var barAnimate = true
 
     var body: some View {
         Form {
@@ -1168,16 +1169,17 @@ private struct AppearancePage: View {
             }
             Section {
                 Toggle(L("Değerleri renklendir", "Colour the values"), isOn: $barColors)
+                Toggle(L("Değişen rakamları kaydır", "Roll changing digits"), isOn: $barAnimate)
             } header: {
                 Text(L("Menü çubuğu", "Menu bar"))
             } footer: {
-                Footnote(L("Dikkat isteyen değer turuncu ya da kırmızı olur (yoğun CPU, sıkışık bellek, azalan pil, biten AI limiti); piyasalar yükselişte yeşil, düşüşte kırmızı. Her şey yolundaysa menü çubuğu sade kalır. Simge biçimi Menü çubuğu sayfasında.",
-                           "A value that needs attention turns orange or red (busy CPU, tight memory, low battery, an AI limit running out); markets go green when up and red when down. When all is well the menu bar stays plain. The icon style is on the Menu Bar page."))
+                Footnote(L("Dikkat isteyen değer turuncu ya da kırmızı olur (yoğun CPU, sıkışık bellek, azalan pil, biten AI limiti); bol kalan AI limiti yeşil, piyasalar yükselişte yeşil, düşüşte kırmızı. Her şey yolundaysa menü çubuğu sade kalır. Simge biçimi Menü çubuğu sayfasında.",
+                           "A value that needs attention turns orange or red (busy CPU, tight memory, low battery, an AI limit running out); an AI limit with plenty left is green, markets go green when up and red when down. When all is well the menu bar stays plain. The icon style is on the Menu Bar page."))
             }
             Section {
                 Button(L("Görünümü sıfırla", "Reset appearance")) {
                     for key in [Prefs.accentColor, Prefs.customAccent, Prefs.panelStyle, Prefs.panelWidth, Prefs.textSize, Prefs.fontDesign,
-                                Prefs.density, Prefs.meterStyle, Prefs.appearanceMode, Prefs.barColors] {
+                                Prefs.density, Prefs.meterStyle, Prefs.appearanceMode, Prefs.barColors, Prefs.barAnimate] {
                         UserDefaults.standard.removeObject(forKey: key)
                     }
                 }
