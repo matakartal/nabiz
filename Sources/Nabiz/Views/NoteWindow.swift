@@ -15,11 +15,13 @@ enum NoteWindow {
     static var isVisible: Bool { panel?.isVisible == true }
 
     static func toggle() {
+        if Prefs.string(Prefs.notesApp) == "apple" { AppleNotes.open(); return }
         if isVisible { close() } else { show() }
     }
 
     /// Shows the note window, on the given note or the last one open (a new one if there are none).
     static func show(_ id: UUID? = nil) {
+        if Prefs.string(Prefs.notesApp) == "apple" { AppleNotes.open(); return }
         let store = NoteStore.shared
         if let id { store.select(id) }
         if store.current == nil { store.create() }
@@ -181,6 +183,8 @@ struct NoteView: View {
                     .transition(.opacity)
             }
         }
+        // The header takes the title bar's place, so there's no empty strip above it.
+        .ignoresSafeArea(edges: .top)
         .frame(minWidth: 280, minHeight: 220)
         .background(MenuMaterial().ignoresSafeArea())
         .appearanceRoot(opaqueFill: Theme.surface)
@@ -541,5 +545,24 @@ final class NoteTextView: NSTextView {
 
     private func dim(_ storage: NSTextStorage, _ range: NSRange) {
         storage.addAttribute(.foregroundColor, value: NSColor.tertiaryLabelColor, range: range)
+    }
+}
+
+/// For people who keep their notes in Apple Notes: Nabız's note shortcuts open it instead.
+@MainActor
+enum AppleNotes {
+    static func open() {
+        NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: "/System/Applications/Notes.app"), configuration: NSWorkspace.OpenConfiguration())
+    }
+
+    /// A new note in Apple Notes with this text (macOS asks once for permission to control Notes).
+    static func create(_ text: String) {
+        let body = text.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;").replacingOccurrences(of: "\n", with: "<br>")
+            .replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+        var error: NSDictionary?
+        NSAppleScript(source: "tell application \"Notes\"\nactivate\nshow (make new note with properties {body:\"\(body)\"})\nend tell")?
+            .executeAndReturnError(&error)
+        if error != nil { open() }
     }
 }

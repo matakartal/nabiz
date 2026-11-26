@@ -89,6 +89,8 @@ enum Prefs {
     /// The single note of 1.5, moved into the notes list on first launch.
     static let noteText = "floatingNote"
     static let noteOnTop = "noteOnTop"
+    /// "nabiz" or "apple": which notes the note shortcut and tool open.
+    static let notesApp = "notesApp"
     /// ⌃⌥M shows or hides the notes.
     static let noteHotkey = "noteHotkey"
 
@@ -145,7 +147,7 @@ enum Prefs {
             baseCurrency: "TRY", watchedCurrencies: "USD,EUR,GBP",
             clipboardHotkey: true, clipboardEnabled: true, clipboardSave: true, clipboardLimit: 200, clipboardDays: 30,
             clipboardExcluded: "", autoPaste: true, launcherApps: true, launcherClipboard: true, launcherShortcuts: true, launcherFiles: true, windowHotkeys: false,
-            noteOnTop: true, noteHotkey: true,
+            noteOnTop: true, noteHotkey: true, notesApp: "nabiz",
             pomodoroWork: 25, pomodoroShort: 5, pomodoroLong: 15, pomodoroLongEvery: 4, pomodoroAuto: true, pomodoroFocus: true,
             focusBlocked: "", focusHideOthers: false, focusHideDesktop: false, focusShortcutOn: "", focusShortcutOff: "",
             downloadQuality: "best", downloadFolder: "",

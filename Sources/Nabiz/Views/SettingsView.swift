@@ -174,6 +174,7 @@ private struct GeneralPage: View {
     @AppStorage(Prefs.panelHotkey) private var panelHotkey = true
     @AppStorage(Prefs.clipboardHotkey) private var clipboardHotkey = true
     @AppStorage(Prefs.noteHotkey) private var noteHotkey = true
+    @AppStorage(Prefs.notesApp) private var notesApp = "nabiz"
     @AppStorage(Prefs.notifications) private var notifications = false
     @AppStorage(Prefs.rustAutoClean) private var rustAutoClean = false
     @AppStorage(Prefs.rustAutoCleanDays) private var rustDays = 14
@@ -209,6 +210,15 @@ private struct GeneralPage: View {
             } footer: {
                 Footnote(L("Değiştirmek için kısayola tıkla ve yeni tuşlara bas (en az bir ⌘, ⌃ ya da ⌥ ile). ⎋ vazgeçer, ⌫ varsayılana döndürür. Pencere kısayolları Pencereler sayfasında.",
                            "Click a shortcut and press the new keys (with at least ⌘, ⌃ or ⌥). ⎋ cancels, ⌫ goes back to the default. Window shortcuts are on the Windows page."))
+            }
+            Section {
+                Picker(L("Notlar için", "For notes"), selection: $notesApp) {
+                    Text(L("Nabız notları", "Nabız notes")).tag("nabiz")
+                    Text(L("Apple Notlar", "Apple Notes")).tag("apple")
+                }
+            } footer: {
+                Footnote(L("Not kısayolu, Notlar aracı ve \"Not olarak kaydet\" seçtiğin uygulamayı kullanır. Apple Notlar için macOS bir kez izin ister.",
+                           "The notes shortcut, the Notes tool and \"Save as note\" use the app you pick. For Apple Notes, macOS asks once for permission."))
             }
             Section {
                 Toggle(L("Bildirimler", "Notifications"), isOn: Binding(get: { notifications }, set: { on in

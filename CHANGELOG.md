@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.8.1
+
+- Notes: no more empty strip above the header; the header sits in the title bar and drags the window.
+- **Apple Notes** option (Settings → General): the notes shortcut, the Notes tool, "New note" and "Save as note"
+  open Apple Notes instead.
+
 ## 1.8.0
 
 - **Clearer:** every tool confirms what it did in the menu bar ("Desktop icons hidden", "Strong password copied",

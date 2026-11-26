@@ -556,7 +556,9 @@ final class LauncherModel {
                 self?.reset(mode: .clipboard)
             },
             command("note", "note.text", L("Notlar", "Notes"), accessory: HotKey.label(.note)) { NoteWindow.show() },
-            command("note-new", "square.and.pencil", L("Yeni not", "New note")) { NoteWindow.show(NoteStore.shared.create()) },
+            command("note-new", "square.and.pencil", L("Yeni not", "New note")) {
+                if Prefs.string(Prefs.notesApp) == "apple" { AppleNotes.create("") } else { NoteWindow.show(NoteStore.shared.create()) }
+            },
             command("panel", "menubar.rectangle", L("Paneli aç", "Open the panel"), accessory: HotKey.label(.panel)) { HotKey.togglePanel() },
             command("history", "chart.xyaxis.line", L("Geçmiş grafikleri", "History charts")) { HistoryWindow.show() },
             command("settings", "gearshape", L("Nabız ayarları", "Nabız settings"), accessory: "⌘,") { SettingsWindow.show(nil) },
@@ -943,7 +945,7 @@ extension LauncherModel {
                 }
                 list.append(LauncherAction(id: "toNote", title: L("Not olarak kaydet", "Save as note"), symbol: "note.text.badge.plus", group: main) { [weak self] in
                     self?.close()
-                    NoteWindow.show(NoteStore.shared.create(text))
+                    if Prefs.string(Prefs.notesApp) == "apple" { AppleNotes.create(text) } else { NoteWindow.show(NoteStore.shared.create(text)) }
                 })
                 list.append(LauncherAction(id: "toSnippet", title: L("Parçacık olarak kaydet", "Save as snippet"), symbol: "text.quote", group: main) { [weak self] in
                     self?.close()
