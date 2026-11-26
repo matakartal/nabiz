@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import Metal
 import CoreImage
 import CoreImage.CIFilterBuiltins
 
@@ -64,11 +65,12 @@ final class RecPlan: @unchecked Sendable {
         keys = style.showKeys ? meta.track.keys : []
         cameraOn = style.camera && meta.cameraOffset != nil
 
-        let steps = max(2, Int(meta.duration * fps) + 2)
         cursorPath = RecCursorPath(track: meta.track, size: source, smoothing: style.smoothCursor ? 0.3 : 0)
         lens = RecLens(regions: edit.zooms.map { zoom in
             RecLens.Region(start: zoom.start, end: zoom.end, scale: zoom.scale, focus: zoom.focusX.map { ($0, zoom.focusY ?? 0.5) })
-        }, cursor: cursorPath)
+        }, cursor: cursorPath, typing: meta.track.carets.map { caret in
+            (t: caret.t, x: caret.x / max(Double(meta.width), 1), y: caret.y / max(Double(meta.height), 1))
+        })
         var keyImages: [String: CIImage] = [:]
         for key in keys where keyImages[key.text] == nil {
             keyImages[key.text] = Self.keyImage(key.text, height: output.height * 0.055)
@@ -144,7 +146,8 @@ final class RecPlan: @unchecked Sendable {
         let time = map.source(played)
         let (z, f) = camera(at: time)
         let transform = self.transform(zoom: z, focus: f)
-        let video = frame.transformed(by: transform).cropped(to: content)
+        var video = frame.transformed(by: transform).cropped(to: content)
+        if style.motionBlur, let blurred = cameraBlur(frame, played: played, time: time, transform: transform) { video = blurred }
         var image: CIImage
         if let mask {
             let blend = CIFilter.blendWithMask()
@@ -170,6 +173,38 @@ final class RecPlan: @unchecked Sendable {
         }
         if cameraOn, let face, let bubble = bubble(face) { image = bubble.composited(over: image) }
         return image.cropped(to: CGRect(origin: .zero, size: output))
+    }
+
+    /// A fast camera move (a zoom going in or out, a pan between spots) gets the smear a real camera's shutter
+    /// gives it: the frame is placed at a few moments across the last half frame and the copies are averaged.
+    /// A still or slow camera costs nothing extra.
+    private func cameraBlur(_ frame: CIImage, played: Double, time: Double, transform now: CGAffineTransform) -> CIImage? {
+        let before = map.source(max(0, played - 0.5 / fps))
+        guard time - before > 0.0001 else { return nil }
+        let (z0, f0) = camera(at: before)
+        let back = now.inverted().concatenating(transform(zoom: z0, focus: f0))
+        let spots = [CGPoint(x: content.minX, y: content.minY), CGPoint(x: content.maxX, y: content.minY),
+                     CGPoint(x: content.minX, y: content.maxY), CGPoint(x: content.maxX, y: content.maxY),
+                     CGPoint(x: content.midX, y: content.midY)]
+        let travel = spots.map { spot in
+            let was = spot.applying(back)
+            return hypot(was.x - spot.x, was.y - spot.y)
+        }.max() ?? 0
+        // About 2 px on a 1080p frame before it shows; one copy for every 2 px it moved, at most 10.
+        let unit = max(output.width, output.height) / 1920 * 2
+        let count = min(10, Int(travel / unit) + 1)
+        guard count >= 3 else { return nil }
+        let weight = 1 / CGFloat(count)
+        // The colour matrix works on unpremultiplied colour: scaling alpha alone gives each copy its share.
+        let fade: [String: Any] = ["inputAVector": CIVector(x: 0, y: 0, z: 0, w: weight)]
+        var sum: CIImage?
+        for i in 0..<count {
+            let at = before + (time - before) * Double(i) / Double(count - 1)
+            let (z, f) = camera(at: at)
+            let copy = frame.transformed(by: transform(zoom: z, focus: f)).cropped(to: content).applyingFilter("CIColorMatrix", parameters: fade)
+            sum = sum.map { copy.applyingFilter("CIAdditionCompositing", parameters: [kCIInputBackgroundImageKey: $0]) } ?? copy
+        }
+        return sum?.cropped(to: content)
     }
 
     /// Source pixels (bottom-left origin) to output pixels for the camera at this zoom and focus.
@@ -621,11 +656,22 @@ final class RecInstruction: NSObject, AVVideoCompositionInstructionProtocol, @un
 
 /// Draws each frame with Core Image on the GPU, for the player, the export and the GIF alike.
 final class RecCompositor: NSObject, AVVideoCompositing, @unchecked Sendable {
-    private static let context = CIContext(options: [.cacheIntermediates: false, .workingColorSpace: CGColorSpace(name: CGColorSpace.sRGB)!])
+    /// One Metal-backed context for every frame; the frames stay in GPU memory (IOSurface) from the decoder to the screen.
+    private static let context: CIContext = {
+        let options: [CIContextOption: Any] = [.cacheIntermediates: false, .workingColorSpace: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                               .workingFormat: CIFormat.RGBAh, .name: "Nabiz.Rec"]
+        if let device = MTLCreateSystemDefaultDevice() { return CIContext(mtlDevice: device, options: options) }
+        return CIContext(options: options)
+    }()
     private static let space = CGColorSpace(name: CGColorSpace.sRGB)!
 
-    let sourcePixelBufferAttributes: [String: any Sendable]? = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
-    let requiredPixelBufferAttributesForRenderContext: [String: any Sendable] = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
+    private static let buffers: [String: any Sendable] = [
+        kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+        kCVPixelBufferIOSurfacePropertiesKey as String: [String: String](),
+        kCVPixelBufferMetalCompatibilityKey as String: true,
+    ]
+    let sourcePixelBufferAttributes: [String: any Sendable]? = RecCompositor.buffers
+    let requiredPixelBufferAttributesForRenderContext: [String: any Sendable] = RecCompositor.buffers
 
     func renderContextChanged(_ newRenderContext: AVVideoCompositionRenderContext) {}
 

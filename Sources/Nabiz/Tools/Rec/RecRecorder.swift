@@ -14,6 +14,7 @@ final class RecWriter: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Se
     private var started = false
     private var first = CMTime.invalid
     private var frames = 0
+    private var dropped = 0
     /// Called (on the writer's queue) when ScreenCaptureKit stops on its own: display asleep, permission gone.
     var onStop: (@Sendable (Error?) -> Void)?
 
@@ -32,6 +33,12 @@ final class RecWriter: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Se
                 AVVideoMaxKeyFrameIntervalKey: fps,
                 AVVideoAllowFrameReorderingKey: false,
             ] as [String: Any],
+            // Tagged the way the frames come in, so colours match the screen everywhere the file is played.
+            AVVideoColorPropertiesKey: [
+                AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
+                AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
+                AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2,
+            ],
         ])
         video.expectsMediaDataInRealTime = true
         writer.add(video)
@@ -63,6 +70,12 @@ final class RecWriter: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Se
         return frames
     }
 
+    /// Frames the encoder couldn't take in time (a sign the recording will look choppy).
+    var droppedCount: Int {
+        lock.lock(); defer { lock.unlock() }
+        return dropped
+    }
+
     func stream(_ stream: SCStream, didOutputSampleBuffer buffer: CMSampleBuffer, of type: SCStreamOutputType) {
         guard buffer.isValid else { return }
         switch type {
@@ -78,6 +91,8 @@ final class RecWriter: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Se
             }
             if video.isReadyForMoreMediaData, video.append(buffer) {
                 lock.lock(); frames += 1; lock.unlock()
+            } else {
+                lock.lock(); dropped += 1; lock.unlock()
             }
         case .audio:
             if started, let sound, sound.isReadyForMoreMediaData { sound.append(buffer) }
@@ -140,6 +155,8 @@ final class RecRecorder {
     private var keys: [RecTrack.Key] = []
     private var typing: [Double] = []
     private var typingKinds: [Int] = []
+    private var carets: [RecTrack.Point] = []
+    private var lastCaretCheck = 0.0
 
     private static var hostNow: Double { CMClockGetTime(CMClockGetHostTimeClock()).seconds }
 
@@ -174,8 +191,10 @@ final class RecRecorder {
             config.sourceRect = area
         }
         config.minimumFrameInterval = CMTime(value: 1, timescale: 60)
-        config.pixelFormat = kCVPixelFormatType_32BGRA
+        // 4:2:0 straight into the encoder: half the memory traffic of BGRA, so even a 5K screen keeps its 60 frames.
+        config.pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
         config.colorSpaceName = CGColorSpace.sRGB
+        config.colorMatrix = CGDisplayStream.yCbCrMatrix_ITU_R_709_2
         config.showsCursor = false
         config.queueDepth = 8
         config.capturesAudio = sound
@@ -200,7 +219,7 @@ final class RecRecorder {
         self.area = area
         self.scale = scale
         self.size = CGSize(width: width, height: height)
-        moves = []; clicks = []; shapes = []; cursors = []; cursorKeys = []; keys = []; typing = []; typingKinds = []
+        moves = []; clicks = []; shapes = []; cursors = []; cursorKeys = []; keys = []; typing = []; typingKinds = []; carets = []; lastCaretCheck = 0
         try await stream.startCapture()
         if wantsCamera {
             let camera = RecCamera()
@@ -240,6 +259,9 @@ final class RecRecorder {
             RecStore.delete(id)
             return nil
         }
+        let seconds = max(0.1, end.seconds - first)
+        ShotLog.write(String(format: "recorded %.1f s, %d×%d, %d frames (%.0f fps while moving), %d dropped",
+                             seconds, Int(size.width), Int(size.height), writer.frameCount, Double(writer.frameCount) / seconds, writer.droppedCount))
         let shift = { (point: RecTrack.Point) in RecTrack.Point(t: max(0, point.t - first), x: point.x, y: point.y) }
         var track = RecTrack(moves: moves.map(shift), clicks: clicks.map(shift).filter { $0.t >= 0 })
         track.shapes = shapes.map { RecTrack.Shape(t: max(0, $0.t - first), index: $0.index) }
@@ -247,10 +269,11 @@ final class RecRecorder {
         let typed = zip(typing, typingKinds).map { ($0 - first, $1) }.filter { $0.0 >= 0 }
         track.typing = typed.map(\.0)
         track.typingKinds = typed.map(\.1)
+        track.carets = carets.map { RecTrack.Point(t: $0.t - first, x: $0.x, y: $0.y) }.filter { $0.t >= 0 }
         let duration = max(0.1, end.seconds - first)
         var edit = RecEdit()
         if edit.style.autoZoom {
-            edit.zooms = RecZoomPlanner.plan(clicks: track.clicks, size: size, duration: duration)
+            edit.zooms = RecZoomPlanner.plan(clicks: track.clicks, carets: track.carets, size: size, duration: duration)
             edit.zoomsMade = true
         }
         var meta = RecMeta(id: id, created: startedAt ?? Date(), duration: duration, width: Int(size.width), height: Int(size.height),
@@ -324,6 +347,11 @@ final class RecRecorder {
         } else {
             typing.append(now)
             typingKinds.append(RecClickSound.kind(forKeyCode: code))
+            // Where the text goes, a few times a second at most.
+            if now - lastCaretCheck > 0.12 {
+                lastCaretCheck = now
+                if let spot = caret() { carets.append(RecTrack.Point(t: now, x: spot.x, y: spot.y)) }
+            }
         }
     }
 
@@ -340,6 +368,46 @@ final class RecRecorder {
         image.draw(in: NSRect(origin: .zero, size: image.size), from: .zero, operation: .copy, fraction: 1)
         NSGraphicsContext.restoreGraphicsState()
         return rep
+    }
+
+    /// The text cursor's centre in the recorded area's pixels, from Accessibility: the caret's own bounds when the
+    /// app reports them, else the middle of the focused text field. Never what is typed.
+    private func caret() -> (x: Double, y: Double)? {
+        guard let screen else { return nil }
+        let system = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(system, 0.05)
+        var focused: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(system, kAXFocusedUIElementAttribute as CFString, &focused) == .success,
+              let focused, CFGetTypeID(focused) == AXUIElementGetTypeID() else { return nil }
+        let element = focused as! AXUIElement
+        var rect = CGRect.null
+        var range: CFTypeRef?
+        if AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &range) == .success, let range {
+            var bounds: CFTypeRef?
+            if AXUIElementCopyParameterizedAttributeValue(element, kAXBoundsForRangeParameterizedAttribute as CFString, range, &bounds) == .success,
+               let bounds, CFGetTypeID(bounds) == AXValueGetTypeID() {
+                AXValueGetValue(bounds as! AXValue, .cgRect, &rect)
+            }
+        }
+        if rect.isNull || rect.width > 2000 || (rect.width == 0 && rect.height == 0) {
+            var position: CFTypeRef?, size: CFTypeRef?
+            if AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &position) == .success,
+               AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &size) == .success,
+               let position, let size, CFGetTypeID(position) == AXValueGetTypeID(), CFGetTypeID(size) == AXValueGetTypeID() {
+                var origin = CGPoint.zero, extent = CGSize.zero
+                AXValueGetValue(position as! AXValue, .cgPoint, &origin)
+                AXValueGetValue(size as! AXValue, .cgSize, &extent)
+                rect = CGRect(origin: origin, size: extent)
+            }
+        }
+        guard !rect.isNull, rect.width < 4000 else { return nil }
+        // Accessibility uses global top-left coordinates.
+        let mainHeight = NSScreen.screens.first?.frame.height ?? screen.frame.height
+        let screenTop = mainHeight - screen.frame.maxY
+        let x = (rect.midX - screen.frame.minX - area.minX) * scale
+        let y = (rect.midY - screenTop - area.minY) * scale
+        guard x >= 0, y >= 0, x <= size.width, y <= size.height else { return nil }
+        return (Double(x), Double(y))
     }
 
     private func click() {

@@ -31,7 +31,7 @@ struct RecCursorPath: Sendable {
         raw = points
         clicks = track.clicks.map(\.t).sorted()
         clickPoints = track.clicks.sorted { $0.t < $1.t }.map { ($0.x / w, $0.y / h) }
-        fade = Self.fades(points: points, clicks: clicks)
+        fade = Self.fades(points: points, clicks: clicks, typing: track.typing.sorted())
         guard points.count > 1, smoothing > 0 else {
             times = points.map(\.t); xs = points.map(\.x); ys = points.map(\.y)
             return
@@ -139,12 +139,13 @@ struct RecCursorPath: Sendable {
         return fade[i] + (fade[j] - fade[i]) * (position - Double(i))
     }
 
-    private static func fades(points: [(t: Double, x: Double, y: Double)], clicks: [Double]) -> [Double] {
+    private static func fades(points: [(t: Double, x: Double, y: Double)], clicks: [Double], typing: [Double]) -> [Double] {
         guard let end = points.last?.t else { return [] }
         let steps = Int(end * 60) + 120
         var result = [Double](repeating: 1, count: steps)
-        var j = 0, c = 0
+        var j = 0, c = 0, k = 0
         var lastMove = points.first?.t ?? 0
+        var typingFrom: Double?
         var previous = points.first
         for i in 0..<steps {
             let t = Double(i) / 60
@@ -154,8 +155,17 @@ struct RecCursorPath: Sendable {
                 j += 1
             }
             while c < clicks.count && clicks[c] <= t { lastMove = max(lastMove, clicks[c]); c += 1 }
+            while k < typing.count && typing[k] <= t {
+                if typing[k] > lastMove + 0.2, (typingFrom ?? -1) < lastMove { typingFrom = typing[k] }
+                k += 1
+            }
             let idle = max(0, t - lastMove)
-            result[i] = idle <= 1.5 ? 1 : max(0, 1 - (idle - 1.5) / 0.3)
+            var alpha = idle <= 1.5 ? 1 : max(0, 1 - (idle - 1.5) / 0.3)
+            // Typing with the mouse still: the pointer steps aside at once (0.15 s) until the mouse moves again.
+            if let from = typingFrom, from > lastMove + 0.2 {
+                alpha = min(alpha, max(0, 1 - (t - from) / 0.15))
+            }
+            result[i] = alpha
         }
         return result
     }
@@ -187,12 +197,20 @@ struct RecLens: Sendable {
     /// Seconds a zoom takes to arrive at `scale`: ~0.7 s at 1.25×, ~0.9 s at 1.8×, ~1.5 s at 5×.
     static func transition(_ scale: Double) -> Double { 0.6 + 0.55 * log(max(1, scale)) }
 
-    init(regions: [Region], cursor: RecCursorPath) {
+    /// `typing`: where the text cursor was while typing (0…1), which the camera follows like the pointer.
+    init(regions: [Region], cursor: RecCursorPath, typing: [(t: Double, x: Double, y: Double)] = []) {
+        // What the viewer should look at: the pointer while it moves, the text cursor while typing.
+        // Each spot is held until just before the next, like the pointer's own samples.
+        var attention: [(t: Double, x: Double, y: Double)] = []
+        for sample in (cursor.rawSamples + typing).sorted(by: { $0.t < $1.t }) {
+            if let last = attention.last, sample.t - last.t > 0.05 { attention.append((sample.t - 1.0 / 60, last.x, last.y)) }
+            attention.append(sample)
+        }
         let regions = regions.filter { $0.end > $0.start }.sorted { $0.start < $1.start }
         self.regions = regions
         // The camera's own, softer track of the pointer (distance-adaptive smoothing).
         var follow: [(Double, Double, Double)] = []
-        for sample in cursor.rawSamples {
+        for sample in attention {
             guard let previous = follow.last else { follow.append((sample.t, sample.x, sample.y)); continue }
             let dt = (sample.t - previous.0) * 1000
             guard dt > 0 else { follow.append((sample.t, previous.1, previous.2)); continue }
@@ -203,7 +221,7 @@ struct RecLens: Sendable {
         views = regions.map { region in
             guard region.focus == nil else { return [] }
             let window = Self.transition(region.scale)
-            return Self.replay(cursor: cursor, follow: follow, from: region.start - window, to: region.end + window, scale: region.scale)
+            return Self.replay(samples: attention, follow: follow, from: region.start - window, to: region.end + window, scale: region.scale)
         }
     }
 
@@ -231,26 +249,31 @@ struct RecLens: Sendable {
         return (a.1 + (b.1 - a.1) * u, a.2 + (b.2 - a.2) * u)
     }
 
-    /// The view centre of an auto zoom, replayed from `t0` on the raw path: it stays put while the pointer
-    /// moves inside the middle half of the view, and catches up just enough when it leaves.
-    private static func replay(cursor: RecCursorPath, follow: [(Double, Double, Double)], from t0: Double, to tEnd: Double,
+    /// The view centre of an auto zoom, replayed from `t0` at 60 steps a second: it stays put while what the viewer
+    /// looks at moves inside the middle half of the view, and catches up just enough when it leaves. Two soft
+    /// followers in a row, so the camera never starts or stops with a jolt, even when the text cursor jumps.
+    private static func replay(samples: [(t: Double, x: Double, y: Double)], follow: [(Double, Double, Double)], from t0: Double, to tEnd: Double,
                                scale: Double) -> [(Double, Double, Double)] {
         let half = 0.5 / max(scale, 1), dead = half * 0.5
         let reach = { (v: Double) in min(max(v, half), 1 - half) }
         let pull = { (pointer: Double, view: Double) in pointer - min(max(pointer - view, -dead), dead) }
         guard let start = interpolate(follow, t0) else { return [] }
-        var view = (reach(start.0), reach(start.1))
+        var lead = (reach(start.0), reach(start.1))
+        var view = lead
         var states = [(t0, view.0, view.1)]
-        for sample in cursor.rawSamples where sample.t > t0 && sample.t <= tEnd {
-            let at = states[states.count - 1].0
-            let next = followStep(view, (pull(sample.x, view.0), pull(sample.y, view.1)), (sample.t - at) * 1000)
-            view = (reach(next.0), reach(next.1))
-            states.append((sample.t, view.0, view.1))
-        }
-        // After the last sample, keep settling toward a pointer left outside the dead zone.
-        if let last = cursor.rawSamples.last(where: { $0.t <= tEnd }), let at = states.last?.0, at < tEnd {
-            let next = followStep(view, (pull(last.x, view.0), pull(last.y, view.1)), (tEnd - at) * 1000)
-            states.append((tEnd, reach(next.0), reach(next.1)))
+        var index = samples.firstIndex { $0.t > t0 } ?? samples.count
+        var target = samples.last(where: { $0.t <= t0 }).map { ($0.x, $0.y) } ?? start
+        let step = 1.0 / 60
+        var t = t0
+        while t < tEnd {
+            let dt = min(step, tEnd - t)
+            t += dt
+            while index < samples.count && samples[index].t <= t { target = (samples[index].x, samples[index].y); index += 1 }
+            let next = followStep(lead, (pull(target.0, view.0), pull(target.1, view.1)), dt * 1000)
+            lead = (reach(next.0), reach(next.1))
+            let settled = followStep(view, lead, dt * 1000)
+            view = (reach(settled.0), reach(settled.1))
+            states.append((t, view.0, view.1))
         }
         return states
     }
@@ -341,9 +364,10 @@ struct RecLens: Sendable {
 enum RecZoomPlanner {
     static let depths = [1.25, 1.5, 1.8]
 
-    static func plan(clicks: [RecTrack.Point], size: CGSize, duration: Double) -> [RecZoom] {
+    /// `carets`: where the text cursor was while typing; a burst of typing gets its shot like a burst of clicks.
+    static func plan(clicks: [RecTrack.Point], carets: [RecTrack.Point] = [], size: CGSize, duration: Double) -> [RecZoom] {
         let w = max(Double(size.width), 1), h = max(Double(size.height), 1)
-        let usable = clicks.filter { $0.t < duration - 1 }.sorted { $0.t < $1.t }
+        let usable = (clicks + carets).filter { $0.t < duration - 1 }.sorted { $0.t < $1.t }
         struct Box { var minX, maxX, minY, maxY: Double }
         func union(_ a: Box, _ b: Box) -> Box { Box(minX: min(a.minX, b.minX), maxX: max(a.maxX, b.maxX), minY: min(a.minY, b.minY), maxY: max(a.maxY, b.maxY)) }
         func fit(_ box: Box) -> Double? {

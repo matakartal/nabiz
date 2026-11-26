@@ -30,6 +30,9 @@ struct RecTrack: Codable, Sendable {
     var typing: [Double] = []
     /// For each moment in `typing`: 0 a letter, 1 delete, 2 space / return / tab (for the iPhone-like key sounds).
     var typingKinds: [Int] = []
+    /// Where the text cursor was while typing (centre of the caret, in the recorded area's pixels), so the camera
+    /// can follow the typing the way it follows the pointer.
+    var carets: [Point] = []
 
     init() {}
 
@@ -46,6 +49,7 @@ struct RecTrack: Codable, Sendable {
         keys = try c.decodeIfPresent([Key].self, forKey: .keys) ?? []
         typing = try c.decodeIfPresent([Double].self, forKey: .typing) ?? []
         typingKinds = try c.decodeIfPresent([Int].self, forKey: .typingKinds) ?? []
+        carets = try c.decodeIfPresent([Point].self, forKey: .carets) ?? []
     }
 }
 
@@ -232,7 +236,7 @@ struct RecCut: Codable, Sendable, Equatable, Identifiable {
 struct RecEdit: Codable, Sendable, Equatable {
     /// Zooms planned from the clicks (see `RecZoomPlanner`).
     static func autoZooms(meta: RecMeta) -> [RecZoom] {
-        RecZoomPlanner.plan(clicks: meta.track.clicks, size: CGSize(width: meta.width, height: meta.height), duration: meta.duration)
+        RecZoomPlanner.plan(clicks: meta.track.clicks, carets: meta.track.carets, size: CGSize(width: meta.width, height: meta.height), duration: meta.duration)
     }
 
     var style = RecStyle.saved
