@@ -136,11 +136,14 @@ final class RecRecorder {
     private var cursorKeys: [String] = []
     private var lastShapeCheck = 0.0
     private var activity: NSObjectProtocol?
+    private var camera: RecCamera?
+    private var keys: [RecTrack.Key] = []
+    private var typing: [Double] = []
 
     private static var hostNow: Double { CMClockGetTime(CMClockGetHostTimeClock()).seconds }
 
     /// Starts recording `rect` (points, top-left origin, on `screen`); nil records the whole screen.
-    func start(screen: NSScreen, rect: CGRect?, sound: Bool, microphone: Bool) async throws {
+    func start(screen: NSScreen, rect: CGRect?, sound: Bool, microphone: Bool, camera wantsCamera: Bool = false) async throws {
         guard !isRecording else { return }
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID,
@@ -186,8 +189,17 @@ final class RecRecorder {
         self.area = area
         self.scale = scale
         self.size = CGSize(width: width, height: height)
-        moves = []; clicks = []; shapes = []; cursors = []; cursorKeys = []
+        moves = []; clicks = []; shapes = []; cursors = []; cursorKeys = []; keys = []; typing = []
         try await stream.startCapture()
+        if wantsCamera {
+            let camera = RecCamera()
+            do {
+                try camera.start(to: RecStore.folder(for: id).appendingPathComponent("camera.mov"))
+                self.camera = camera
+            } catch {
+                ShotLog.write("camera failed: \(error)")
+            }
+        }
         self.stream = stream
         self.writer = writer
         isRecording = true
@@ -209,6 +221,8 @@ final class RecRecorder {
         try? await stream.stopCapture()
         self.stream = nil
         self.writer = nil
+        let cameraStart = await camera?.stop()
+        camera = nil
         let ok = await writer.finish(at: end)
         onChange()
         guard ok, let first = writer.firstFrameSeconds, writer.frameCount > 0 else {
@@ -218,14 +232,17 @@ final class RecRecorder {
         let shift = { (point: RecTrack.Point) in RecTrack.Point(t: max(0, point.t - first), x: point.x, y: point.y) }
         var track = RecTrack(moves: moves.map(shift), clicks: clicks.map(shift).filter { $0.t >= 0 })
         track.shapes = shapes.map { RecTrack.Shape(t: max(0, $0.t - first), index: $0.index) }
+        track.keys = keys.map { RecTrack.Key(t: $0.t - first, text: $0.text) }.filter { $0.t >= 0 }
+        track.typing = typing.map { $0 - first }.filter { $0 >= 0 }
         let duration = max(0.1, end.seconds - first)
         var edit = RecEdit()
         if edit.style.autoZoom {
             edit.zooms = RecEdit.autoZooms(from: track.clicks, duration: duration, scale: edit.style.zoomLevel)
             edit.zoomsMade = true
         }
-        let meta = RecMeta(id: id, created: startedAt ?? Date(), duration: duration, width: Int(size.width), height: Int(size.height),
+        var meta = RecMeta(id: id, created: startedAt ?? Date(), duration: duration, width: Int(size.width), height: Int(size.height),
                            scale: scale, track: track, edit: edit, cursors: cursors)
+        meta.cameraOffset = cameraStart.map { $0 - first }
         RecStore.save(meta)
         return meta
     }
@@ -241,6 +258,12 @@ final class RecRecorder {
         self.timer = timer
         let click: (NSEvent) -> Void = { _ in MainActor.assumeIsolated { RecRecorder.shared.click() } }
         if let global = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: click) { monitors.append(global) }
+        // Keys reach a global monitor only with Accessibility access (Nabız asks for it for pasting).
+        let key: (NSEvent) -> Void = { event in
+            let code = Int(event.keyCode), flags = event.modifierFlags, characters = event.charactersIgnoringModifiers, repeated = event.isARepeat
+            MainActor.assumeIsolated { RecRecorder.shared.key(code, flags, characters, repeated: repeated) }
+        }
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: .keyDown, handler: key) { monitors.append(global) }
         sample()
     }
 
@@ -274,6 +297,22 @@ final class RecRecorder {
         }
     }
 
+    /// Shortcuts are written down as they look (⌘⇧4); ordinary typing only as a moment, never as letters.
+    private func key(_ code: Int, _ flags: NSEvent.ModifierFlags, _ characters: String?, repeated: Bool) {
+        guard isRecording, !repeated else { return }
+        let now = Self.hostNow
+        let held = flags.intersection([.command, .control, .option])
+        let special: [Int: String] = [36: "↩", 76: "↩", 53: "⎋", 48: "⇥", 123: "←", 124: "→", 125: "↓", 126: "↑"]
+        if !held.isEmpty {
+            let (_, symbols) = HotKey.modifiers(flags)
+            keys.append(RecTrack.Key(t: now, text: symbols + HotKey.keyName(code, characters)))
+        } else if let name = special[code] {
+            keys.append(RecTrack.Key(t: now, text: name))
+        } else {
+            typing.append(now)
+        }
+    }
+
     private func click() {
         guard isRecording, let (x, y) = pointer() else { return }
         clicks.append(RecTrack.Point(t: Self.hostNow, x: x, y: y))
@@ -303,12 +342,13 @@ final class RecRecorder {
 }
 
 enum RecError: LocalizedError {
-    case noDisplay, tooSmall
+    case noDisplay, tooSmall, noCamera
 
     var errorDescription: String? {
         switch self {
         case .noDisplay: L("Ekran bulunamadı", "Couldn't find the display")
         case .tooSmall: L("Alan çok küçük", "The area is too small")
+        case .noCamera: L("Kamera bulunamadı", "No camera found")
         }
     }
 }

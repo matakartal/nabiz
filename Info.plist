@@ -38,6 +38,8 @@
 	<string>Nabız shows today's meetings in its panel and launcher, reminds you a minute before, and joins their calls with one click. Your calendar is read only on this Mac.</string>
 	<key>NSScreenCaptureUsageDescription</key>
 	<string>Nabız takes screenshots you ask for and lets you mark them up. Nothing leaves your Mac.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Nabız shows your camera in a corner of a screen recording, only when you turn it on.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Nabız listens only while you dictate, after you press its dictation shortcut, and types your words where the cursor is.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

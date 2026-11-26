@@ -70,6 +70,21 @@ enum RecControl {
         closeBar()
         let target = options.target
         options.save()
+        if options.camera {
+            // Ask for the camera before the countdown, not in the middle of it.
+            Task {
+                if !(await RecCamera.allowed()) {
+                    options.camera = false
+                    Monitor.panelActions.flash(L("Kamera izni yok", "No camera access"))
+                }
+                pick(target)
+            }
+            return
+        }
+        pick(target)
+    }
+
+    private static func pick(_ target: Target) {
         switch target {
         case .screen:
             let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main ?? NSScreen.screens[0]
@@ -107,7 +122,8 @@ enum RecControl {
             countdown?.orderOut(nil)
             countdown = nil
             do {
-                try await RecRecorder.shared.start(screen: screen, rect: rect, sound: options.sound, microphone: options.microphone)
+                try await RecRecorder.shared.start(screen: screen, rect: rect, sound: options.sound, microphone: options.microphone,
+                                                  camera: options.camera)
                 showRecording(global: global, whole: rect == nil)
             } catch {
                 Monitor.panelActions.flash(L("Kayıt başlamadı", "Recording didn't start"))
@@ -187,12 +203,14 @@ final class RecOptions {
     var target: RecControl.Target
     var sound: Bool
     var microphone: Bool
+    var camera: Bool
 
     init() {
         let defaults = UserDefaults.standard
         target = RecControl.Target(rawValue: defaults.string(forKey: "rec.target") ?? "") ?? .area
         sound = defaults.object(forKey: "rec.sound") as? Bool ?? true
         microphone = defaults.bool(forKey: "rec.microphone")
+        camera = defaults.bool(forKey: "rec.camera")
     }
 
     func save() {
@@ -200,6 +218,7 @@ final class RecOptions {
         defaults.set(target.rawValue, forKey: "rec.target")
         defaults.set(sound, forKey: "rec.sound")
         defaults.set(microphone, forKey: "rec.microphone")
+        defaults.set(camera, forKey: "rec.camera")
     }
 
     /// The microphone comes through ScreenCaptureKit from macOS 15.
@@ -236,6 +255,7 @@ struct RecBarView: View {
             toggle(on: $options.microphone, symbol: options.microphone ? "mic.fill" : "mic.slash",
                    help: options.microphoneAvailable ? L("Mikrofon", "Microphone") : L("Mikrofon için macOS 15 gerekir", "The microphone needs macOS 15"))
                 .disabled(!options.microphoneAvailable)
+            toggle(on: $options.camera, symbol: options.camera ? "video.fill" : "video.slash", help: L("Kamera, köşede", "Camera, in a corner"))
             divider
             Button { RecControl.begin() } label: {
                 HStack(spacing: 6) {
