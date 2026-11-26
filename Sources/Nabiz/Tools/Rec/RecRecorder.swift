@@ -143,16 +143,21 @@ final class RecRecorder {
     private static var hostNow: Double { CMClockGetTime(CMClockGetHostTimeClock()).seconds }
 
     /// Starts recording `rect` (points, top-left origin, on `screen`); nil records the whole screen.
-    func start(screen: NSScreen, rect: CGRect?, sound: Bool, microphone: Bool, camera wantsCamera: Bool = false) async throws {
+    /// With `window`, only that window is recorded (even when something covers it); `rect` is then its frame.
+    func start(screen: NSScreen, rect: CGRect?, window windowID: CGWindowID? = nil, sound: Bool, microphone: Bool,
+               camera wantsCamera: Bool = false) async throws {
         guard !isRecording else { return }
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID,
               let display = content.displays.first(where: { $0.displayID == number }) else { throw RecError.noDisplay }
         let own = content.applications.filter { $0.processID == ProcessInfo.processInfo.processIdentifier }
-        let filter = SCContentFilter(display: display, excludingApplications: own, exceptingWindows: [])
+        let picked = windowID.flatMap { id in content.windows.first { $0.windowID == id } }
+        let filter = picked.map { SCContentFilter(desktopIndependentWindow: $0) }
+            ?? SCContentFilter(display: display, excludingApplications: own, exceptingWindows: [])
 
         let full = CGRect(origin: .zero, size: screen.frame.size)
-        let area = (rect ?? full).intersection(full).integral
+        // A window keeps its whole size, even where it runs off the screen.
+        let area = picked != nil ? (rect ?? full).integral : (rect ?? full).intersection(full).integral
         let scale = screen.backingScaleFactor
         // Even sizes: HEVC wants them.
         let width = Int(area.width * scale) / 2 * 2, height = Int(area.height * scale) / 2 * 2
@@ -161,7 +166,12 @@ final class RecRecorder {
         let config = SCStreamConfiguration()
         config.width = width
         config.height = height
-        if area != full { config.sourceRect = area }
+        if picked != nil {
+            config.ignoreShadowsSingleWindow = true
+            config.scalesToFit = true
+        } else if area != full {
+            config.sourceRect = area
+        }
         config.minimumFrameInterval = CMTime(value: 1, timescale: 60)
         config.pixelFormat = kCVPixelFormatType_32BGRA
         config.colorSpaceName = CGColorSpace.sRGB

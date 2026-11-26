@@ -55,51 +55,56 @@ enum RecControl {
         let size = panel.contentViewController?.view.fittingSize ?? NSSize(width: 520, height: 52)
         panel.setFrame(NSRect(x: screen.visibleFrame.midX - size.width / 2, y: screen.visibleFrame.minY + 48,
                               width: size.width, height: size.height), display: true)
-        panel.onClose = { bar = nil }
+        panel.onClose = { bar = nil; RecPicker.close() }
+        // Clicks on the picker (Nabız's own windows) mustn't close the bar.
+        panel.keepsOpenOnClick = { _ in true }
         panel.present()
         bar = panel
+        RecPicker.show(options.target)
     }
 
     static func closeBar() {
         bar?.orderOut(nil)
         bar = nil
+        RecPicker.close()
     }
 
-    /// The bar's record button.
+    /// A target picked in the bar: the picker on screen switches with it, like ⌘⇧5.
+    static func choose(_ target: Target) {
+        options.target = target
+        RecPicker.show(target)
+    }
+
+    /// The bar's record button: the whole screen with the pointer, or the area on screen.
     static func begin() {
-        closeBar()
-        let target = options.target
-        options.save()
-        if options.camera {
-            // Ask for the camera before the countdown, not in the middle of it.
-            Task {
-                if !(await RecCamera.allowed()) {
-                    options.camera = false
-                    Monitor.panelActions.flash(L("Kamera izni yok", "No camera access"))
-                }
-                pick(target)
-            }
-            return
+        switch options.target {
+        case .screen:
+            let screen = RecPicker.hoveredScreen ?? NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main ?? NSScreen.screens[0]
+            record(screen: screen, rect: nil, window: nil)
+        case .area:
+            guard let (screen, rect) = RecPicker.areaOnScreen() else { return }
+            record(screen: screen, rect: rect, window: nil)
+        case .window:
+            Monitor.panelActions.flash(L("Kaydetmek için bir pencereye tıkla", "Click a window to record it"))
         }
-        pick(target)
     }
 
-    private static func pick(_ target: Target) {
-        switch target {
-        case .screen:
-            let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main ?? NSScreen.screens[0]
-            count(on: screen, rect: nil)
-        case .window, .area:
-            ShotSelector.begin(windowMode: target == .window) { result in
-                guard let result else { return }
-                count(on: result.screen, rect: result.rect)
+    /// Starts after the picker: asks for the camera first if it's on, then counts down.
+    static func record(screen: NSScreen, rect: CGRect?, window: CGWindowID?) {
+        closeBar()
+        options.save()
+        Task {
+            if options.camera, !(await RecCamera.allowed()) {
+                options.camera = false
+                Monitor.panelActions.flash(L("Kamera izni yok", "No camera access"))
             }
+            count(on: screen, rect: rect, window: window)
         }
     }
 
     // MARK: Countdown
 
-    private static func count(on screen: NSScreen, rect: CGRect?) {
+    private static func count(on screen: NSScreen, rect: CGRect?, window: CGWindowID?) {
         let area = rect ?? CGRect(origin: .zero, size: screen.frame.size)
         // The area in global (bottom-left) coordinates.
         let global = NSRect(x: screen.frame.minX + area.minX, y: screen.frame.maxY - area.maxY, width: area.width, height: area.height)
@@ -122,8 +127,8 @@ enum RecControl {
             countdown?.orderOut(nil)
             countdown = nil
             do {
-                try await RecRecorder.shared.start(screen: screen, rect: rect, sound: options.sound, microphone: options.microphone,
-                                                  camera: options.camera)
+                try await RecRecorder.shared.start(screen: screen, rect: rect, window: window, sound: options.sound,
+                                                  microphone: options.microphone, camera: options.camera)
                 showRecording(global: global, whole: rect == nil)
             } catch {
                 Monitor.panelActions.flash(L("Kayıt başlamadı", "Recording didn't start"))
@@ -236,7 +241,7 @@ struct RecBarView: View {
             BarButton(symbol: "xmark", help: L("Kapat  ⎋", "Close  ⎋")) { RecControl.closeBar() }
             divider
             ForEach(RecControl.Target.allCases) { target in
-                Button { options.target = target } label: {
+                Button { RecControl.choose(target) } label: {
                     VStack(spacing: 3) {
                         Image(systemName: target.symbol).font(.system(size: 15))
                         Text(target.title).font(.system(size: 10, weight: .medium))
@@ -260,7 +265,7 @@ struct RecBarView: View {
             Button { RecControl.begin() } label: {
                 HStack(spacing: 6) {
                     Circle().fill(Color.red).frame(width: 9, height: 9)
-                    Text(L("Kayda başla", "Record")).font(Theme.bodyStrong)
+                    Text(options.target == .window ? L("Pencereye tıkla", "Click a window") : L("Kayda başla", "Record")).font(Theme.bodyStrong)
                 }
                 .foregroundStyle(.white)
                 .padding(.horizontal, Theme.Spacing.m)
@@ -269,6 +274,8 @@ struct RecBarView: View {
             }
             .buttonStyle(.plain)
             .keyboardShortcut(.defaultAction)
+            .disabled(options.target == .window)
+            .opacity(options.target == .window ? 0.6 : 1)
         }
         .padding(.horizontal, Theme.Spacing.m)
         .padding(.vertical, Theme.Spacing.s)
