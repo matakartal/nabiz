@@ -380,6 +380,8 @@ private struct SettingsHitRow: View {
 struct SidebarSearchField: View {
     @Binding var text: String
     var onMove: ((Int) -> Void)? = nil
+    /// Bumped to put the cursor here (⌘K in the AI chat).
+    var focusTrigger = 0
     let onSubmit: () -> Void
     @FocusState private var focused: Bool
 
@@ -391,6 +393,7 @@ struct SidebarSearchField: View {
                 .focused($focused)
                 .onSubmit(onSubmit)
                 .onExitCommand { text = "" }
+                .onChange(of: focusTrigger) { _, _ in focused = true }
                 .onKeyPress(.downArrow) {
                     guard let onMove, !text.isEmpty else { return .ignored }
                     onMove(1)

@@ -252,6 +252,8 @@ final class AIChatState {
     var findIndex = 0
     /// Bumped to put the cursor in the find field.
     var focusFind = 0
+    /// Bumped to put the cursor in the sidebar search (⌘K).
+    var focusSearch = 0
 
     var findTarget: UUID? { finding && findMatches.indices.contains(findIndex) ? findMatches[findIndex] : nil }
 
@@ -504,6 +506,7 @@ struct AIChatView: View {
                 Button("") { state.findStep(-1) }.keyboardShortcut("g", modifiers: [.command, .shift])
                 Button("") { state.copyLastAnswer() }.keyboardShortcut("c", modifiers: [.command, .shift])
                 Button("") { state.toggleSide() }.keyboardShortcut("s", modifiers: [.command, .option])
+                Button("") { state.focusSearch += 1 }.keyboardShortcut("k", modifiers: .command)
                 Button("") { state.quoteSelection() }.keyboardShortcut("'", modifiers: [.command, .shift])
                 ForEach(1..<10) { number in
                     Button("") { state.jump(to: number) }.keyboardShortcut(KeyEquivalent(Character("\(number)")), modifiers: .command)
@@ -652,7 +655,7 @@ private struct AIChatSidebar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            SidebarSearchField(text: $state.query) {}
+            SidebarSearchField(text: $state.query, focusTrigger: state.focusSearch) {}
                 .padding(.horizontal, Theme.sidebarInset)
                 .padding(.top, Theme.Spacing.s)
                 .padding(.bottom, Theme.Spacing.xs)
