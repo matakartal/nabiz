@@ -199,7 +199,7 @@ enum MarkdownInline {
             if run.link != nil { links.append(run.range) }
         }
         for range in code {
-            result[range].font = .system(size: size * 0.92, design: .monospaced)
+            result[range].font = Theme.mono(size * 0.92)
             result[range].backgroundColor = Theme.track
         }
         for range in links {
@@ -234,25 +234,25 @@ struct MarkdownView: View {
         switch block {
         case .heading(let level, let text):
             inline(text)
-                .font(.system(size: size + CGFloat(max(0, 4 - level)) * 2, weight: level <= 2 ? .bold : .semibold))
+                .font(Theme.scaled(size + CGFloat(max(0, 4 - level)) * 2, weight: level <= 2 ? .bold : .semibold))
                 .padding(.top, level <= 2 ? size * 0.3 : 0)
         case .paragraph(let text):
-            inline(text).font(.system(size: size))
+            inline(text).font(Theme.scaled(size))
         case .list(let items):
             VStack(alignment: .leading, spacing: size * 0.35) {
                 ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                     HStack(alignment: .firstTextBaseline, spacing: size * 0.5) {
                         if let checked = item.checked {
                             Image(systemName: checked ? "checkmark.square.fill" : "square")
-                                .font(.system(size: size * 0.9))
+                                .font(Theme.scaled(size * 0.9))
                                 .foregroundStyle(checked ? tint : Theme.textMuted)
                         } else {
                             Text(verbatim: item.marker)
-                                .font(.system(size: size, weight: item.marker == "•" ? .bold : .regular).monospacedDigit())
+                                .font(Theme.scaled(size, weight: item.marker == "•" ? .bold : .regular).monospacedDigit())
                                 .foregroundStyle(Theme.textMuted)
                                 .frame(minWidth: size * 0.8, alignment: .trailing)
                         }
-                        inline(item.text).font(.system(size: size))
+                        inline(item.text).font(Theme.scaled(size))
                     }
                     .padding(.leading, CGFloat(item.level) * size * 1.3)
                 }
@@ -262,7 +262,7 @@ struct MarkdownView: View {
         case .quote(let text):
             HStack(spacing: size * 0.7) {
                 Capsule().fill(tint.opacity(0.6)).frame(width: 3)
-                inline(text).font(.system(size: size)).foregroundStyle(Theme.textMuted)
+                inline(text).font(Theme.scaled(size)).foregroundStyle(Theme.textMuted)
             }
             .fixedSize(horizontal: false, vertical: true)
         case .table(let header, let rows):
@@ -291,7 +291,7 @@ struct CodeBlockView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text(verbatim: language.isEmpty ? L("kod", "code") : language)
-                    .font(.system(size: size * 0.8, weight: .medium, design: .monospaced))
+                    .font(Theme.mono(size * 0.8, weight: .medium))
                     .foregroundStyle(Theme.textMuted)
                 Spacer()
                 AICopyButton(text: code, size: size * 0.8)
@@ -301,7 +301,7 @@ struct CodeBlockView: View {
             .background(Theme.track)
             ScrollView(.horizontal) {
                 Text(SyntaxHighlighter.highlight(code, language: language))
-                    .font(.system(size: size * 0.88, design: .monospaced))
+                    .font(Theme.mono(size * 0.88))
                     .lineSpacing(size * 0.18)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: true, vertical: true)
@@ -347,7 +347,7 @@ struct TableBlockView: View {
     }
 
     private func cell(_ text: String) -> Text {
-        Text(MarkdownInline.render(text, size: size * 0.93, tint: tint)).font(.system(size: size * 0.93)).foregroundStyle(Theme.text)
+        Text(MarkdownInline.render(text, size: size * 0.93, tint: tint)).font(Theme.scaled(size * 0.93)).foregroundStyle(Theme.text)
     }
 }
 
@@ -372,7 +372,7 @@ struct AICopyButton: View {
                 Image(systemName: copied ? "checkmark" : "doc.on.doc")
                 if label { Text(copied ? L("Kopyalandı", "Copied") : L("Kopyala", "Copy")) }
             }
-            .font(.system(size: size))
+            .font(Theme.scaled(size))
             .foregroundStyle(Theme.textMuted)
             .contentShape(Rectangle())
         }

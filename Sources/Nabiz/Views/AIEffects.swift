@@ -184,7 +184,7 @@ struct AIBrandMark: View {
                 .scaleEffect(time == nil ? 1 : 0.88 + 0.12 * sin(t * 3))
         case .onDevice:
             Image(systemName: Self.appleSymbol)
-                .font(.system(size: size * 0.86, weight: .medium))
+                .font(Theme.scaled(size * 0.86, weight: .medium))
                 .foregroundStyle(AngularGradient(colors: brand.colors + [brand.colors[0]], center: .center, angle: .degrees(t * 120)))
                 .scaleEffect(time == nil ? 1 : 0.94 + 0.06 * sin(t * 3))
         }
@@ -245,7 +245,7 @@ struct AIThinkingLabel: View {
         HStack(spacing: Theme.Spacing.s) {
             AIBrandMark(engine: engine, size: size + 5, animating: true)
             Text(verbatim: text ?? L("\(engine.shortName) düşünüyor…", "\(engine.shortName) is thinking…"))
-                .font(.system(size: size))
+                .font(Theme.scaled(size))
                 .foregroundStyle(Theme.textMuted)
                 .shimmer(engine: engine)
         }

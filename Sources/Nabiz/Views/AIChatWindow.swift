@@ -1002,7 +1002,7 @@ private struct AIFolderGroup: View {
     private func header(_ count: Int) -> some View {
         HStack(spacing: SidebarGrid.gap) {
             Image(systemName: targeted || expanded ? "folder.fill" : "folder")
-                .font(.system(size: 13))
+                .font(Theme.body)
                 .foregroundStyle(targeted ? Theme.accent : Theme.textMuted)
                 .frame(width: SidebarGrid.icon, height: SidebarGrid.icon)
             if state.renamingFolder == folder.id {
@@ -1019,7 +1019,7 @@ private struct AIFolderGroup: View {
                         RowButton(symbol: "square.and.pencil", help: L("Bu klasörde yeni sohbet", "New chat in this folder")) {
                             state.newChat(in: folder.id)
                         }
-                        Menu { actions } label: { Image(systemName: "ellipsis").font(.system(size: 11, weight: .semibold)) }
+                        Menu { actions } label: { Image(systemName: "ellipsis").font(Theme.small.weight(.semibold)) }
                             .menuStyle(.borderlessButton)
                             .menuIndicator(.hidden)
                             .tint(Theme.textMuted)
@@ -1029,7 +1029,7 @@ private struct AIFolderGroup: View {
                     .transition(.opacity)
                 }
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(Theme.small.weight(.semibold))
                     .foregroundStyle(Theme.textMuted)
                     .rotationEffect(.degrees(expanded ? 90 : 0))
                     .frame(width: SidebarGrid.trailing)
@@ -1107,7 +1107,7 @@ private struct NewChatRow: View {
         Button(action: action) {
             HStack(spacing: SidebarGrid.gap) {
                 Image(systemName: "square.and.pencil")
-                    .font(.system(size: 13))
+                    .font(Theme.body)
                     .frame(width: SidebarGrid.icon, height: SidebarGrid.icon)
                 Text(L("Yeni sohbet", "New chat")).font(Theme.body)
                 Spacer(minLength: 0)
@@ -1218,7 +1218,7 @@ private struct NewFolderRow: View {
         Button(action: action) {
             HStack(spacing: SidebarGrid.gap) {
                 Image(systemName: "folder.badge.plus")
-                    .font(.system(size: 13))
+                    .font(Theme.body)
                     .frame(width: SidebarGrid.icon, height: SidebarGrid.icon)
                 Text(L("Klasör ekle", "Add folder")).font(Theme.body)
                 Spacer(minLength: 0)
@@ -1316,11 +1316,11 @@ private struct AIChatRow: View {
                 }
                 if let hit {
                     if let snippet = hit.snippet {
-                        Text(AIChatSearch.highlighted(snippet, words, strong: .system(size: 10.5, weight: .semibold)))
-                            .font(.system(size: 10.5)).foregroundStyle(Theme.textMuted).lineLimit(2)
+                        Text(AIChatSearch.highlighted(snippet, words, strong: Theme.small.weight(.semibold)))
+                            .font(Theme.small).foregroundStyle(Theme.textMuted).lineLimit(2) // nabiz-ui: ignore a search snippet in the window sidebar, not a panel row
                     }
                     Text(verbatim: AIChatSearch.detail(hit))
-                        .font(.system(size: 10)).foregroundStyle(Theme.textMuted.opacity(0.8)).lineLimit(1)
+                        .font(Theme.small).foregroundStyle(Theme.textMuted.opacity(0.8)).lineLimit(1)
                 }
             }
             Spacer(minLength: 0)
@@ -1339,7 +1339,7 @@ private struct AIChatRow: View {
                     Menu {
                         AIChatActions(conversation: conversation, state: state)
                     } label: {
-                        Image(systemName: "ellipsis").font(.system(size: 11, weight: .semibold))
+                        Image(systemName: "ellipsis").font(Theme.small.weight(.semibold))
                     }
                     .menuStyle(.borderlessButton)
                     .menuIndicator(.hidden)
@@ -1350,7 +1350,7 @@ private struct AIChatRow: View {
                 }
                 .transition(.opacity)
             } else if !conversation.isRunning, conversation.lastAnswer?.error != nil, conversation.messages.last?.role == .assistant {
-                Image(systemName: "exclamationmark.circle.fill").font(.system(size: 10)).foregroundStyle(Theme.warning.fill)
+                Image(systemName: "exclamationmark.circle.fill").font(Theme.small).foregroundStyle(Theme.danger)
                     .frame(width: SidebarGrid.trailing)
                     .help(conversation.lastAnswer?.error ?? "")
             } else if conversation.unread {
@@ -1359,7 +1359,7 @@ private struct AIChatRow: View {
                     .frame(width: SidebarGrid.trailing)
                     .help(L("Yeni cevap", "New answer"))
             } else if conversation.pinned && state.renaming != conversation.id {
-                Image(systemName: "pin.fill").font(.system(size: 9)).foregroundStyle(Theme.textMuted)
+                Image(systemName: "pin.fill").font(Theme.small).foregroundStyle(Theme.textMuted)
                     .frame(width: SidebarGrid.trailing)
             }
         }
@@ -1385,10 +1385,10 @@ private struct RowButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 11, weight: .medium))
+                .font(Theme.small.weight(.medium))
                 .foregroundStyle(hovering ? Theme.text : Theme.textMuted)
                 .frame(width: 22, height: 22)
-                .background(hovering ? Theme.hover : .clear, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                .background(hovering ? Theme.hover : .clear, in: RoundedRectangle(cornerRadius: Theme.fieldRadius, style: .continuous))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -1441,12 +1441,12 @@ private struct AIChatDetail: View {
         .animation(.easeOut(duration: 0.15), value: state.finding)
         .overlay {
             if state.dropping {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: Theme.radius, style: .continuous)
                     .strokeBorder(Theme.accent.opacity(0.7), style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
-                    .background(Theme.accent.opacity(0.05), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .background(Theme.accent.opacity(0.05), in: RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
                     .overlay {
                         Label(L("Eklemek için bırak", "Drop to attach"), systemImage: "paperclip")
-                            .font(.system(size: 14, weight: .medium))
+                            .font(Theme.scaled(Theme.chatText - 1, weight: .medium))
                             .foregroundStyle(Theme.text)
                             .padding(.horizontal, Theme.Spacing.l)
                             .frame(height: 36)
@@ -1480,24 +1480,24 @@ private struct FindBar: View {
 
     var body: some View {
         HStack(spacing: Theme.Spacing.xs) {
-            Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(Theme.textMuted)
+            Image(systemName: "magnifyingglass").font(Theme.body).foregroundStyle(Theme.textMuted)
                 .frame(width: 16)
             TextField(L("Sohbette ara", "Find in chat"), text: $state.findQuery)
                 .textFieldStyle(.plain)
-                .font(.system(size: 13))
+                .font(Theme.body)
                 .frame(width: 170)
                 .focused($focused)
                 .onSubmit { state.findStep(NSEvent.modifierFlags.contains(.shift) ? 1 : -1) }
                 .onExitCommand { state.finding = false }
             Text(verbatim: count)
-                .font(.system(size: 11.5)).monospacedDigit()
+                .font(Theme.small).monospacedDigit()
                 .foregroundStyle(Theme.textMuted)
                 .fixedSize()
             Rectangle().fill(Theme.hairline).frame(width: 1, height: 16).padding(.horizontal, 2)
             step("chevron.up", L("Önceki (↩)", "Previous (↩)"), -1)
             step("chevron.down", L("Sonraki (⇧↩)", "Next (⇧↩)"), 1)
             Button { state.finding = false } label: {
-                Image(systemName: "xmark").font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.textMuted)
+                Image(systemName: "xmark").font(Theme.small.weight(.medium)).foregroundStyle(Theme.textMuted)
                     .frame(width: 22, height: 22).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -1508,7 +1508,6 @@ private struct FindBar: View {
         .frame(height: 34)
         .background(.regularMaterial, in: Capsule())
         .overlay { Capsule().strokeBorder(Theme.hairline) }
-        .shadow(color: .black.opacity(0.12), radius: 10, y: 3)
         .onAppear { focused = true; state.updateFind() }
         .onChange(of: state.focusFind) { _, _ in focused = true }
         .onChange(of: state.findQuery) { _, _ in state.updateFind() }
@@ -1523,7 +1522,7 @@ private struct FindBar: View {
 
     private func step(_ symbol: String, _ help: String, _ by: Int) -> some View {
         Button { state.findStep(by) } label: {
-            Image(systemName: symbol).font(.system(size: 11, weight: .medium))
+            Image(systemName: symbol).font(Theme.small.weight(.medium))
                 .foregroundStyle(state.findMatches.isEmpty ? Theme.textMuted.opacity(0.5) : Theme.text)
                 .frame(width: 22, height: 22).contentShape(Rectangle())
         }
@@ -1543,7 +1542,7 @@ private struct AIWelcome: View {
             Spacer()
             AIBrandMark(engine: engine, size: 48)
             Text(verbatim: greeting)
-                .font(.system(size: 26, weight: .semibold))
+                .font(Theme.scaled(Theme.chatText * 1.73, weight: .semibold))
                 .foregroundStyle(Theme.text)
             Text(L("\(engine.shortName) ile sohbet et", "Chat with \(engine.shortName)") + subtitle)
                 .font(Theme.body).foregroundStyle(Theme.textMuted)
@@ -1653,7 +1652,7 @@ struct AIComposer: View {
         let model = conversation?.model ?? state.model
         let brand = engine.brand
         let running = conversation?.isRunning == true
-        let shape = RoundedRectangle(cornerRadius: 22, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: Theme.radius, style: .continuous)
         VStack(spacing: Theme.Spacing.s) {
             if let limit = AIChatStore.shared.liveLimits[engine], limit.status != .allowed,
                limit.status == .warning || (limit.resetsAt ?? .distantFuture) > Date() {
@@ -1663,16 +1662,16 @@ struct AIComposer: View {
             VStack(alignment: .leading, spacing: Theme.Spacing.s) {
                 if let editing = state.editing, editing.chat == conversation?.id {
                     HStack(spacing: Theme.Spacing.s) {
-                        Image(systemName: "pencil").font(.system(size: 11, weight: .semibold))
+                        Image(systemName: "pencil").font(Theme.small.weight(.semibold))
                         Text(L("Mesajını düzenliyorsun; gönderince bu noktadan devam eder",
                                "Editing your message; sending continues from here"))
                             .lineLimit(1)
                         Spacer(minLength: 0)
                         Button(L("Vazgeç", "Cancel")) { withAnimation(.easeOut(duration: 0.15)) { state.cancelEdit() } }
-                            .buttonStyle(TextButtonStyle(font: .system(size: 12, weight: .medium), color: Theme.accent))
+                            .buttonStyle(TextButtonStyle(font: Theme.body.weight(.medium), color: Theme.accent))
                             .help("esc")
                     }
-                    .font(.system(size: 12))
+                    .font(Theme.body)
                     .foregroundStyle(Theme.textMuted)
                     .padding(.horizontal, 2)
                     .transition(.opacity)
@@ -1702,7 +1701,7 @@ struct AIComposer: View {
                           : suggestion.map { "\($0.count > 90 ? $0.prefix(88) + "…" : $0)   ⇥" } ?? L("\(engine.shortName)'a yaz…", "Message \(engine.shortName)…"),
                           text: $state.draft, axis: .vertical)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 15))
+                    .font(Theme.scaled(Theme.chatText))
                     .lineLimit(1...12)
                     .lineSpacing(3)
                     .tint(brand.multicolor ? brand.colors[1] : brand.tint)
@@ -1758,14 +1757,13 @@ struct AIComposer: View {
                     shape.strokeBorder(Theme.hairline)
                 }
             }
-            .shadow(color: .black.opacity(focused ? 0.10 : 0.05), radius: focused ? 16 : 10, y: 4)
-            .overlay { AIGlow(engine: engine, active: running, cornerRadius: 22) }
+            .overlay { AIGlow(engine: engine, active: running, cornerRadius: Theme.radius) }
             .animation(.easeOut(duration: 0.18), value: focused)
             .animation(.easeOut(duration: 0.18), value: state.attachments)
             .contentShape(Rectangle())
             .onTapGesture { focused = true }
             Text(footnote(engine))
-                .font(.system(size: 10.5))
+                .font(Theme.small)
                 .foregroundStyle(Theme.textMuted.opacity(0.8))
                 .lineLimit(1)
         }
@@ -1807,30 +1805,30 @@ private struct AttachmentCard: View {
                     .resizable()
                     .aspectRatio(contentMode: .fill)
                     .frame(width: 30, height: 30)
-                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.fieldRadius, style: .continuous))
             } else {
                 Image(systemName: attachment.symbol)
-                    .font(.system(size: 14))
+                    .font(Theme.scaled(Theme.chatText - 1))
                     .foregroundStyle(Theme.textMuted)
                     .frame(width: 30, height: 30)
-                    .background(Theme.track, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .background(Theme.track, in: RoundedRectangle(cornerRadius: Theme.fieldRadius, style: .continuous))
             }
             VStack(alignment: .leading, spacing: 1) {
                 Text(verbatim: attachment.name).font(Theme.small.weight(.medium)).foregroundStyle(Theme.text).lineLimit(1)
                 Text(attachment.image != nil ? L("Görsel", "Image")
                      : L("\(attachment.text.split(whereSeparator: \.isNewline).count) satır", "\(attachment.text.split(whereSeparator: \.isNewline).count) lines"))
-                    .font(.system(size: 10)).foregroundStyle(Theme.textMuted)
+                    .font(Theme.small).foregroundStyle(Theme.textMuted)
             }
             .frame(maxWidth: 160, alignment: .leading)
         }
         .padding(Theme.Spacing.xs + 2)
         .padding(.trailing, Theme.Spacing.s)
-        .background(Theme.field.opacity(0.6), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay { RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Theme.hairline) }
+        .background(Theme.field.opacity(0.6), in: RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).strokeBorder(Theme.hairline) }
         .overlay(alignment: .topTrailing) {
             if hovering {
                 Button(action: remove) {
-                    Image(systemName: "xmark.circle.fill").font(.system(size: 14)).foregroundStyle(Theme.textMuted)
+                    Image(systemName: "xmark.circle.fill").font(Theme.scaled(Theme.chatText - 1)).foregroundStyle(Theme.textMuted)
                         .background(Circle().fill(Theme.surfaceRaised))
                 }
                 .buttonStyle(.plain)
@@ -1857,9 +1855,9 @@ private struct SummaryDivider: View {
                     HStack(spacing: 5) {
                         Image(systemName: "rectangle.compress.vertical")
                         Text(L("Buraya kadarı özetlendi", "Summarized up to here"))
-                        Image(systemName: open ? "chevron.up" : "chevron.down").font(.system(size: size * 0.6))
+                        Image(systemName: open ? "chevron.up" : "chevron.down").font(Theme.scaled(size * 0.6))
                     }
-                    .font(.system(size: size * 0.78))
+                    .font(Theme.scaled(size * 0.78))
                     .foregroundStyle(Theme.textMuted)
                     .fixedSize()
                     .contentShape(Rectangle())
@@ -1912,14 +1910,14 @@ private struct SideChatPanel: View {
                         } label: {
                             Label(L("Ana sohbete ekle", "Add to the main chat"), systemImage: "arrow.uturn.left")
                         }
-                        .buttonStyle(TextButtonStyle(font: .system(size: 12, weight: .medium), color: Theme.accent))
+                        .buttonStyle(TextButtonStyle(font: Theme.body.weight(.medium), color: Theme.accent))
                         .help(L("Son cevabı ana sohbetin mesaj kutusuna alıntılar", "Quotes the last answer into the main chat's box"))
                         .padding(.vertical, Theme.Spacing.xs)
                     }
                 } else {
                     VStack(spacing: Theme.Spacing.s) {
                         Spacer()
-                        Image(systemName: "bubble.left.and.text.bubble.right").font(.system(size: 26)).foregroundStyle(Theme.textMuted.opacity(0.6))
+                        Image(systemName: "bubble.left.and.text.bubble.right").font(Theme.scaled(Theme.chatText * 1.73)).foregroundStyle(Theme.textMuted.opacity(0.6))
                         Text(L("Ana sohbeti bozmadan bir şey sor: bir terimi açıklat, bir cevabı kontrol ettir, başka bir yol iste. Yan sohbet ana sohbeti görür ama ona eklenmez.",
                                "Ask something without derailing the main chat: explain a term, check an answer, try another way. The side chat sees the main chat but isn't added to it."))
                             .font(Theme.small).foregroundStyle(Theme.textMuted).multilineTextAlignment(.center)
@@ -1930,7 +1928,7 @@ private struct SideChatPanel: View {
                 HStack(alignment: .bottom, spacing: Theme.Spacing.s) {
                     TextField(L("Yan soru…", "Side question…"), text: $state.sideDraft, axis: .vertical)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 13))
+                        .font(Theme.body)
                         .lineLimit(1...6)
                         .focused($focused)
                         .onSubmit { state.sendSide() }
@@ -1941,8 +1939,8 @@ private struct SideChatPanel: View {
                     }
                 }
                 .padding(Theme.Spacing.s + 2)
-                .background(Theme.field.opacity(0.7), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .overlay { RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Theme.hairline) }
+                .background(Theme.field.opacity(0.7), in: RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
+                .overlay { RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).strokeBorder(Theme.hairline) }
                 .padding(Theme.Spacing.s)
             }
             .frame(width: width)
@@ -1989,12 +1987,12 @@ private struct QueuedList: View {
         VStack(alignment: .leading, spacing: 2) {
             ForEach(items) { item in
                 HStack(spacing: Theme.Spacing.s) {
-                    Image(systemName: "clock").font(.system(size: 11)).foregroundStyle(Theme.textMuted).frame(width: 16)
+                    Image(systemName: "clock").font(Theme.small).foregroundStyle(Theme.textMuted).frame(width: 16)
                     Text(verbatim: item.text.isEmpty ? (item.attachmentName ?? L("Ek", "Attachment")) : item.text)
-                        .font(.system(size: 12.5)).foregroundStyle(Theme.text).lineLimit(1).truncationMode(.tail)
+                        .font(Theme.body).foregroundStyle(Theme.text).lineLimit(1).truncationMode(.tail)
                     Spacer(minLength: Theme.Spacing.s)
                     Button(L("Şimdi gönder", "Send now")) { state.sendNow(item) }
-                        .buttonStyle(TextButtonStyle(font: .system(size: 11.5, weight: .medium), color: Theme.accent))
+                        .buttonStyle(TextButtonStyle(font: Theme.small.weight(.medium), color: Theme.accent))
                         .help(running ? L("Yazılan cevabı durdurup bunu gönderir", "Stops the answer being written and sends this")
                                       : L("Bunu şimdi gönderir", "Sends this now"))
                     RowButton(symbol: "pencil", help: L("Düzenle", "Edit")) { state.editQueued(item) }
@@ -2007,7 +2005,7 @@ private struct QueuedList: View {
                 Button(L("Sıradakileri gönder", "Send the queued messages")) {
                     if let id = state.conversation?.id { state.sendQueued(in: id) }
                 }
-                .buttonStyle(TextButtonStyle(font: .system(size: 11.5, weight: .medium), color: Theme.accent))
+                .buttonStyle(TextButtonStyle(font: Theme.small.weight(.medium), color: Theme.accent))
                 .padding(.leading, 24)
             }
         }
@@ -2088,7 +2086,7 @@ private struct LimitBanner: View {
         HStack(spacing: Theme.Spacing.s) {
             Image(systemName: blocked ? "hourglass" : "gauge.with.dots.needle.67percent")
                 .foregroundStyle(blocked ? Theme.danger : Theme.warning.fill)
-            Text(verbatim: text(blocked)).font(.system(size: 12)).foregroundStyle(Theme.text).lineLimit(2)
+            Text(verbatim: text(blocked)).font(Theme.body).foregroundStyle(Theme.text).lineLimit(2) // nabiz-ui: ignore a notice over the message box, not a panel row
             Spacer(minLength: Theme.Spacing.s)
             let others = AIEngine.order.filter { $0 != engine && AIEngines.shared.isAvailable($0) }
             if blocked && !others.isEmpty {
@@ -2107,8 +2105,8 @@ private struct LimitBanner: View {
         }
         .padding(.horizontal, Theme.Spacing.m)
         .padding(.vertical, Theme.Spacing.s)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay { RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Theme.hairline) }
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).strokeBorder(Theme.hairline) }
     }
 
     private func text(_ blocked: Bool) -> String {
@@ -2272,7 +2270,7 @@ struct AISendButton: View {
             ZStack {
                 Circle().fill(lit ? AnyShapeStyle(brand.gradient) : AnyShapeStyle(Theme.field))
                 Image(systemName: running ? "stop.fill" : "arrow.up")
-                    .font(.system(size: running ? 10 : 14, weight: .bold))
+                    .font(Theme.scaled(running ? Theme.chatText * 0.67 : Theme.chatText - 1, weight: .bold))
                     // Grok's black-and-white needs the opposite colour for its arrow.
                     .foregroundStyle(lit ? (engine == .grok ? Theme.surface : .white) : Theme.textMuted)
                 if running && !reduceMotion {
@@ -2393,7 +2391,7 @@ struct AITranscriptView: View {
     private var showsNavigator: Bool { !compact && questions.count > 1 }
 
     var body: some View {
-        let size: CGFloat = compact ? 13 : 15
+        let size: CGFloat = compact ? Theme.chatCompactText : Theme.chatText
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: compact ? Theme.Spacing.l : Theme.Spacing.xl + 4) {
@@ -2483,12 +2481,11 @@ struct AITranscriptView: View {
                 if !atBottom {
                     Button { withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo("bottom", anchor: .bottom) } } label: {
                         Image(systemName: "arrow.down")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(Theme.body.weight(.semibold))
                             .foregroundStyle(Theme.text)
                             .frame(width: 30, height: 30)
                             .background(.regularMaterial, in: Circle())
                             .overlay { Circle().strokeBorder(Theme.hairline) }
-                            .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
                     }
                     .buttonStyle(.plain)
                     .padding(.bottom, Theme.Spacing.s)
@@ -2514,9 +2511,9 @@ struct AITranscriptView: View {
     @ViewBuilder private func findMark(_ id: UUID) -> some View {
         if let state, state.findTarget == id {
             // Find's own yellow, as in Safari and Notes.
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: Theme.radius, style: .continuous)
                 .fill(Color.yellow.opacity(0.16))
-                .overlay { RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.yellow.opacity(0.55)) }
+                .overlay { RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).strokeBorder(Color.yellow.opacity(0.55)) } // nabiz-ui: ignore find's own yellow, as in Safari
                 .padding(-Theme.Spacing.s)
                 .transition(.opacity)
         }
@@ -2611,9 +2608,8 @@ private struct ChatNavigator: View {
             .frame(width: 260)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxHeight: max(120, height * 0.7))
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay { RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Theme.hairline) }
-            .shadow(color: .black.opacity(0.14), radius: 12, y: 4)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
+            .overlay { RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).strokeBorder(Theme.hairline) }
             .onAppear { if let current { proxy.scrollTo(current, anchor: .center) } }
         }
     }
@@ -2636,7 +2632,7 @@ private struct NavigatorRow: View {
     var body: some View {
         Button(action: action) {
             Text(verbatim: title)
-                .font(.system(size: 12.5, weight: active ? .medium : .regular))
+                .font(Theme.body.weight(active ? .medium : .regular))
                 .foregroundStyle(active || hovered ? Theme.text : Theme.textMuted)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -2644,7 +2640,7 @@ private struct NavigatorRow: View {
                 .padding(.horizontal, Theme.Spacing.s)
                 .frame(height: 26)
                 .background(hovered ? Theme.hover : (active ? Theme.hover.opacity(0.6) : .clear),
-                            in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                            in: RoundedRectangle(cornerRadius: Theme.fieldRadius, style: .continuous))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -2671,7 +2667,7 @@ private struct UserBubble: View {
                         .frame(width: 24, height: 24)
                     if let edit {
                         Button(action: edit) {
-                            Image(systemName: "pencil").font(.system(size: size * 0.8)).foregroundStyle(Theme.textMuted)
+                            Image(systemName: "pencil").font(Theme.scaled(size * 0.8)).foregroundStyle(Theme.textMuted)
                                 .frame(width: 24, height: 24).contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
@@ -2692,14 +2688,14 @@ private struct UserBubble: View {
                 }
                 if !message.text.isEmpty {
                     Text(verbatim: message.text)
-                        .font(.system(size: size))
+                        .font(Theme.scaled(size))
                         .foregroundStyle(Theme.text)
                         .lineSpacing(size * 0.2)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.horizontal, size)
                         .padding(.vertical, size * 0.62)
-                        .background(Theme.field, in: RoundedRectangle(cornerRadius: size * 1.25, style: .continuous))
+                        .background(Theme.field, in: RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
                         .help(message.date.formatted(date: .abbreviated, time: .shortened))
                 }
             }
@@ -2722,13 +2718,13 @@ private struct MessageImage: View {
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .frame(width: picture.size.width >= picture.size.height ? size * 10 : size * 6.5, height: size * 7.5)
-                        .clipShape(RoundedRectangle(cornerRadius: size * 0.8, style: .continuous))
-                        .overlay { RoundedRectangle(cornerRadius: size * 0.8, style: .continuous).strokeBorder(Theme.hairline) }
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
+                        .overlay { RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).strokeBorder(Theme.hairline) }
                 }
                 .buttonStyle(.plain)
                 .help(L("Önizleme'de aç", "Open in Preview"))
             } else {
-                RoundedRectangle(cornerRadius: size * 0.8, style: .continuous).fill(Theme.track)
+                RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).fill(Theme.track)
                     .frame(width: size * 7.5, height: size * 7.5)
                     .overlay { Image(systemName: "photo").foregroundStyle(Theme.textMuted) }
             }
@@ -2748,21 +2744,21 @@ private struct AttachmentChip: View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
             Button { withAnimation(.easeOut(duration: 0.2)) { open.toggle() } } label: {
                 HStack(spacing: Theme.Spacing.s) {
-                    Image(systemName: "doc.plaintext").font(.system(size: size)).foregroundStyle(Theme.textMuted)
+                    Image(systemName: "doc.plaintext").font(Theme.scaled(size)).foregroundStyle(Theme.textMuted)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(verbatim: name ?? text.split(whereSeparator: \.isNewline).first.map(String.init) ?? "")
-                            .font(.system(size: size * 0.9, weight: .medium)).foregroundStyle(Theme.text).lineLimit(1)
+                            .font(Theme.scaled(size * 0.9, weight: .medium)).foregroundStyle(Theme.text).lineLimit(1)
                         Text(L("\(text.count.formatted()) karakter", "\(text.count.formatted()) characters"))
-                            .font(.system(size: size * 0.78)).foregroundStyle(Theme.textMuted)
+                            .font(Theme.scaled(size * 0.78)).foregroundStyle(Theme.textMuted)
                     }
-                    Image(systemName: open ? "chevron.up" : "chevron.down").font(.system(size: size * 0.7)).foregroundStyle(Theme.textMuted)
+                    Image(systemName: open ? "chevron.up" : "chevron.down").font(Theme.scaled(size * 0.7)).foregroundStyle(Theme.textMuted)
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             if open {
                 ScrollView {
-                    Text(verbatim: text).font(.system(size: size * 0.88)).foregroundStyle(Theme.text).textSelection(.enabled)
+                    Text(verbatim: text).font(Theme.scaled(size * 0.88)).foregroundStyle(Theme.text).textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .frame(maxHeight: 200)
@@ -2809,7 +2805,7 @@ private struct AIAnswer: View {
                         let seconds = max(0, Int(context.date.timeIntervalSince(message.date)))
                         if seconds >= 3 {
                             Text(verbatim: seconds < 60 ? L("\(seconds) sn", "\(seconds)s") : L("\(seconds / 60) dk \(seconds % 60) sn", "\(seconds / 60)m \(seconds % 60)s"))
-                                .font(.system(size: size * 0.78)).monospacedDigit()
+                                .font(Theme.scaled(size * 0.78)).monospacedDigit()
                                 .foregroundStyle(Theme.textMuted.opacity(0.8))
                         }
                     }
@@ -2817,14 +2813,14 @@ private struct AIAnswer: View {
             }
             if let error = message.error {
                 HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.s) {
-                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.warning.fill)
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.danger)
                     Text(verbatim: error).foregroundStyle(Theme.text).textSelection(.enabled)
                     if isLast {
                         Button(L("Tekrar dene", "Try again")) { conversation.regenerate() }
-                            .buttonStyle(TextButtonStyle(font: .system(size: size * 0.9), color: Theme.accent))
+                            .buttonStyle(TextButtonStyle(font: Theme.scaled(size * 0.9), color: Theme.accent))
                     }
                 }
-                .font(.system(size: size * 0.9))
+                .font(Theme.scaled(size * 0.9))
                 .padding(size * 0.7)
                 .background(Theme.track, in: RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
             }
@@ -2832,7 +2828,7 @@ private struct AIAnswer: View {
                 // Always under the newest answer; on hover under older ones, like the apps.
                 footer.opacity(isLast || hovering ? 1 : 0)
             } else if message.stopped && message.text.isEmpty {
-                Text(L("Durduruldu", "Stopped")).font(.system(size: size * 0.85)).foregroundStyle(Theme.textMuted)
+                Text(L("Durduruldu", "Stopped")).font(Theme.scaled(size * 0.85)).foregroundStyle(Theme.textMuted)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -2844,12 +2840,12 @@ private struct AIAnswer: View {
         HStack(spacing: Theme.Spacing.m) {
             if message.versionCount > 1 { versionSwitcher }
             AIBrandMark(engine: engine, size: size)
-            Text(verbatim: details).font(.system(size: size * 0.8)).foregroundStyle(Theme.textMuted).lineLimit(1)
+            Text(verbatim: details).font(Theme.scaled(size * 0.8)).foregroundStyle(Theme.textMuted).lineLimit(1)
                 .help(message.date.formatted(date: .complete, time: .shortened))
             AICopyButton(text: message.text, size: size * 0.85, label: false)
             if let quote {
                 Button(action: quote) {
-                    Image(systemName: "text.quote").font(.system(size: size * 0.85)).foregroundStyle(Theme.textMuted)
+                    Image(systemName: "text.quote").font(Theme.scaled(size * 0.85)).foregroundStyle(Theme.textMuted)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -2858,7 +2854,7 @@ private struct AIAnswer: View {
             }
             if let fork, !conversation.isRunning {
                 Button(action: fork) {
-                    Image(systemName: "arrow.triangle.branch").font(.system(size: size * 0.85)).foregroundStyle(Theme.textMuted)
+                    Image(systemName: "arrow.triangle.branch").font(Theme.scaled(size * 0.85)).foregroundStyle(Theme.textMuted)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -2887,7 +2883,7 @@ private struct AIAnswer: View {
                         }
                     }
                 } label: {
-                    Image(systemName: "arrow.clockwise").font(.system(size: size * 0.85)).foregroundStyle(Theme.textMuted)
+                    Image(systemName: "arrow.clockwise").font(Theme.scaled(size * 0.85)).foregroundStyle(Theme.textMuted)
                 } primaryAction: {
                     conversation.regenerate()
                 }
@@ -2897,7 +2893,7 @@ private struct AIAnswer: View {
                 .fixedSize()
                 .help(L("Yeniden yaz (basılı tut: başka AI ya da model)", "Write again (hold: another AI or model)"))
             }
-            if message.stopped { Text(L("Durduruldu", "Stopped")).font(.system(size: size * 0.8)).foregroundStyle(Theme.textMuted) }
+            if message.stopped { Text(L("Durduruldu", "Stopped")).font(Theme.scaled(size * 0.8)).foregroundStyle(Theme.textMuted) }
         }
     }
 
@@ -2952,10 +2948,10 @@ private struct ThinkingDisclosure: View {
                     if live {
                         AIThinkingLabel(engine: engine, text: L("Düşünüyor…", "Thinking…"), size: size * 0.92)
                     } else {
-                        Image(systemName: "brain.filled.head.profile").font(.system(size: size * 0.85))
-                        Text(L("Düşünce süreci", "Thought process")).font(.system(size: size * 0.9))
+                        Image(systemName: "brain.filled.head.profile").font(Theme.scaled(size * 0.85))
+                        Text(L("Düşünce süreci", "Thought process")).font(Theme.scaled(size * 0.9))
                     }
-                    Image(systemName: open ? "chevron.up" : "chevron.down").font(.system(size: size * 0.7))
+                    Image(systemName: open ? "chevron.up" : "chevron.down").font(Theme.scaled(size * 0.7))
                 }
                 .foregroundStyle(Theme.textMuted)
                 .contentShape(Rectangle())
@@ -2965,7 +2961,7 @@ private struct ThinkingDisclosure: View {
                 HStack(spacing: size * 0.7) {
                     Capsule().fill(Theme.hairline).frame(width: 2)
                     Text(verbatim: open ? message.thinking : String(message.thinking.suffix(240)))
-                        .font(.system(size: size * 0.88))
+                        .font(Theme.scaled(size * 0.88))
                         .foregroundStyle(Theme.textMuted)
                         .lineLimit(open ? nil : 3)
                         .textSelection(.enabled)
