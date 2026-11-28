@@ -188,6 +188,9 @@ final class Monitor {
         }
         // Listening ports: a few milliseconds through libproc, so every tick while the panel is open.
         if panelVisible || forceSimulators { await refreshDevServers() }
+        // Claude Code sessions: a few tiny files, so every tick while the panel shows them, and in the background only
+        // to tell when one starts waiting for permission.
+        if forceSimulators || ClaudeSessionStore.shouldRefresh(panelVisible: panelVisible) { ClaudeSessionStore.shared.refresh() }
         // Projects (git status) every 5 minutes in the background, for the "not pushed" suggestion; at most once a
         // minute while the panel is open.
         if ticks % 60 == 0 || panelVisible { ProjectStore.shared.refresh() }

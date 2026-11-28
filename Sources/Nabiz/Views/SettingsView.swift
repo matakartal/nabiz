@@ -503,6 +503,7 @@ private struct GeneralPage: View {
     @AppStorage(Prefs.refreshSeconds) private var refresh = 5
     @AppStorage(Prefs.notesApp) private var notesApp = "nabiz"
     @AppStorage(Prefs.notifications) private var notifications = false
+    @AppStorage(Prefs.claudeSessionNotify) private var claudeNotify = true
     @AppStorage(Prefs.showInDock) private var dock = false
     @State private var login = SMAppService.mainApp.status == .enabled
 
@@ -543,6 +544,8 @@ private struct GeneralPage: View {
                     notifications = on
                     if on { Notifier.shared.requestPermission() }
                 }))
+                Toggle(L("Claude Code izin isteyince", "When Claude Code needs permission"), isOn: $claudeNotify)
+                    .disabled(!notifications)
             } footer: {
                 Footnote(L("Bellek kritikleşince, işlemci 3 dakika %90'ın üstünde kalınca, disk 10 GB'ın altına inince, pil %10'a düşünce ve açık bir AI limiti hızlı bitince ya da kullanılmadan sıfırlanacakken haber verir. Her durum için bir kez.",
                            "Tells you when memory turns critical, the CPU stays above 90% for 3 minutes, the disk drops under 10 GB, the battery reaches 10%, and an AI limit you turned on burns fast or is about to reset unused. Once each time."))

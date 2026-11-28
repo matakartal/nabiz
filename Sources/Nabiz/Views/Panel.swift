@@ -79,6 +79,7 @@ struct PanelContent: View {
     @AppStorage(Prefs.watchedMarkets) private var watchedMarkets = ""
     @AppStorage(Prefs.showTools) private var showTools = true
     @AppStorage(Prefs.showAI) private var showAI = true
+    @AppStorage(Prefs.showClaudeSessions) private var showClaudeSessions = true
     @AppStorage(Prefs.memoryAppCount) private var memoryCount = 5
     @AppStorage(Prefs.cpuAppCount) private var cpuCount = 3
     @AppStorage(Prefs.baseCurrency) private var base = Prefs.defaultBaseCurrency
@@ -160,6 +161,14 @@ struct PanelContent: View {
         case .ai:
             if showAI {
                 CollapsibleSection(.ai, summary: Summary.ai()) { AISection(actions: actions) }
+            }
+        case .claudeCode:
+            let sessions = ClaudeSessionStore.shared.sessions
+            if showClaudeSessions && !sessions.isEmpty {
+                let summary = ClaudeSessions.summary(sessions)
+                CollapsibleSection(.claudeCode, summary: summary.text, summaryColor: summary.attention ? Theme.warning.mark : Theme.textMuted) {
+                    ClaudeSessionSection()
+                }
             }
         case .calendar:
             if calendarOn && CalendarAgenda.shared.authorized {
@@ -1229,9 +1238,14 @@ struct PanelRow<Trailing: View>: View {
                 Text(verbatim: title).font(Theme.body).foregroundStyle(titleColor ?? Theme.text).lineLimit(1)
                     .layoutPriority(1)
                 if let subtitle, !subtitle.isEmpty {
-                    Text(verbatim: subtitle).font(Theme.small).foregroundStyle(Theme.textMuted)
-                        .lineLimit(1).truncationMode(.tail)
-                        .help(subtitle)
+                    // A title that takes the whole line leaves no room: then no subtitle, rather than a sliver of "…".
+                    ViewThatFits(in: .horizontal) {
+                        Text(verbatim: subtitle).font(Theme.small).foregroundStyle(Theme.textMuted)
+                            .lineLimit(1).truncationMode(.tail)
+                            .frame(minWidth: Theme.Spacing.xl, idealWidth: Theme.Spacing.xl, alignment: .leading)
+                        Color.clear.frame(width: 0, height: 0)
+                    }
+                    .help(subtitle)
                 }
             }
             Spacer(minLength: Theme.Spacing.s)

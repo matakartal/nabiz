@@ -82,6 +82,10 @@ enum Prefs {
     static let weatherDetails = "weatherDetails"
     static let showTools = "showTools"
     static let showAI = "showAI"
+    /// The panel's live Claude Code sessions section.
+    static let showClaudeSessions = "showClaudeSessions"
+    /// A notification when a Claude Code session starts waiting for permission (with Notifications on).
+    static let claudeSessionNotify = "claudeSessionNotify"
     static let memoryAppCount = "memoryAppCount"
     static let cpuAppCount = "cpuAppCount"
 
@@ -269,6 +273,7 @@ enum Prefs {
             barSymbol: "gauge.with.dots.needle.33percent", customAccent: "#1DB954", sectionOrder: "",
             aiAsk: true, aiEngine: "onDevice", aiHistory: true, aiHotkey: true, aiChatHotkey: true, aiClaudeSessions: true, aiNotify: true, aiSuggest: true, aiWebSearch: true, aiInstructions: "", showInDock: false, seenVersion: "",
         ])
+        defaults.register(defaults: [showClaudeSessions: true, claudeSessionNotify: true, "expanded.claudeCode": true])
         AdviceKind.registerDefaults()
     }
 
@@ -293,7 +298,7 @@ enum Prefs {
 
 /// The panel's foldable sections, in the order they appear.
 enum PanelSection: String, CaseIterable, Identifiable {
-    case system, advice, simulators, ports, projects, docker, displays, ai, calendar, weather, memory, cpu, markets, currency, tools
+    case system, advice, simulators, ports, projects, docker, displays, ai, claudeCode, calendar, weather, memory, cpu, markets, currency, tools
 
     var id: String { rawValue }
 
@@ -307,6 +312,7 @@ enum PanelSection: String, CaseIterable, Identifiable {
         case .docker: "Docker"
         case .displays: L("Ekranlar", "Displays")
         case .ai: "AI"
+        case .claudeCode: "Claude Code"
         case .calendar: L("Takvim", "Calendar")
         case .weather: L("Hava durumu", "Weather")
         case .memory: L("En çok bellek", "Top memory")
@@ -327,6 +333,7 @@ enum PanelSection: String, CaseIterable, Identifiable {
         case .docker: Prefs.showDocker
         case .displays: Prefs.showDisplays
         case .ai: Prefs.showAI
+        case .claudeCode: Prefs.showClaudeSessions
         case .calendar: Prefs.calendarEnabled
         case .weather: Prefs.showWeather
         case .memory: Prefs.showApps
@@ -347,6 +354,7 @@ enum PanelSection: String, CaseIterable, Identifiable {
         case .docker: "shippingbox"
         case .displays: "sun.max"
         case .ai: "sparkles"
+        case .claudeCode: "terminal"
         case .calendar: "calendar"
         case .weather: "cloud.sun"
         case .memory: "memorychip"
