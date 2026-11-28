@@ -203,6 +203,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } else if !PriceAlerts.shared.markets.isEmpty {
                 MarketStore.shared.refreshWatched(maxAge: 30)
             }
+            // Hyperliquid positions: every 10 s while the panel shows them, every minute in the background for
+            // liquidation warnings.
+            PositionStore.shared.tick(panelOpen: monitor.panelVisible)
         }
         MarketStore.shared.onPrices = { [weak self] in self?.updateButton() }
         WeatherStore.shared.onChange = { [weak self] in self?.updateButton() }
@@ -538,6 +541,8 @@ final class StatusPanel {
         monitor.panelVisible = true
         AILimitsStore.shared.refreshIfNeeded()
         MarketStore.shared.refreshWatched(maxAge: 10)
+        // Opening the panel also looks at every dex again, so a position opened on a new one shows up.
+        if Prefs.bool(Prefs.showPositions) { PositionStore.shared.refresh(maxAge: 10, fullScanAge: 60) }
         Toolbox.shared.refresh()
         if let view = window.contentView { window.setContentSize(view.fittingSize) }
         place()
@@ -601,6 +606,8 @@ enum Snapshot {
         clear = CommandLine.arguments.contains("--clear")
         let monitor = Monitor(autostart: false)
         RateStore.shared.refreshIfNeeded()
+        // `--positions`: made-up Hyperliquid positions instead of the wallet's real ones.
+        if CommandLine.arguments.contains("--positions") { PositionStore.shared.showDemo() } else { PositionStore.shared.refresh(maxAge: 0) }
         MarketStore.shared.refreshWatched(maxAge: 0)
         MarketStore.shared.refreshDay()
         WeatherStore.shared.refreshIfNeeded()

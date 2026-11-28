@@ -13,6 +13,8 @@ struct Market: Identifiable, Sendable {
     var prevDayPrice: Double?
     /// 24-hour notional volume, used to list busy markets first.
     var volume: Double
+    /// The hourly funding rate (0.0000125 = 0.00125% an hour): positive means longs pay shorts.
+    var funding: Double? = nil
 
     var name: String { id.split(separator: ":").last.map(String.init) ?? id }
 
@@ -65,7 +67,7 @@ final class MarketStore {
 
     /// Prices of the watched markets, at most every `maxAge` seconds.
     func refreshWatched(maxAge: TimeInterval = 10) {
-        let ids = Set(watchedIDs).union(PriceAlerts.shared.markets).union(meterID.map { [$0] } ?? [])
+        let ids = Set(watchedIDs).union(PriceAlerts.shared.markets).union(PositionStore.shared.coins).union(meterID.map { [$0] } ?? [])
         guard !fetching, !ids.isEmpty else { return }
         if let pricesAt, Date().timeIntervalSince(pricesAt) < maxAge { return }
         let needed = Set(ids.map { $0.contains(":") ? String($0.split(separator: ":")[0]) : "" })
@@ -137,9 +139,9 @@ final class MarketStore {
 
     // MARK: API
 
-    private static let endpoint = URL(string: "https://api.hyperliquid.xyz/info")!
+    nonisolated private static let endpoint = URL(string: "https://api.hyperliquid.xyz/info")!
 
-    private static func post(_ body: [String: Any]) async -> Any? {
+    nonisolated static func post(_ body: [String: Any]) async -> Any? {
         var request = URLRequest(url: endpoint, timeoutInterval: 10)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -150,7 +152,7 @@ final class MarketStore {
     }
 
     /// `[null, {"name": "xyz", "fullName": "XYZ"}, …]`: null is the main dex.
-    private static func fetchDexes() async -> [MarketDex]? {
+    nonisolated static func fetchDexes() async -> [MarketDex]? {
         guard let list = await post(["type": "perpDexs"]) as? [Any] else { return nil }
         return list.map { entry in
             guard let dex = entry as? [String: Any], let name = dex["name"] as? String else {
@@ -162,14 +164,19 @@ final class MarketStore {
 
     /// `[{"universe": [{"name": "BTC", "isDelisted": …}]}, [{"markPx": "60104.0", "prevDayPx": …, "dayNtlVlm": …}]]`.
     private static func fetchMarkets(dex: String) async -> [Market]? {
-        guard let reply = await post(["type": "metaAndAssetCtxs", "dex": dex]) as? [Any], reply.count == 2,
+        guard let reply = await post(["type": "metaAndAssetCtxs", "dex": dex]) else { return nil }
+        return markets(from: reply, dex: dex)
+    }
+
+    nonisolated static func markets(from reply: Any, dex: String) -> [Market]? {
+        guard let reply = reply as? [Any], reply.count == 2,
               let universe = (reply[0] as? [String: Any])?["universe"] as? [[String: Any]],
               let contexts = reply[1] as? [[String: Any]] else { return nil }
         return zip(universe, contexts).compactMap { asset, context in
             guard asset["isDelisted"] as? Bool != true, let name = asset["name"] as? String,
                   let price = number(context["markPx"]) ?? number(context["midPx"]), price > 0 else { return nil }
             return Market(id: name, dex: dex, price: price, prevDayPrice: number(context["prevDayPx"]),
-                          volume: number(context["dayNtlVlm"]) ?? 0)
+                          volume: number(context["dayNtlVlm"]) ?? 0, funding: number(context["funding"]))
         }
     }
 
@@ -182,7 +189,7 @@ final class MarketStore {
         return closes.count > 1 ? closes : nil
     }
 
-    private static func number(_ value: Any?) -> Double? {
+    nonisolated static func number(_ value: Any?) -> Double? {
         switch value {
         case let text as String: Double(text)
         case let number as NSNumber: number.doubleValue

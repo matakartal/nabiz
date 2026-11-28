@@ -77,6 +77,8 @@ struct PanelContent: View {
     @AppStorage(Prefs.showCurrency) private var showCurrency = true
     @AppStorage(Prefs.showMarkets) private var showMarkets = true
     @AppStorage(Prefs.watchedMarkets) private var watchedMarkets = ""
+    @AppStorage(Prefs.showPositions) private var showPositions = true
+    @AppStorage(Prefs.hyperliquidAddress) private var hyperliquidAddress = ""
     @AppStorage(Prefs.showTools) private var showTools = true
     @AppStorage(Prefs.showAI) private var showAI = true
     @AppStorage(Prefs.showClaudeSessions) private var showClaudeSessions = true
@@ -209,6 +211,14 @@ struct PanelContent: View {
                 let ids = watchedMarkets.split(separator: ",").map(String.init)
                 CollapsibleSection(.markets, summary: Summary.market(ids)) {
                     MarketsSection(ids: ids, actions: actions)
+                }
+            }
+        case .positions:
+            // Only once a wallet address is set in Settings → Markets.
+            if showPositions && (HyperliquidAddress.isValid(hyperliquidAddress) || PositionStore.shared.isDemo) {
+                let summary = PositionSummary.closed(PositionStore.shared.account)
+                CollapsibleSection(.positions, summary: summary.text, summaryColor: summary.tone.color) {
+                    PositionsSection(actions: actions)
                 }
             }
         case .currency:

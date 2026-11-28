@@ -317,6 +317,8 @@ enum SettingsIndex {
         .init(.markets, "markets.meter", "Üstteki grafik", "Chart at the top", "grafik chart btc meter cpu ram gpu dördüncü fourth"),
         .init(.markets, "markets.alerts", "Fiyat alarmları", "Price alerts", "alarm alert hedef target bildirim"),
         .init(.markets, "markets.catalog", "Piyasa ekle", "Add a market", "hyperliquid btc tsla gold altın hisse stock"),
+        .init(.markets, "markets.account", "Hyperliquid hesabı", "Hyperliquid account", "cüzdan wallet adres address pozisyon position kaldıraç leverage pnl"),
+        .init(.markets, "markets.account", "Likidasyona yaklaşınca bildir", "Notify near liquidation", "likidasyon liquidation bildirim notification marj margin pozisyon position"),
         // Currency
         .init(.currency, "currency.base", "Ana para birimi", "Main currency", "try usd eur lira dolar euro"),
         .init(.currency, "currency.watched", "İzlenen kurlar", "Watched rates", "döviz kur usd eur gbp"),
