@@ -28,12 +28,12 @@ struct DeveloperPage: View {
                     ForEach(ProjectActions.installedEditors, id: \.bundleID) { Text($0.name).tag($0.bundleID) }
                 }
                 Picker(L("Kodlama ajanı", "Coding agent"), selection: $agent) {
-                    Text("Claude Code").tag("claude")
-                    Text("Codex").tag("codex")
+                    Text(verbatim: "Claude Code").tag("claude")
+                    Text(verbatim: "Codex").tag("codex")
                 }
                 Toggle(L("Panelde Docker konteynerlerini göster", "Show Docker containers in the panel"), isOn: $showDocker)
             } header: {
-                Text(L("Projeler", "Projects"))
+                SectionTitle(L("Projeler", "Projects"))
             } footer: {
                 Footnote(L("~/Developer, ~/Projects, ~/code ve ~/src altındaki git depoları; dal, değişiklik ve gönderilmemiş commit'ler. Launcher'da proje adını yaz, ↩ editörde, ⌘↩ Terminal'de açar; ⌘K'da Xcode, ajan, npm script'leri ve GitHub.",
                            "Git repositories under ~/Developer, ~/Projects, ~/code and ~/src: branch, changes and unpushed commits. Type a project's name in the launcher: ↩ opens it in the editor, ⌘↩ in Terminal; ⌘K has Xcode, the agent, npm scripts and GitHub."))
@@ -60,7 +60,7 @@ struct DeveloperPage: View {
                     ForEach([14, 30, 60, 90], id: \.self) { Text(L("\($0) gün", "\($0) days")).tag($0) }
                 }
             } header: {
-                Text(L("Geliştirici temizliği", "Developer clean-up"))
+                SectionTitle(L("Geliştirici temizliği", "Developer clean-up"))
             } footer: {
                 Footnote(L("Hepsi sorulup temizlenir. \"Güvenli\" olanlar kendiliğinden geri gelir (önbellekler, eski tarayıcılar, kullanılamayan simülatörler); Görevler'den haftalık da çalıştırılabilir. Değişikliği olan worktree'lere, birleşmemiş dallara ve kodunuza hiç dokunulmaz.",
                            "Each one asks first. The \"safe\" ones come back on their own (caches, old browsers, unavailable simulators) and can also run weekly from Schedules. Worktrees with changes, unmerged branches and your code are never touched."))
@@ -70,7 +70,7 @@ struct DeveloperPage: View {
                 TextField(L("Anahtar zinciri profili", "Keychain profile"), text: $notaryProfile, prompt: Text(verbatim: "nabiz"))
                     .disabled(!notaryWatch)
             } header: {
-                Text(L("Notarize", "Notarization"))
+                SectionTitle(L("Notarize", "Notarization"))
             } footer: {
                 Footnote(L("`xcrun notarytool submit` çalışırken panelde görünür; bitince Apple'ın cevabı (Accepted / Invalid) bildirim olarak gelir. Arada Apple'a soru gönderilmez. Profil, komutta yazmıyorsa kullanılır.",
                            "While `xcrun notarytool submit` runs it shows in the panel; when it ends, Apple's answer (Accepted / Invalid) comes as a notification. Apple isn't asked in between. The profile is used when the command doesn't name one."))
@@ -84,7 +84,7 @@ struct DeveloperPage: View {
                     }
                 }
             } header: {
-                Text(L("Launcher'da", "In the launcher"))
+                SectionTitle(L("Launcher'da", "In the launcher"))
             } footer: {
                 Footnote(L("Hepsi bu Mac'te hesaplanır; token ve anahtarlar AI'a ya da web aramasına gönderilmez.",
                            "All worked out on this Mac; tokens and keys are never sent to AI or a web search."))

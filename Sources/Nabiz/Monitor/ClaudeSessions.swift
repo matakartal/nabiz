@@ -157,7 +157,7 @@ enum ClaudeSessions {
     /// The trailing text: "Needs you", "Working", or how long it has been idle.
     static func statusText(_ session: ClaudeSession, now: Date = Date()) -> String {
         switch session.status {
-        case .waiting: session.waitsForPermission ? L("İzin bekliyor", "Needs you") : L("Seni bekliyor", "Needs you")
+        case .waiting: session.waitsForPermission ? L("İzin bekliyor", "Needs permission") : L("Seni bekliyor", "Needs you")
         case .busy: L("Çalışıyor", "Working")
         case .idle: Format.ago(session.lastActivity, now: now)
         }
@@ -329,7 +329,11 @@ final class ClaudeSessionStore {
 
     /// "nabiz · Work": the project, and the account when it isn't the default one.
     func subtitle(_ session: ClaudeSession) -> String? {
-        let parts = [ClaudeSessions.project(session.cwd), account(session)].compactMap { $0 }
+        // The folder adds nothing when the title already names it ("nabiz-fix" in nabiz).
+        let project = ClaudeSessions.project(session.cwd).flatMap { project in
+            ClaudeSessions.title(session).localizedCaseInsensitiveContains(project) ? nil : project
+        }
+        let parts = [project, account(session)].compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 

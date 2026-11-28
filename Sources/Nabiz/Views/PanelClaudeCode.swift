@@ -28,7 +28,7 @@ private struct ClaudeSessionRow: View {
         let canShow = store.canShow(session)
         PanelRow(icon: .dot(dot), title: ClaudeSessions.title(session), subtitle: store.subtitle(session),
                  action: canShow ? { store.show(session) } : nil) { hovering in
-            if hovering {
+            if hovering && canShow {
                 InlineButton(L("Göster", "Show")) { store.show(session) }
             } else {
                 Value(ClaudeSessions.statusText(session), color: session.status == .waiting ? Theme.warning.mark : Theme.textMuted)

@@ -42,7 +42,8 @@ Agents working in this repository read [AGENTS.md](AGENTS.md), which points them
 - **Fixes, not just numbers.** A new reading earns its place by leading to something the user can do in one tap.
 - **For non-technical people too.** Plain words, no jargon in the UI, safe defaults; developer features stay out of
   the way of people who don't need them.
-- **Not wanted:** analytics or tracking, ads, telemetry, wallets, trading or moving money, anything that runs with
+- **Not wanted:** analytics or tracking, ads, telemetry, trading, moving money or holding wallet keys (read-only views of a public
+  address are fine), anything that runs with
   administrator rights, kernel or system extensions, background downloads the user didn't ask for.
 
 ## Design

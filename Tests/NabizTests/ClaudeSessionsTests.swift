@@ -136,6 +136,8 @@ struct ClaudeSessionsTests {
         let now = Date(timeIntervalSince1970: 10_000)
         var waiting = session(1, .waiting, at: 0)
         waiting.waitingFor = "permission prompt"
+        #expect(ClaudeSessions.statusText(waiting, now: now) == "Needs permission")
+        waiting.waitingFor = "input"
         #expect(ClaudeSessions.statusText(waiting, now: now) == "Needs you")
         #expect(ClaudeSessions.statusText(session(2, .busy, at: 0), now: now) == "Working")
         #expect(ClaudeSessions.statusText(session(3, .idle, at: 10_000 - 12 * 60), now: now) == "12m ago")

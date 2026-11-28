@@ -27,7 +27,8 @@ struct FormatTests {
     func price() {
         UserDefaults.standard.set("en", forKey: Prefs.language)
         #expect(Format.price(60_104) == "60,104")
-        #expect(Format.price(1_689) == "1,689.00")
+        #expect(Format.price(1_689) == "1,689.0")
+        #expect(Format.price(470.2) == "470.20")
         #expect(Format.price(70.556) == "70.56")
         #expect(Format.price(1.2609) == "1.261")
     }

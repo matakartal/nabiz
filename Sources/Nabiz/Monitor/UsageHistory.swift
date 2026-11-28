@@ -90,6 +90,9 @@ final class UsageHistory {
     struct Point: Identifiable {
         let date: Date
         let value: Double
+        /// Points in one run without empty buckets share a segment; a gap (the Mac asleep) starts a new one, so the
+        /// chart leaves it empty instead of drawing a line across.
+        var segment = 0
         var id: Date { date }
     }
 
@@ -101,6 +104,7 @@ final class UsageHistory {
         let size = max(Int(span / 60) / buckets, 1)
         var result: [Point] = []
         var bucketStart = first
+        var segment = 0
         while bucketStart < end {
             var total = 0.0, count = 0
             for minute in bucketStart..<min(bucketStart + size, end) {
@@ -110,7 +114,10 @@ final class UsageHistory {
                 count += 1
             }
             if count > 0 {
-                result.append(Point(date: Date(timeIntervalSince1970: Double(bucketStart + size / 2) * 60), value: total / Double(count)))
+                result.append(Point(date: Date(timeIntervalSince1970: Double(bucketStart + size / 2) * 60), value: total / Double(count),
+                                    segment: segment))
+            } else if result.last?.segment == segment {
+                segment += 1
             }
             bucketStart += size
         }

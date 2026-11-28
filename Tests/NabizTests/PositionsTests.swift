@@ -180,7 +180,7 @@ struct PositionsTests {
         #expect(Format.dollars(12_345.6) == "12.346 $")
         #expect(Format.dollars(-3.2, signed: true) == "−3,20 $")
         let eth = try dex(mainDex, "").positions[1]
-        #expect(PositionText.subtitle(eth) == "Short 10x · 10 · liq 1.790,50")
+        #expect(PositionText.subtitle(eth) == "Short 10x · 10 · liq 1.790,5")
     }
 
     @Test func fundingComesWithTheMarket() throws {

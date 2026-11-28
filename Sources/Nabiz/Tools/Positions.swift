@@ -205,7 +205,7 @@ final class PositionStore {
             refresh(maxAge: 10)
             // Funding rates come with the market prices.
             if !coins.isEmpty { MarketStore.shared.refreshWatched(maxAge: 30) }
-        } else if Prefs.bool(Prefs.liquidationAlerts) {
+        } else if Prefs.bool(Prefs.liquidationAlerts) && Prefs.bool(Prefs.notifications) {
             refresh(maxAge: account.map { $0.positions.isEmpty ? 900 : 60 } ?? 60)
         }
     }
@@ -297,7 +297,7 @@ final class PositionStore {
     }
 
     private func checkLiquidation(_ account: HyperliquidAccount) {
-        guard Prefs.bool(Prefs.liquidationAlerts) else {
+        guard Prefs.bool(Prefs.liquidationAlerts) && Prefs.bool(Prefs.notifications) else {
             // Off: forget what was warned about, so turning it on warns about a position that is already close.
             watch = LiquidationWatch()
             return

@@ -639,10 +639,11 @@ enum Format {
         value.formatted(.number.precision(.fractionLength(minDigits...max(minDigits, maxDigits))).locale(locale))
     }
 
-    /// Market prices: "60.104", "1.689,0", "70,56", "0,05587" — fewer decimals as the price grows.
+    /// Market prices: "60.104", "1.689,0", "70,56", "0,05587" — about five digits, fewer decimals as the price grows.
     static func price(_ value: Double) -> String {
         switch value {
         case 10_000...: number(value, maxDigits: 0)
+        case 1_000...: number(value, maxDigits: 1, minDigits: 1)
         case 10...: number(value, maxDigits: 2, minDigits: 2)
         case 1...: number(value, maxDigits: 3, minDigits: 3)
         default: number(value, maxDigits: 5, minDigits: 4)

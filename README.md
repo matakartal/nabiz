@@ -50,7 +50,9 @@ You prompt, agents build, and your Mac quietly fills up. Nabız keeps up with ho
   one click, or ask `:3000` who holds a port. AI apps can ask Nabız over **MCP** too, so Claude Code and Cursor reuse
   a running server instead of starting a second one.
 - **Your AI limits before you hit them:** Claude, Codex and Gemini windows in the menu bar, with a warning when one
-  burns fast — and another AI one click away in the chat.
+  burns fast. When one account is nearly out and another has room, open a new CLI session with the other in one click.
+- **Every Claude Code session at a glance:** the ones waiting for your permission first, with a notification when one
+  starts waiting.
 - **The mess agents leave behind:** finished worktrees, build folders, idle `node_modules`, extra simulators — sized,
   listed and cleaned only after asking. Unpushed commits and projects show at a glance.
 - **Ship and show it:** notarization finishes as a notification, screenshots get arrows and steps, and recordings come
@@ -69,13 +71,14 @@ You prompt, agents build, and your Mac quietly fills up. Nabız keeps up with ho
 
 - **Menu bar:** CPU, RAM, GPU, network, disk, battery, an AI limit, a market price or an exchange rate — two lines
   or one.
-- **Live meters** with a two-minute graph; memory pressure, swap, battery health, heat and security.
+- **Live meters** with a two-minute graph, and a fourth one for a market's last 24 hours (BTC by default); memory pressure, swap, battery health, heat and security.
 - **Suggestions with one-tap fixes:** shut down idle simulators, quit the biggest app, push forgotten commits, clear
   gigabytes of developer leftovers.
 - **Weather** for your city — now, rain on the way, sunrise or sunset and the coming days — with no location
   permission; the temperature can sit in the menu bar too.
 - **Top apps**, a week of **history**, **external display brightness**, **calendar** with one-click join,
-  **Hyperliquid markets** and **exchange rates**.
+  **Hyperliquid markets**, read-only **Hyperliquid positions** from a public address (with a near-liquidation
+  warning) and **exchange rates**.
 - Sections fold to a one-line summary; hide crowded menu bar icons; optionally show in the Dock.
 
 </td>

@@ -592,7 +592,7 @@ private struct ShortcutsPage: View {
                 HotKeyRow(title: L("Ekran kaydı", "Screen recording"), shortcut: .record, enabled: $recHotkey)
                 Button(L("Neler yapabilir?", "What can it do?")) { HelpWindow.show() }
             } header: {
-                Text(L("Kısayollar", "Shortcuts"))
+                SectionTitle(L("Kısayollar", "Shortcuts"))
             } footer: {
                 Footnote(L("Değiştirmek için kısayola tıkla ve yeni tuşlara bas (en az bir ⌘, ⌃ ya da ⌥ ile). ⎋ vazgeçer, ⌫ varsayılana döndürür. Pencere kısayolları Pencereler sayfasında; ekran görüntüsü ayarları kendi sayfasında. Dikte: kısayola bas, konuş, yeniden bas; söylediklerin imlecin olduğu yere yazılır.",
                            "Click a shortcut and press the new keys (with at least ⌘, ⌃ or ⌥). ⎋ cancels, ⌫ goes back to the default. Window shortcuts are on the Windows page; screenshot options have their own page. Dictation: press the shortcut, speak, press it again; your words land where the cursor is."))
@@ -609,7 +609,7 @@ private struct ShortcutsPage: View {
                     Text(verbatim: names.isEmpty ? L("Yok", "None") : names.joined(separator: ", ")).foregroundStyle(Theme.textMuted)
                 }
             } header: {
-                Text(L("Ekran parlaklığı", "Display brightness"))
+                SectionTitle(L("Ekran parlaklığı", "Display brightness"))
             } footer: {
                 Footnote(L("Fare hangi ekrandaysa tuşlar onu ayarlar; yerleşik ekranda her zamanki gibi çalışır. ⇧⌥ ile daha ince adımlar. Harici ekranın kendi menüsünde DDC/CI açık olmalı. Panelde Ekranlar bölümü de her ekran için bir sürgü gösterir.",
                            "The keys change the display the pointer is on; on the built-in display they work as always. ⇧⌥ gives finer steps. The display's own menu must have DDC/CI on. The panel's Displays section also shows a slider for each display."))
@@ -679,7 +679,7 @@ private struct RecordingsSection: View {
                 }
             }
         } header: {
-            Text(L("Geçmiş kayıtlar", "Past recordings"))
+            SectionTitle(L("Geçmiş kayıtlar", "Past recordings"))
         } footer: {
             Footnote(L("Silinen kayıtlar Çöp Sepeti'ne gider. Dışa aktardığın videolar kalır.",
                        "Deleted recordings go to the Trash. Videos you exported stay."))
@@ -733,7 +733,7 @@ private struct MaintenancePage: View {
                 }
                 .disabled(!rustAutoClean)
             } header: {
-                Text(L("Otomatik temizlik", "Automatic clean-up"))
+                SectionTitle(L("Otomatik temizlik", "Automatic clean-up"))
             } footer: {
                 Footnote(L("Sadece cargo'nun işaretlediği target/ klasörleri silinir; kod, ayar ve Cargo.lock'a dokunulmaz. Son 10 dakikada derlenen proje atlanır. Taranan yerler: ~/Developer, ~/Projects, ~/code, ~/src.",
                            "Only target/ folders cargo marked as caches are deleted; code, settings and Cargo.lock are untouched. A project built in the last 10 minutes is skipped. Looks in ~/Developer, ~/Projects, ~/code, ~/src."))
@@ -759,7 +759,7 @@ private struct MaintenancePage: View {
                     }
                 }
             } header: {
-                Text(L("Yedek", "Backup"))
+                SectionTitle(L("Yedek", "Backup"))
             } footer: {
                 Footnote(L("Tek dosyada ayarlar, parçacıklar, bağlantılar, kendi kısayolların, pencere yerleşimleri, AI komutları, görevler ve notlar. Başka bir Mac'te \"Yedekten yükle\" ile aynı Nabız'a kavuşursun. Pano geçmişi ve oturum bilgileri hiç yedeklenmez. iCloud Drive'da son 10 yedek tutulur.",
                            "One file with settings, snippets, quicklinks, your shortcuts, window layouts, AI commands, schedules and notes. On another Mac, \"Load a backup\" gives you the same Nabız. The clipboard history and sign-ins are never included. iCloud Drive keeps the last 10."))
@@ -830,7 +830,7 @@ private struct MenuBarPage: View {
                 BarToggle(item: .currency)
                 BarToggle(item: .weather)
             } header: {
-                Text(L("Diğer", "Other"))
+                SectionTitle(L("Diğer", "Other"))
             } footer: {
                 Footnote(claude || codex || gemini || grok
                     ? L("AI limiti, açık sağlayıcılar arasında en çok dolmuş olanı gösterir. Döviz kuru, izlenen ilk kuru gösterir.",
@@ -851,7 +851,7 @@ private struct MenuBarPage: View {
                 Button(L("Nasıl kullanılır?", "How does it work?")) { MenuBarHider.shared.showHint() }
                     .disabled(!hider)
             } header: {
-                Text(L("Simgeleri gizle", "Hide icons"))
+                SectionTitle(L("Simgeleri gizle", "Hide icons"))
             } footer: {
                 Footnote(L("Nabız'ın soluna bir ok ve ince bir çizgi gelir. ⌘ basılı tutup gizlemek istediğin simgeleri çizginin soluna sürükle; oka tıklayınca gizlenir ve geri gelir. Kapatınca her simge yerinde kalır.",
                            "An arrow and a thin line appear left of Nabız. Hold ⌘ and drag the icons you want to hide to the left of the line; clicking the arrow hides them and brings them back. Turning it off leaves every icon where it was."))
@@ -944,7 +944,7 @@ private struct PanelPage: View {
                                       isFirst: section == ordered.first, isLast: section == ordered.last)
                 }
             } header: {
-                Text(L("Bölümler ve sıraları", "Sections and their order"))
+                SectionTitle(L("Bölümler ve sıraları", "Sections and their order"))
             } footer: {
                 HStack(spacing: Theme.Spacing.m) {
                     Button(L("Tümünü aç", "Expand all")) {
@@ -964,7 +964,7 @@ private struct PanelPage: View {
             SettingsSection("panel.tools") {
                 ForEach(ToolKind.allCases) { ToolSettingRow(kind: $0) }
             } header: {
-                Text(L("Araçlar", "Tools"))
+                SectionTitle(L("Araçlar", "Tools"))
             } footer: {
                 Footnote(L("Kapattığın araçlar paneldeki ızgaradan kalkar.", "Tools you turn off leave the panel's grid."))
             }
@@ -998,13 +998,13 @@ private struct AdvicePage: View {
             SettingsSection("advice.kinds") {
                 ForEach(AdviceKind.allCases) { AdviceKindRow(kind: $0) }
             } header: {
-                Text(L("Ne zaman öneri gelsin", "When to suggest"))
+                SectionTitle(L("Ne zaman öneri gelsin", "When to suggest"))
             }
             .disabled(!showAdvice)
             SettingsSection("advice.security") {
                 ForEach(SecurityCheck.Kind.allCases, id: \.self) { SecurityWatchRow(kind: $0) }
             } header: {
-                Text(L("Güvenlik kontrolleri", "Security checks"))
+                SectionTitle(L("Güvenlik kontrolleri", "Security checks"))
             } footer: {
                 Footnote(L("Güvenlik duvarı macOS'ta zaten kapalı gelir; evde modemin arkasında çoğu zaman gerekmez. Ortak Wi‑Fi'da sık çalışıyorsan aç.",
                            "The firewall ships off on macOS and is rarely needed behind a home router. Turn it on here if you often work on public Wi‑Fi."))
@@ -1654,7 +1654,7 @@ private struct AILimitsPage: View {
                     }
                 }
             } header: {
-                Text(L("Hesaplar", "Accounts"))
+                SectionTitle(L("Hesaplar", "Accounts"))
             } footer: {
                 Footnote(L("Aynı sağlayıcıdan ikinci bir hesap için Hesap ekle'yi seç, takma ad ver ve açılan Terminal'de o hesapla giriş yap; varsayılan oturumun olduğu gibi kalır. Nabız ~/.claude-*, ~/.codex-*, ~/.gemini-* ve ~/.grok-* klasörlerindeki oturumları kendisi bulur, iki yerde açık aynı hesabı bir kez gösterir. Takma ad yoksa panelde e-posta görünür.",
                            "For a second account of the same provider, choose Add an account, give it a nickname and sign in with that account in the Terminal that opens; your default sign-in stays as it is. Nabız finds the sign-ins in ~/.claude-*, ~/.codex-*, ~/.gemini-* and ~/.grok-* folders by itself and shows an account signed in twice only once. Without a nickname the panel shows the e-mail."))
@@ -1811,7 +1811,7 @@ private struct MCPPage: View {
                 Toggle(L("Panodaki metni okusun", "Read what's on the clipboard now"), isOn: $clipboardNow)
                 Toggle(L("Pano geçmişini okusun", "Read the clipboard history"), isOn: $clipboard)
             } header: {
-                Text(L("Neleri kullanabilsin", "What it may use"))
+                SectionTitle(L("Neleri kullanabilsin", "What it may use"))
             } footer: {
                 Footnote(L("İşlemler: uygulama açma, pencere yerleştirme, ses, zamanlayıcı, odak modu. Kendi betiklerin ve Kestirmelerin her şeyi yapabildiği için, uyku ve kilitle birlikte ayrıca izin ister. Yeniden başlatma, kapatma, çöpü boşaltma gibi geri alınamayanlar hiçbir zaman çalıştırılmaz. Ekran ve panoda şifre gibi şeyler olabilir; o yüzden bunlar kapalı başlar.",
                            "Actions: opening apps, placing windows, sound, timers, focus mode. Your own scripts and Shortcuts can do anything, so they need their own yes, as do sleep and lock. Things that can't be undone, like restart, shut down or emptying the Trash, are never run. The screen and the clipboard may show things like passwords, so those start off."))
@@ -1846,7 +1846,7 @@ private struct MCPPage: View {
                     Button(L("JSON'u kopyala", "Copy JSON")) { copy(MCPSetup.desktopJSON) }
                 }
             } header: {
-                Text(L("Bağla", "Connect"))
+                SectionTitle(L("Bağla", "Connect"))
             } footer: {
                 Footnote(L("Cursor, Windsurf, VS Code gibi uygulamalarda MCP ayarlarına JSON'u yapıştır. Nabız kapalıysa AI uygulaması onu arka planda açar.",
                            "In Cursor, Windsurf, VS Code and others, paste the JSON into their MCP settings. If Nabız isn't running, the AI app starts it in the background."))
@@ -1915,7 +1915,7 @@ private struct CalendarPage: View {
                         }
                     }
                 } header: {
-                    Text(L("Takvimler", "Calendars"))
+                    SectionTitle(L("Takvimler", "Calendars"))
                 }
             }
         }
@@ -1988,7 +1988,9 @@ private struct ValueStepper: View {
 
 /// The first section heading under a page header. A grouped form draws that one small and grey, unlike the
 /// rest, so it is styled by hand to match the other headings.
-private struct SectionTitle: View {
+/// A Settings section heading. Plain `Text` headers come out small and muted for the first section and bold for the
+/// rest in grouped forms, so every page uses this one.
+struct SectionTitle: View {
     let text: String
     init(_ text: String) { self.text = text }
 
@@ -2058,10 +2060,10 @@ private struct HyperliquidAccountSection: View {
             Toggle(L("Likidasyona yaklaşınca bildir", "Notify near liquidation"), isOn: $alerts)
                 .disabled(!valid)
         } header: {
-            Text(L("Hyperliquid hesabı", "Hyperliquid account"))
+            SectionTitle(L("Hyperliquid hesabı", "Hyperliquid account"))
         } footer: {
-            Footnote(L("Yalnızca okunur: Hyperliquid'in herkese açık API'sine sadece bu adres gider. Anahtar ya da imza gerekmez, Nabız işlem yapamaz. Pozisyonlar panel açıkken 10 saniyede bir okunur; bildirim açıkken arka planda dakikada bir. Bildirim, fiyat likidasyona %10 yaklaşınca bir kez, %3 yaklaşınca bir kez daha gelir.",
-                       "Read-only: only this address is sent to Hyperliquid's public API. No key or signing needed, and Nabız can't trade. Positions are read every 10 seconds while the panel is open, and every minute in the background while notifications are on. You're notified once when the price comes within 10% of liquidation and once more within 3%."))
+            Footnote(L("Yalnızca okunur: Hyperliquid'in herkese açık API'sine sadece bu adres gider. Anahtar ya da imza gerekmez, Nabız işlem yapamaz. Pozisyonlar panel açıkken 10 saniyede bir okunur; bildirim açıkken arka planda dakikada bir (açık pozisyon yoksa 15 dakikada bir). Bildirim, fiyat likidasyona %10 yaklaşınca bir kez, %3 yaklaşınca bir kez daha gelir.",
+                       "Read-only: only this address is sent to Hyperliquid's public API. No key or signing needed, and Nabız can't trade. Positions are read every 10 seconds while the panel is open, and every minute in the background while notifications are on (every 15 minutes with no open position). You're notified once when the price comes within 10% of liquidation and once more within 3%."))
         }
         .onChange(of: address) {
             PositionStore.shared.refresh(maxAge: 0)
@@ -2073,7 +2075,6 @@ private struct HyperliquidAccountSection: View {
     }
 }
 
-/// Price alerts: the list, and a row to add one for a watched market (prefilled with its current price).
 /// Price alerts: a composer that reads like a sentence ("BTC reaches 62,000"), quick ±% targets from the current
 /// price, and a list showing how far each line still is.
 private struct PriceAlertsSection: View {
@@ -2095,7 +2096,7 @@ private struct PriceAlertsSection: View {
             ForEach(sorted) { AlertRow(alert: $0) }
             if !watched.isEmpty { composer }
         } header: {
-            Text(L("Fiyat alarmları", "Price alerts"))
+            SectionTitle(L("Fiyat alarmları", "Price alerts"))
         } footer: {
             Footnote(L("Fiyat çizgiye gelince bir kez bildirim gelir. Tekrarlayan alarm, fiyat çizgiden %0,5 geri dönünce kendiliğinden yeniden kurulur. Alarm varken fiyatlar arka planda 30 saniyede bir okunur.",
                        "When the price reaches the line you get one notification. A repeating alert arms itself again once the price moves 0.5% back. While an alert is set, prices are read every 30 seconds in the background."))
@@ -2358,7 +2359,7 @@ private struct AppearancePage: View {
                 Toggle(L("Değerleri renklendir", "Colour the values"), isOn: $barColors)
                 Toggle(L("Değişen rakamları kaydır", "Roll changing digits"), isOn: $barAnimate)
             } header: {
-                Text(L("Menü çubuğu", "Menu bar"))
+                SectionTitle(L("Menü çubuğu", "Menu bar"))
             } footer: {
                 Footnote(L("Dikkat isteyen değer turuncu ya da kırmızı olur (yoğun CPU, sıkışık bellek, azalan pil, biten AI limiti); bol kalan AI limiti yeşil, piyasalar yükselişte yeşil, düşüşte kırmızı. Her şey yolundaysa menü çubuğu sade kalır. Simge biçimi Menü çubuğu sayfasında.",
                            "A value that needs attention turns orange or red (busy CPU, tight memory, low battery, an AI limit running out); an AI limit with plenty left is green, markets go green when up and red when down. When all is well the menu bar stays plain. The icon style is on the Menu Bar page."))
@@ -2599,7 +2600,7 @@ private struct LauncherPage: View {
                     }
                 }
             } header: {
-                Text(L("Hızlı bağlantılar", "Quicklinks"))
+                SectionTitle(L("Hızlı bağlantılar", "Quicklinks"))
             } footer: {
                 Footnote(L("Adreste {query} yazan yere, kısaltmadan sonra yazdığın gelir: \"gh nabiz\" → GitHub'da nabiz araması.",
                            "{query} in the address is replaced by what you type after the keyword: \"gh nabiz\" searches GitHub for nabiz."))
@@ -2655,7 +2656,7 @@ private struct BindingsSection: View {
                 }
             }
         } header: {
-            Text(L("Kendi kısayolların ve takma adların", "Your shortcuts and aliases"))
+            SectionTitle(L("Kendi kısayolların ve takma adların", "Your shortcuts and aliases"))
         } footer: {
             Footnote(L("Başlatıcıda bir uygulama ya da komut seç, ⌘K'ya bas, \"Kısayol ata…\" ya da \"Takma ad ver…\" de. Kısayol her uygulamadayken çalışır; takma adı (örn. \"ss\") yazınca o satır en üste çıkar.",
                        "Pick an app or command in the launcher, press ⌘K and choose \"Set a shortcut…\" or \"Set an alias…\". The shortcut works from any app; type the alias (e.g. \"ss\") and that row comes first."))
@@ -2686,7 +2687,7 @@ private struct AICommandsSection: View {
                 }
             }
         } header: {
-            Text(L("Kendi AI komutların", "Your own AI commands"))
+            SectionTitle(L("Kendi AI komutların", "Your own AI commands"))
         } footer: {
             Footnote(aiAsk
                 ? L("Seçili metinde (yoksa son kopyaladığında) çalışır. Başlatıcıda \"AI: ad\" olarak ve ⌘K menüsünde çıkar; ⌘K ile kısayol da atayabilirsin. İstemde {text} yazdığın yere metin gelir.",
@@ -2735,7 +2736,7 @@ private struct ExtensionsSection: View {
                 }
             }
         } header: {
-            Text(L("Dosyalar, kestirmeler ve betikler", "Files, Shortcuts and scripts"))
+            SectionTitle(L("Dosyalar, kestirmeler ve betikler", "Files, Shortcuts and scripts"))
         } footer: {
             Footnote(L("\"/\" ile başlarsan yalnızca dosyalar aranır (Spotlight dizini). Betik klasörüne koyduğun her .sh, .py ya da çalıştırılabilir dosya başlatıcıda bir komut olur; yazdığı çıktı panoya kopyalanır. Başlık için ilk satırlara \"# @nabiz.title Adı\" yaz.",
                        "Start with \"/\" to search only files (Spotlight's index). Every .sh, .py or executable in the scripts folder becomes a launcher command; whatever it prints is copied. Add \"# @nabiz.title Name\" near the top for its title."))
@@ -2784,7 +2785,7 @@ private struct DownloadSection: View {
                     .foregroundStyle(Theme.textMuted)
             }
         } header: {
-            Text(L("Video indirme", "Video downloads"))
+            SectionTitle(L("Video indirme", "Video downloads"))
         } footer: {
             Footnote(L("Bir YouTube, X, Instagram, TikTok, Vimeo… bağlantısını başlatıcıya yapıştır ya da kopyalayıp Video indir aracına bas. yt-dlp ile indirilir. Yalnızca indirme hakkın olan içerik için kullan.",
                        "Paste a YouTube, X, Instagram, TikTok, Vimeo… link into the launcher, or copy it and tap the Download tool. yt-dlp does the downloading. Use it only for content you have the right to download."))
@@ -2867,7 +2868,7 @@ private struct FocusPage: View {
                 Toggle(L("Başlarken diğer uygulamaları da gizle", "Also hide other apps when it starts"), isOn: $hideOthers)
                 Toggle(L("Masaüstü simgelerini gizle", "Hide desktop icons"), isOn: $hideDesktop)
             } header: {
-                Text(L("Odak modunda gizlenenler", "Hidden during focus"))
+                SectionTitle(L("Odak modunda gizlenenler", "Hidden during focus"))
             } footer: {
                 Footnote(L("Bu uygulamalar odak boyunca arka planda bekler; öne gelirlerse yeniden gizlenir. Hiçbiri kapatılmaz, mesajların kaybolmaz. Varsayılan liste Slack, Discord, Telegram, WhatsApp, Mesajlar, Messenger, Teams ve Mail'dir; kurulu olanlar görünür.",
                            "These apps wait in the background during focus; if they come forward they're hidden again. Nothing is quit, no messages are lost. The default list is Slack, Discord, Telegram, WhatsApp, Messages, Messenger, Teams and Mail; the installed ones show."))
@@ -2893,7 +2894,7 @@ private struct FocusPage: View {
                 }
                 .disabled(!blockSites)
             } header: {
-                Text(L("Odak modunda engellenen siteler", "Websites blocked during focus"))
+                SectionTitle(L("Odak modunda engellenen siteler", "Websites blocked during focus"))
             } footer: {
                 Footnote(L("Safari, Chrome, Arc, Brave, Edge ve Vivaldi'de eklenti gerekmeden çalışır: öndeki sekme bu sitelerden biriyse kısa bir \"Odaktasın\" sayfasına döner. macOS her tarayıcı için bir kez izin ister. Alt alan adları da engellenir (youtube.com → m.youtube.com).",
                            "Works in Safari, Chrome, Arc, Brave, Edge and Vivaldi with no extension: if the tab in front is one of these sites it turns into a short \"You're focusing\" page. macOS asks once per browser. Subdomains are blocked too (youtube.com → m.youtube.com)."))
@@ -2902,7 +2903,7 @@ private struct FocusPage: View {
                 TextField(L("Açarken çalışacak kestirme", "Shortcut to run when it starts"), text: $shortcutOn, prompt: Text(verbatim: "Odak Aç"))
                 TextField(L("Kapatırken çalışacak kestirme", "Shortcut to run when it ends"), text: $shortcutOff, prompt: Text(verbatim: "Odak Kapat"))
             } header: {
-                Text(L("macOS Odak (isteğe bağlı)", "macOS Focus (optional)"))
+                SectionTitle(L("macOS Odak (isteğe bağlı)", "macOS Focus (optional)"))
             } footer: {
                 Footnote(L("macOS'un Rahatsız Etme / Odak modunu açmak için Kestirmeler'de \"Odak Ayarla\" eylemiyle iki kestirme yap ve adlarını buraya yaz.",
                            "To switch macOS Do Not Disturb / Focus too, make two shortcuts with the \"Set Focus\" action in Shortcuts and enter their names here."))
@@ -2996,7 +2997,7 @@ private struct ClipboardPage: View {
                 Toggle(L("↩ ile yapıştır", "Paste with ↩"), isOn: $autoPaste)
                 AccessibilityRow()
             } header: {
-                Text(L("Yapıştırma", "Pasting"))
+                SectionTitle(L("Yapıştırma", "Pasting"))
             } footer: {
                 Footnote(L("Seçtiğini, imlecin olduğu uygulamaya doğrudan yapıştırır. Bunun için macOS'in Erişilebilirlik izni gerekir; izin yoksa yalnızca kopyalanır.",
                            "Pastes what you pick straight into the app with the cursor. macOS needs Accessibility permission for this; without it, the item is only copied."))
@@ -3012,7 +3013,7 @@ private struct ClipboardPage: View {
                 }
                 Button { addExcluded() } label: { Label(L("Uygulama ekle…", "Add an app…"), systemImage: "plus") }
             } header: {
-                Text(L("Kaydedilmeyen uygulamalar", "Apps never recorded"))
+                SectionTitle(L("Kaydedilmeyen uygulamalar", "Apps never recorded"))
             } footer: {
                 Footnote(L("Her zaman hariç: 1Password, Bitwarden, LastPass, Dashlane, KeePassXC, Anahtar Zinciri ve Parolalar.",
                            "Always left out: 1Password, Bitwarden, LastPass, Dashlane, KeePassXC, Keychain Access and Passwords."))
@@ -3212,7 +3213,7 @@ private struct CustomLayoutsSection: View {
                 Spacer()
             }
         } header: {
-            Text(L("Kendi yerleşimlerin", "Your own layouts"))
+            SectionTitle(L("Kendi yerleşimlerin", "Your own layouts"))
         } footer: {
             Footnote(L("Ekranın yüzdesiyle: sol ve üstten uzaklık, genişlik ve yükseklik. Bir uygulama seçersen o uygulamanın penceresi yerleşir (kapalıysa açılır). Aynı düzen adını verdiğin yerleşimler \"Düzen: ad\" komutuyla birlikte uygulanır. Hepsi başlatıcıda çıkar; ⌘K ile kısayol atayabilirsin.",
                        "As shares of the screen: distance from the left and top, width and height. Pick an app to place that app's window (it opens if needed). Layouts with the same set name run together as \"Set: name\". All of them show in the launcher; give one a shortcut with ⌘K."))

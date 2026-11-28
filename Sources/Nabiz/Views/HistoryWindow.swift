@@ -28,7 +28,7 @@ enum HistoryWindow {
     }
 }
 
-/// CPU, RAM, GPU and the main AI limit over the last hour, day or week.
+/// CPU, RAM, GPU and the main AI limit, all in the accent (orange and red stay for warnings), over the last hour, day or week.
 struct HistoryView: View {
     enum Span: String, CaseIterable, Identifiable {
         case hour, day, week
@@ -79,10 +79,10 @@ struct HistoryView: View {
             TimelineView(.periodic(from: .now, by: 60)) { context in
                 VStack(spacing: Theme.Spacing.l) {
                     chart(L("İşlemci", "CPU"), .cpu, Theme.accent, now: context.date)
-                    chart(L("Bellek", "Memory"), .memory, Theme.warning.fill, now: context.date)
-                    chart(L("Grafik", "GPU"), .gpu, Palette.green.mark, now: context.date)
+                    chart(L("Bellek", "Memory"), .memory, Theme.accent, now: context.date)
+                    chart(L("Grafik", "GPU"), .gpu, Theme.accent, now: context.date)
                     if !history.points(.ai, span: span.seconds, buckets: span.buckets, now: context.date).isEmpty {
-                        chart(L("AI limiti (kullanılan)", "AI limit (used)"), .ai, Theme.danger, now: context.date)
+                        chart(L("AI limiti (kullanılan)", "AI limit (used)"), .ai, Theme.accent, now: context.date)
                     }
                 }
             }
@@ -117,10 +117,11 @@ struct HistoryView: View {
                     .frame(maxWidth: .infinity, minHeight: Theme.historyChart, alignment: .center)
             } else {
                 Chart(points) { point in
-                    AreaMark(x: .value("t", point.date), y: .value("%", point.value))
+                    AreaMark(x: .value("t", point.date), y: .value("%", point.value), series: .value("s", point.segment),
+                             stacking: .unstacked)
                         .foregroundStyle(color.opacity(0.18))
                         .interpolationMethod(.monotone)
-                    LineMark(x: .value("t", point.date), y: .value("%", point.value))
+                    LineMark(x: .value("t", point.date), y: .value("%", point.value), series: .value("s", point.segment))
                         .foregroundStyle(color)
                         .interpolationMethod(.monotone)
                 }
@@ -131,6 +132,8 @@ struct HistoryView: View {
                         AxisValueLabel { Text(verbatim: "\(value.as(Int.self) ?? 0)%").font(Theme.small) }
                     }
                 }
+                // Aligned labels keep the last one inside the chart instead of cut at the edge.
+                .chartXAxis { AxisMarks(preset: .aligned) }
                 .chartXScale(domain: now.addingTimeInterval(-span.seconds)...now)
                 .frame(height: Theme.historyChart)
             }

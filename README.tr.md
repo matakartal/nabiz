@@ -36,7 +36,8 @@ Sen yazıyorsun, ajanlar kuruyor, Mac'in sessizce doluyor. Nabız bu çalışma 
 
 - **Panel:** menü çubuğunda CPU, RAM, GPU, ağ, disk, pil, AI limiti, piyasa ya da döviz. Canlı grafikler. Bellek
   dolunca neyin doldurduğunu söyler ve en çok yer açan adımı tek tuşla yapar. Geçmiş, harici ekran parlaklığı,
-  takvim, Hyperliquid piyasaları ve döviz kurları da burada. İstersen Dock'ta da görünür.
+  takvim, Hyperliquid piyasaları, herkese açık bir adresten salt okunur Hyperliquid pozisyonları (likidasyona yaklaşınca
+  uyarı) ve döviz kurları da burada. Üstte CPU, RAM ve GPU'nun yanında bir piyasanın son 24 saati (varsayılan BTC). İstersen Dock'ta da görünür.
 - **Hava durumu:** şehrinde şu an, yaklaşan yağmur, gün doğumu/batımı ve önümüzdeki günler. Konum izni istemez;
   sıcaklık istersen menü çubuğunda da durur.
 - **Cihaz içi AI:** varsayılan olarak Apple'ın modeli çalışır: ücretsiz, hesap istemez, hiçbir şey Mac'ten çıkmaz,
@@ -50,7 +51,8 @@ Sen yazıyorsun, ajanlar kuruyor, Mac'in sessizce doluyor. Nabız bu çalışma 
 - **Başlatıcı (⌃⌥Boşluk):** uygulama, dosya, komut, hesap ve çeviri (`100 usd`, `5 bin tl`), parçacıklar, pano
   geçmişi (⌃⌥V), ses ve Bluetooth, her satıra kendi kısayolun.
 - **Geliştiriciler için:** portlar (`:3000`), çalışan sunucular (telefonda QR ile aç), projeler ve gönderilmemiş
-  commit'ler, Docker, simülatörler, sorarak yapılan temizlik, notarize takibi ve MCP sunucusu.
+  commit'ler, Docker, simülatörler, sorarak yapılan temizlik, notarize takibi ve MCP sunucusu. Çalışan bütün Claude Code
+  oturumları izin bekleyenler önde listelenir; bir hesap dolarken diğer hesapla tek tıkla yeni CLI oturumu açılır.
 - **Günlük araçlar:** Pomodoro ve odak modu, uyanık kal, zamanlayıcı, notlar (⌃⌥M), pencere düzenleri, renk al,
   ekrandan metin oku, hız testi, şifre üret, zamanlanmış görevler ve yedek.
 

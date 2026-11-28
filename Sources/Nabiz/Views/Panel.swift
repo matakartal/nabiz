@@ -266,7 +266,8 @@ private struct StatusSection: View {
                 let link = monitor.networkLink
                 let settings = Fix.openSettings(URL(string: "x-apple.systempreferences:com.apple.Network-Settings.extension"))
                 PanelRow(icon: .symbol(link?.isWiFi ?? true ? "wifi" : "cable.connector"), title: L("Ağ", "Network"),
-                         subtitle: link.map { "\($0.kind) · \($0.address)" } ?? L("bağlı değil", "offline"),
+                         // No link but traffic flowing (a VPN, a link still coming up): say nothing rather than "offline".
+                         subtitle: link.map { "\($0.kind) · \($0.address)" } ?? (network.down + network.up < 1024 ? L("bağlı değil", "offline") : nil),
                          action: { monitor.perform(settings) }) { hovering in
                     if hovering {
                         Value(settings.title, color: Palette.green.mark)
@@ -277,8 +278,7 @@ private struct StatusSection: View {
             }
             if let battery = monitor.battery {
                 PanelRow(icon: .symbol(battery.charging ? "battery.100.bolt" : "battery.75"), title: L("Pil", "Battery"),
-                         subtitle: battery.minutesToFull.map { L("\(Format.duration(TimeInterval($0 * 60))) sonra dolu", "full in \(Format.duration(TimeInterval($0 * 60)))") },
-                         action: nil) { _ in
+                         subtitle: batteryAdapter(battery), action: nil) { _ in
                     TwoColumns(batteryDetail(battery), Format.percent(Double(battery.percent) / 100),
                                color: !battery.plugged && battery.percent <= 15 ? Theme.warning.mark : Theme.textMuted)
                 }
@@ -325,8 +325,17 @@ private struct StatusSection: View {
         }
     }
 
+    /// The charger's power while charging, on the title line (the value column has the time to full).
+    private func batteryAdapter(_ battery: BatteryState) -> String? {
+        guard battery.charging, let watts = monitor.batteryHealth?.adapterWatts else { return nil }
+        return "⚡︎ \(watts) W"
+    }
+
+    /// Time to full while charging, time left on battery, else what it's doing.
     private func batteryDetail(_ battery: BatteryState) -> String {
-        if battery.charging, let watts = monitor.batteryHealth?.adapterWatts { return "⚡︎ \(watts) W" }
+        if battery.charging, let minutes = battery.minutesToFull {
+            return L("\(minutes / 60) sa \(minutes % 60) dk", "\(minutes / 60)h \(minutes % 60)m")
+        }
         if battery.charging { return L("şarj oluyor", "charging") }
         if battery.plugged { return L("prizde", "plugged in") }
         guard let minutes = battery.minutesLeft else { return "" }
@@ -1772,13 +1781,20 @@ private struct MarketMeter: View {
                 .foregroundStyle(Theme.textMuted).lineLimit(1).minimumScaleFactor(0.8)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .help(L("\(market.name): son 24 saat", "\(market.name): the last 24 hours"))
+        .contentShape(Rectangle())
+        // Its own tap: the market's page, not the system history the other meters open.
+        .highPriorityGesture(TapGesture().onEnded {
+            guard let url = market.tradeURL else { return }
+            Monitor.panelActions.close()
+            NSWorkspace.shared.open(url)
+        })
+        .help(L("\(market.name): son 24 saat · tıkla: Hyperliquid'de aç", "\(market.name): the last 24 hours · click to open on Hyperliquid"))
     }
 
-    /// "+1,2%" / "-0,4%": the 24-hour move, one decimal, always signed.
+    /// "+1,2%" / "−0,4%": the 24-hour move, one decimal, always signed (a real minus, like the positions).
     static func move(_ fraction: Double) -> String {
         let value = Format.number(abs(fraction) * 100, maxDigits: 1, minDigits: 1)
-        return (fraction < 0 ? "-" : "+") + (Prefs.isTurkish ? "%" + value : value + "%")
+        return (fraction < 0 ? "−" : "+") + (Prefs.isTurkish ? "%" + value : value + "%")
     }
 
     /// Lowest price at a tenth of the height, highest at nine tenths, so the line never touches the edges.
