@@ -30,7 +30,7 @@ struct PerpPosition: Identifiable, Equatable, Sendable {
     /// The mark price Hyperliquid worked the position's value and profit out at.
     var markPrice: Double? { size != 0 && positionValue > 0 ? positionValue / abs(size) : nil }
 
-    var tradeURL: URL? { URL(string: "https://app.hyperliquid.xyz/trade/\(coin)") }
+    var tradeURL: URL? { Hyperliquid.url("trade/\(coin)") }
 
     /// How far the price can still move against the position before it is liquidated, as a fraction of the mark
     /// (0.08 = 8%). 0 once the mark is at or past the line.

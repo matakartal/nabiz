@@ -64,7 +64,7 @@ final class LauncherStore {
         Quicklink(keyword: "gh", name: "GitHub", url: "https://github.com/search?q={query}"),
         Quicklink(keyword: "yt", name: "YouTube", url: "https://www.youtube.com/results?search_query={query}"),
         Quicklink(keyword: "w", name: "Wikipedia", url: "https://wikipedia.org/w/index.php?search={query}"),
-        Quicklink(keyword: "hl", name: "Hyperliquid", url: "https://app.hyperliquid.xyz/trade/{query}"),
+        Quicklink(keyword: "hl", name: "Hyperliquid", url: "https://app.hyperliquid.xyz/trade/{query}?ref=\(Hyperliquid.referral)"),
         Quicklink(keyword: "cl", name: "Claude", url: "https://claude.ai/new?q={query}"),
         Quicklink(keyword: "gpt", name: "ChatGPT", url: "https://chatgpt.com/?q={query}"),
         Quicklink(keyword: "çevir", name: L("Çeviri", "Translate"), url: "https://translate.google.com/?sl=auto&tl=tr&text={query}"),
@@ -83,6 +83,11 @@ final class LauncherStore {
             Snippet(keyword: "tarih", name: L("Bugünün tarihi", "Today's date"), text: "{date}"),
         ]
         quicklinks = defaults.data(forKey: "quicklinks").flatMap { try? JSONDecoder().decode([Quicklink].self, from: $0) } ?? Self.defaultQuicklinks
+        // The built-in Hyperliquid link as first saved, before it carried the referral: bring it up to date.
+        let oldHyperliquid = "https://app.hyperliquid.xyz/trade/{query}"
+        if let index = quicklinks.firstIndex(where: { $0.url == oldHyperliquid }) {
+            quicklinks[index].url = oldHyperliquid + "?ref=\(Hyperliquid.referral)"
+        }
     }
 
     func save(snippet: Snippet) {

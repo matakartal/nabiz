@@ -85,7 +85,7 @@ struct PositionsTests {
         let xyz = try dex(xyzDex, "xyz")
         #expect(xyz.positions.map(\.coin) == ["xyz:TSLA", "xyz:NVDA"])
         #expect(xyz.positions.map(\.name) == ["TSLA", "NVDA"])
-        #expect(xyz.positions[0].tradeURL?.absoluteString == "https://app.hyperliquid.xyz/trade/xyz:TSLA")
+        #expect(xyz.positions[0].tradeURL?.absoluteString == "https://app.hyperliquid.xyz/trade/xyz:TSLA?ref=LEARNBUYCRYPTO")
         #expect(xyz.positions[1].liquidationPrice == nil && xyz.positions[1].fundingSinceOpen == 0)
         #expect(!xyz.isEmpty)
     }

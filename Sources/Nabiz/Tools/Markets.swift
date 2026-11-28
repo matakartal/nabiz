@@ -23,7 +23,17 @@ struct Market: Identifiable, Sendable {
         return price / prevDayPrice - 1
     }
 
-    var tradeURL: URL? { URL(string: "https://app.hyperliquid.xyz/trade/\(id)") }
+    var tradeURL: URL? { Hyperliquid.url("trade/\(id)") }
+}
+
+/// Hyperliquid pages Nabız opens, with finqt's referral code (the same one finqt's web and iOS apps use).
+enum Hyperliquid {
+    static let referral = "LEARNBUYCRYPTO"
+
+    /// "trade/BTC" → https://app.hyperliquid.xyz/trade/BTC?ref=LEARNBUYCRYPTO
+    static func url(_ path: String) -> URL? {
+        URL(string: "https://app.hyperliquid.xyz/\(path)?ref=\(referral)")
+    }
 }
 
 struct MarketDex: Identifiable, Sendable {

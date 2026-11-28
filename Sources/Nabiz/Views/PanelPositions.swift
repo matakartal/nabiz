@@ -11,7 +11,7 @@ struct PositionsSection: View {
     var body: some View {
         if let account = store.account {
             PanelRow(icon: .symbol("wallet.bifold"), title: L("Hesap", "Account"), subtitle: PositionText.accountSubtitle(account),
-                     action: { open("https://app.hyperliquid.xyz/portfolio") }) { _ in
+                     action: { open(Hyperliquid.url("portfolio")?.absoluteString ?? "") }) { _ in
                 Value(Format.dollars(account.accountValue), color: Theme.text)
             }
             .help(accountDetails(account))
