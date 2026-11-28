@@ -65,6 +65,8 @@ final class AINotifications: NSObject, UNUserNotificationCenterDelegate {
                 AIChatWindow.show()
                 AIChatWindow.state.select(chat)
             }
+            // "<session> needs your permission": brings that Claude Code session's app forward.
+            ClaudeSessionStore.shared.show(notification: identifier)
         }
     }
 }

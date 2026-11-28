@@ -151,6 +151,8 @@ enum SettingsIndex {
         .init(.general, "general.refresh", "Arka planda yenileme sıklığı", "Background refresh", "saniye interval pil battery hız"),
         .init(.general, "general.notes", "Notlar uygulaması", "Notes app", "apple notes not nabız"),
         .init(.general, "general.notifications", "Bildirimler", "Notifications", "uyarı alert bellek cpu disk pil limit"),
+        .init(.general, "general.notifications", "Claude Code izin isteyince bildir", "Notify when Claude Code needs permission",
+              "claude code oturum session izin permission bekliyor waiting ajan agent"),
         // Shortcuts
         .init(.shortcuts, "shortcuts.keys", "Başlatıcı kısayolu", "Launcher shortcut", "hotkey tuş ⌃⌥ boşluk space"),
         .init(.shortcuts, "shortcuts.brightness", "Harici ekran parlaklığı", "External display brightness", "parlaklık brightness monitör monitor ddc ekran display tuş keys monitorcontrol"),
@@ -208,6 +210,8 @@ enum SettingsIndex {
         .init(.panel, "panel.sections", "Panel bölümleri ve sırası", "Panel sections and order", "gizle göster hide show sırala reorder"),
         .init(.panel, "panel.sections", "Dev sunucuları ve portlar", "Dev servers and ports", "port localhost sunucu server vite next npm kill durdur stop"),
         .init(.panel, "panel.sections", "Ekran parlaklığı sürgüsü", "Display brightness slider", "parlaklık brightness monitör monitor ekran display"),
+        .init(.panel, "panel.sections", "Claude Code oturumları", "Claude Code sessions",
+              "claude code oturum session terminal ajan agent çalışıyor working izin permission bekliyor waiting"),
         .init(.panel, "panel.tools", "Panel araçları", "Panel tools", "tool"),
         .init(.panel, "panel.apps", "Çok kaynak kullanan uygulamalar", "Busiest apps list", "işlem process top bellek cpu"),
         // Suggestions

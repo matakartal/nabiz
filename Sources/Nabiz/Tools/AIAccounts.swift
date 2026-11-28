@@ -96,7 +96,7 @@ enum AIAccounts {
 
     /// Folders that may hold another sign-in: "~/.claude-*" next to the default one, "~/.config/claude*",
     /// the ones the user added, and Xcode's own Claude agent.
-    private static func candidates(_ provider: AIProvider, extra: [String]) -> [String] {
+    static func candidates(_ provider: AIProvider, extra: [String]) -> [String] {
         let home = NSHomeDirectory()
         var paths: [String] = []
         for (dir, stem) in [(home, provider.folderStem), (home + "/.config", provider.rawValue)] {
