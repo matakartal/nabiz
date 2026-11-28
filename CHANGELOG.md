@@ -2,6 +2,15 @@
 
 ## 1.12.0
 
+- **Claude Code sessions:** a new panel section lists every running Claude Code session — waiting for your permission
+  first (in orange), then working, then idle — with its project and account. "Show" brings its app forward, and a
+  notification tells you when one needs permission (Settings → Notifications).
+- **Switch account:** each AI account has "Open…", which starts its CLI with that account in a new Terminal, in a
+  recent project. When one account is nearly out and another has room, a "Switch account" row says so. Running
+  sessions keep their account; nothing needs to close.
+- **Hyperliquid positions:** paste a wallet address in Settings → Markets and the panel shows the account value,
+  margin and every open position (main dex and HIP-3) with its profit or loss, leverage and liquidation price,
+  orange near liquidation and red when close, with an optional notification. Read-only: only the address is sent.
 - **A market next to CPU, RAM and GPU:** the panel's header has a fourth meter with BTC's last 24 hours — the move,
   the line and the price. Turn it off or pick another market in Settings → Markets → Chart at the top.
 - **AI limits:** Claude's 5-hour window no longer shows twice (as "5-hour" and "Session"), and an Ultra account
