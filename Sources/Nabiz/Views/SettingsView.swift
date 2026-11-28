@@ -1417,6 +1417,7 @@ private struct AIChatPage: View {
     @AppStorage(Prefs.aiClaudeSessions) private var claudeSessions = true
     @AppStorage(Prefs.aiNotify) private var notify = true
     @AppStorage(Prefs.aiSuggest) private var suggest = true
+    @AppStorage(Prefs.aiInstructions) private var instructions = ""
     @State private var confirmClear = false
     private let chats = AIChatStore.shared
 
@@ -1448,6 +1449,19 @@ private struct AIChatPage: View {
             } footer: {
                 Footnote(L("Bildirim yalnızca başka bir uygulamadayken ya da başka bir sohbete bakarken gelir; tıklayınca sohbet açılır. Claude sohbeti hatırlarsa her mesajda yalnızca yeni mesaj gider: daha hızlı ve limitten daha az yer. Bunun için Claude, sohbetin bir kopyasını kendi klasöründe (~/.claude) tutar; kapatırsan her mesajda tüm sohbet yeniden gönderilir.",
                            "The notification comes only while you're in another app or another chat; clicking it opens the chat. When Claude remembers the chat, only your new message goes out each time: faster, and lighter on your limit. For that Claude keeps a copy of the chat in its own folder (~/.claude); turn it off to send the whole chat every time."))
+            }
+            SettingsSection("aiChat.instructions") {
+                TextEditor(text: $instructions)
+                    .font(Theme.body)
+                    .frame(minHeight: Theme.launcherRow * 3)
+                    .scrollContentBackground(.hidden)
+                    .padding(Theme.Spacing.xs)
+                    .background(Theme.field, in: RoundedRectangle(cornerRadius: Theme.fieldRadius, style: .continuous))
+            } header: {
+                SectionTitle(L("Hakkında ve nasıl cevap versin", "About you and how to answer"))
+            } footer: {
+                Footnote(L("Her sohbette AI'a söylenir; örneğin \"Mac'te Swift yazıyorum, kısa cevap ver\". Bir klasörün kendi talimatları da olabilir: sohbet penceresinde klasörün menüsü → Talimatlar.",
+                           "Told to the AI in every chat, for example \"I write Swift on a Mac, keep answers short\". A folder can have its own too: in the chat window, the folder's menu → Instructions."))
             }
             SettingsSection("aiChat.history") {
                 Toggle(L("Sohbetleri sakla", "Keep chats"), isOn: Binding(get: { history }, set: { on in

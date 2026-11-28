@@ -40,6 +40,13 @@ enum Theme {
     /// The launcher's input line, Spotlight-sized.
     static var input: Font { .system(size: 20, weight: .regular, design: design) }
     static var inputStrong: Font { .system(size: 20, weight: .semibold, design: design) }
+    /// The AI chat's reading size (13 in the launcher), with "Large text" added; its other sizes scale from it.
+    static var chatText: CGFloat { 15 + bump }
+    static var chatCompactText: CGFloat { 13 + bump }
+    /// A size worked out from `chatText` (a heading, a caption), in the chosen typeface.
+    static func scaled(_ size: CGFloat, weight: Font.Weight = .regular) -> Font { .system(size: size, weight: weight, design: design) }
+    /// Code: always monospaced, whatever the typeface.
+    static func mono(_ size: CGFloat, weight: Font.Weight = .regular) -> Font { .system(size: size, weight: weight, design: .monospaced) }
 
     enum Spacing {
         static let xs: CGFloat = 4

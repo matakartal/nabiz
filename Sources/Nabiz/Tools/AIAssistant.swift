@@ -1078,6 +1078,9 @@ enum OnDeviceAI {
     /// Open sessions by chat, with how many answers each has given.
     @MainActor private static var sessions: [UUID: (session: AnyObject, answered: Int)] = [:]
 
+    /// The chat changed under its session (another version of an answer is shown): the next answer reads it afresh.
+    @MainActor static func forget(_ chatID: UUID) { sessions[chatID] = nil }
+
     @MainActor static func stream(_ request: AIRequest) -> AsyncThrowingStream<AIProgress, Error> {
         AsyncThrowingStream { continuation in
             let task = Task { @MainActor in

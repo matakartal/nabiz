@@ -159,6 +159,12 @@ enum Prefs {
     static let mcpCommands = "mcpCommands"
     static let mcpNotes = "mcpNotes"
     static let mcpClipboard = "mcpClipboard"
+    /// The clipboard's current text only (no history needed), behind its own yes.
+    static let mcpClipboardNow = "mcpClipboardNow"
+    /// Screenshots of the screen or an app's window.
+    static let mcpScreen = "mcpScreen"
+    /// Your own scripts and Shortcuts, and commands like sleep or lock, from run_command.
+    static let mcpScripts = "mcpScripts"
     // Calendar: the panel section and the launcher's events (asks for access when turned on).
     static let calendarEnabled = "calendarEnabled"
     static let calendarHidden = "calendarHidden"
@@ -211,6 +217,8 @@ enum Prefs {
     static let aiSuggest = "aiSuggest"
     /// Claude, Codex and Grok may search the web when a question needs it.
     static let aiWebSearch = "aiWebSearch"
+    /// "About you / how to answer": added to every chat's instructions.
+    static let aiInstructions = "aiInstructions"
     /// Nabız also shows in the Dock and ⌘⇥, with a full menu bar (off: only the menu bar item).
     static let showInDock = "showInDock"
     /// The app version whose "New" note in the panel was seen or closed.
@@ -237,12 +245,12 @@ enum Prefs {
             clipboardExcluded: "", autoPaste: true, launcherApps: true, launcherClipboard: true, launcherShortcuts: true, launcherFiles: true, windowHotkeys: false,
             noteOnTop: true, noteHotkey: true, notesApp: "nabiz",
             pomodoroWork: 25, pomodoroShort: 5, pomodoroLong: 15, pomodoroLongEvery: 4, pomodoroAuto: true, pomodoroFocus: true,
-            focusBlocked: "", focusHideOthers: false, focusHideDesktop: false, focusShortcutOn: "", focusShortcutOff: "", focusBlockSites: false, focusSites: "", mcpEnabled: false, mcpCommands: true, mcpNotes: true, mcpClipboard: false,
+            focusBlocked: "", focusHideOthers: false, focusHideDesktop: false, focusShortcutOn: "", focusShortcutOff: "", focusBlockSites: false, focusSites: "", mcpEnabled: false, mcpCommands: true, mcpNotes: true, mcpClipboard: false, mcpClipboardNow: false, mcpScreen: false, mcpScripts: false,
             calendarEnabled: false, calendarHidden: "", calendarAlert: true, dictationHotkey: false, shotHotkey: true, shotAfter: "preview", recHotkey: true, dictationLanguage: "system", autoBackup: false,
             downloadQuality: "best", downloadFolder: "",
             appearanceMode: "system", fontDesign: "standard", density: "normal", meterStyle: "thin",
             barSymbol: "gauge.with.dots.needle.33percent", customAccent: "#1DB954", sectionOrder: "",
-            aiAsk: true, aiEngine: "onDevice", aiHistory: true, aiHotkey: true, aiChatHotkey: true, aiClaudeSessions: true, aiNotify: true, aiSuggest: true, aiWebSearch: true, showInDock: false, seenVersion: "",
+            aiAsk: true, aiEngine: "onDevice", aiHistory: true, aiHotkey: true, aiChatHotkey: true, aiClaudeSessions: true, aiNotify: true, aiSuggest: true, aiWebSearch: true, aiInstructions: "", showInDock: false, seenVersion: "",
         ])
         AdviceKind.registerDefaults()
     }

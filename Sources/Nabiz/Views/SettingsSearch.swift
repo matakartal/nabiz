@@ -224,6 +224,7 @@ enum SettingsIndex {
         .init(.aiChat, "aiChat.answers", "Cevap gelince bildir", "Notify when an answer arrives", "bildirim notification"),
         .init(.aiChat, "aiChat.answers", "Sonraki mesajı öner", "Suggest the next message", "öneri suggestion tab"),
         .init(.aiChat, "aiChat.answers", "Claude sohbeti kendisi hatırlasın", "Let Claude remember the chat itself", "oturum session hızlı faster limit"),
+        .init(.aiChat, "aiChat.instructions", "Hakkında ve nasıl cevap versin", "About you and how to answer", "talimat instructions özel custom prompt sistem system"),
         .init(.aiChat, "aiChat.history", "Sohbetleri sakla", "Keep chats", "geçmiş history şifreli encrypted"),
         .init(.aiChat, "aiChat.history", "Tüm sohbetleri sil", "Delete all chats", "temizle clear"),
         // Dictation

@@ -171,7 +171,21 @@ final class AIChatState {
         queued[conversation.id]?.removeAll { $0 == item }
         if queued[conversation.id]?.isEmpty == true { queued[conversation.id] = nil }
         draft = item.text
+        attachments = Self.attachments(text: item.attachment, name: item.attachmentName, images: item.images)
         focusComposer += 1
+    }
+
+    /// What a message carried, as chips in the box again: images as images (their read text rides on the first),
+    /// otherwise the attached text.
+    static func attachments(text: String?, name: String?, images: [String]) -> [AIAttachment] {
+        guard !images.isEmpty else {
+            return text.map { [AIAttachment(name: name ?? L("Ek", "Attachment"), text: $0)] } ?? []
+        }
+        let names = name?.components(separatedBy: ", ") ?? []
+        return images.enumerated().map { index, image in
+            AIAttachment(name: names.indices.contains(index) ? names[index] : L("Görsel", "Image"),
+                         text: index == 0 ? (text ?? "") : "", symbol: "photo", image: image)
+        }
     }
 
     func removeQueued(_ item: Queued) {
@@ -341,6 +355,8 @@ final class AIChatState {
     var showArchive = false
     var pendingDelete: AIConversation?
     var pendingFolderDelete: AIFolder?
+    /// The folder whose instructions are being written.
+    var instructionsFolder: AIFolder?
 
     var conversation: AIConversation? { AIChatStore.shared.conversation(selection) }
 
@@ -404,17 +420,16 @@ final class AIChatState {
         cancelEdit()
         guard let conversation, let removed = conversation.takeBack(message.id), let taken = removed.first else { return }
         editing = (conversation.id, removed, Draft(text: draft, attachments: attachments))
-        draft = taken.text
-        if let images = taken.images, !images.isEmpty {
-            // Images come back as images; their text goes along again when sent.
-            let names = taken.attachmentName?.components(separatedBy: ", ") ?? []
-            attachments = images.enumerated().map { index, image in
-                AIAttachment(name: names.indices.contains(index) ? names[index] : L("Görsel", "Image"),
-                             text: index == 0 ? (taken.attachment ?? "") : "", symbol: "photo", image: image)
-            }
+        var attachment = taken.attachment
+        if let prompt = taken.prompt {
+            // A ready-made task: its instructions come back to edit, not just its name.
+            let task = AIAssistant.editableTask(prompt: prompt, attachment: taken.attachment)
+            draft = task.draft
+            if !task.keepsAttachment { attachment = nil }
         } else {
-            attachments = taken.attachment.map { [AIAttachment(name: taken.attachmentName ?? L("Ek", "Attachment"), text: $0)] } ?? []
+            draft = taken.text
         }
+        attachments = Self.attachments(text: attachment, name: taken.attachmentName, images: taken.images ?? [])
         focusComposer += 1
     }
 
@@ -579,6 +594,9 @@ struct AIChatView: View {
             }
         } message: {
             Text(L("Klasör gider, içindeki sohbetler listede kalır.", "The folder goes; its chats stay in the list."))
+        }
+        .sheet(item: $state.instructionsFolder) { folder in
+            FolderInstructionsSheet(folder: folder) { state.instructionsFolder = nil }
         }
     }
 
@@ -1032,6 +1050,7 @@ private struct AIFolderGroup: View {
     @ViewBuilder private var actions: some View {
         Button(L("Bu klasörde yeni sohbet", "New chat in this folder"), systemImage: "square.and.pencil") { state.newChat(in: folder.id) }
         Button(L("Yeniden adlandır", "Rename"), systemImage: "pencil") { state.renamingFolder = folder.id }
+        Button(L("Talimatlar…", "Instructions…"), systemImage: "text.badge.star") { state.instructionsFolder = folder }
         Divider()
         Button(L("Klasörü sil…", "Delete folder…"), systemImage: "trash", role: .destructive) { state.pendingFolderDelete = folder }
     }
@@ -1040,6 +1059,40 @@ private struct AIFolderGroup: View {
         guard state.renamingFolder == folder.id else { return }
         store.renameFolder(folder.id, name)
         state.renamingFolder = nil
+    }
+}
+
+/// How the AI should answer in a folder's chats, written from the folder's menu.
+private struct FolderInstructionsSheet: View {
+    let folder: AIFolder
+    let close: () -> Void
+    @State private var text = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.m) {
+            Text(L("\(folder.name) için talimatlar", "Instructions for \(folder.name)")).font(Theme.title)
+            Text(L("Bu klasördeki her sohbette AI'a söylenir: konu, dil, üslup, uzunluk.",
+                   "Told to the AI in every chat in this folder: the topic, language, tone, length."))
+                .font(Theme.small).foregroundStyle(Theme.textMuted)
+            TextEditor(text: $text)
+                .font(Theme.body)
+                .scrollContentBackground(.hidden)
+                .padding(Theme.Spacing.xs)
+                .background(Theme.field, in: RoundedRectangle(cornerRadius: Theme.fieldRadius, style: .continuous))
+                .frame(minHeight: 140)
+            HStack {
+                Spacer()
+                Button(L("Vazgeç", "Cancel"), action: close).keyboardShortcut(.cancelAction)
+                Button(L("Kaydet", "Save")) {
+                    AIChatStore.shared.setInstructions(folder.id, text)
+                    close()
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(Theme.Spacing.l)
+        .frame(width: 440)
+        .onAppear { text = AIChatStore.shared.folders.first { $0.id == folder.id }?.instructions ?? "" }
     }
 }
 
@@ -2789,6 +2842,7 @@ private struct AIAnswer: View {
 
     private var footer: some View {
         HStack(spacing: Theme.Spacing.m) {
+            if message.versionCount > 1 { versionSwitcher }
             AIBrandMark(engine: engine, size: size)
             Text(verbatim: details).font(.system(size: size * 0.8)).foregroundStyle(Theme.textMuted).lineLimit(1)
                 .help(message.date.formatted(date: .complete, time: .shortened))
@@ -2845,6 +2899,30 @@ private struct AIAnswer: View {
             }
             if message.stopped { Text(L("Durduruldu", "Stopped")).font(.system(size: size * 0.8)).foregroundStyle(Theme.textMuted) }
         }
+    }
+
+    /// "‹ 2/3 ›": the other versions of this answer; the one shown continues the chat.
+    private var versionSwitcher: some View {
+        let index = message.versionIndex ?? 0
+        let count = message.versionCount
+        return HStack(spacing: Theme.Spacing.xs) {
+            Button { conversation.showVersion(index - 1, of: message.id) } label: {
+                Image(systemName: "chevron.left").contentShape(Rectangle())
+            }
+            .disabled(index == 0 || conversation.isRunning)
+            .help(L("Önceki sürüm", "Previous version"))
+            Text(verbatim: "\(index + 1)/\(count)").monospacedDigit()
+            Button { conversation.showVersion(index + 1, of: message.id) } label: {
+                Image(systemName: "chevron.right").contentShape(Rectangle())
+            }
+            .disabled(index >= count - 1 || conversation.isRunning)
+            .help(L("Sonraki sürüm", "Next version"))
+        }
+        .buttonStyle(.plain)
+        .font(Theme.scaled(size * 0.8))
+        .foregroundStyle(Theme.textMuted)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(L("Cevap sürümü \(index + 1) / \(count)", "Answer version \(index + 1) of \(count)"))
     }
 
     private var details: String {
