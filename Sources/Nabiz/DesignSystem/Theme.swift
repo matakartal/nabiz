@@ -37,6 +37,8 @@ enum Theme {
     static var bodyStrong: Font { .system(size: 13 + bump, weight: .semibold, design: design) }
     static var small: Font { .system(size: 11 + bump, weight: .regular, design: design) }
     static var smallStrong: Font { .system(size: 11 + bump, weight: .semibold, design: design) }
+    /// Copied text and code shown as it is: body size, always monospaced.
+    static var code: Font { .system(size: 13 + bump, weight: .regular, design: .monospaced) }
     /// The launcher's input line, Spotlight-sized.
     static var input: Font { .system(size: 20, weight: .regular, design: design) }
     static var inputStrong: Font { .system(size: 20, weight: .semibold, design: design) }
@@ -114,6 +116,8 @@ enum Theme {
     static let paletteWidth: CGFloat = 320
     static let paletteRow: CGFloat = 28
     static let paletteMaxList: CGFloat = 264
+    /// The dictation bar at the bottom of the screen: launcher-field high.
+    static let dictationWidth: CGFloat = 460
     /// Notes: a header row, and text a little bigger than menu text for writing.
     static let noteHeader: CGFloat = 36
     static var noteText: CGFloat { 14 + bump }

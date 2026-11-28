@@ -106,14 +106,26 @@ enum NoteWindow {
         case "b": editor?.wrap("**")
         case "i": editor?.wrap("_")
         case "c" where shift: copyCurrent()
-        case "c": editor?.copy(nil)
-        case "v": editor?.pasteAsPlainText(nil)
-        case "x": editor?.cut(nil)
-        case "a": editor?.selectAll(nil)
-        case "z": if shift { editor?.undoManager?.redo() } else { editor?.undoManager?.undo() }
+        // Editing keys go to whatever has the cursor: the note, or the list's search field.
+        case "c": sendEdit(#selector(NSText.copy(_:)))
+        case "v": if inEditor { editor?.pasteAsPlainText(nil) } else { sendEdit(#selector(NSText.paste(_:))) }
+        case "x": sendEdit(#selector(NSText.cut(_:)))
+        case "a": sendEdit(#selector(NSText.selectAll(_:)))
+        case "z": sendEdit(shift ? Selector(("redo:")) : Selector(("undo:")))
         default: return false
         }
         return true
+    }
+
+    /// The note's own editor has the cursor (not the list's search field).
+    private static var inEditor: Bool {
+        guard let editor else { return false }
+        return panel?.firstResponder === editor
+    }
+
+    /// To the first responder of the note window, which is key while it takes typing.
+    private static func sendEdit(_ action: Selector) {
+        NSApp.sendAction(action, to: nil, from: nil)
     }
 
     static func copyCurrent() {
@@ -145,6 +157,8 @@ enum NoteWindow {
             guard alert.runModal() == .alertFirstButtonReturn else { return }
         }
         NoteStore.shared.delete(note.id)
+        // Deleted from the launcher with the window closed: it stays closed (its view is gone until shown again).
+        guard isVisible else { return }
         if NoteStore.shared.current == nil { close() } else { panel?.makeKeyAndOrderFront(nil) }
     }
 }
@@ -272,6 +286,8 @@ private struct IconButton: View {
 private struct NoteList: View {
     let done: () -> Void
     @State private var query = ""
+    /// The note ↑↓ point at; ↩ opens it. Starts on the open note.
+    @State private var highlighted: UUID?
     @FocusState private var focused: Bool
     private let store = NoteStore.shared
 
@@ -279,23 +295,24 @@ private struct NoteList: View {
         let notes = store.sorted.filter { note in
             query.isEmpty || Fuzzy.contains(query, note.text)
         }
+        let pointed = notes.first { $0.id == highlighted }?.id ?? notes.first { $0.id == store.currentID }?.id ?? notes.first?.id
         VStack(spacing: 0) {
             HStack(spacing: Theme.Spacing.s) {
                 Image(systemName: "magnifyingglass").foregroundStyle(Theme.textMuted)
                 TextField(L("Notlarda ara", "Search notes"), text: $query).textFieldStyle(.plain).focused($focused)
+                    .onKeyPress(.downArrow) { step(1, in: notes, from: pointed) }
+                    .onKeyPress(.upArrow) { step(-1, in: notes, from: pointed) }
+                    .onSubmit { if let pointed { open(pointed) } }
             }
             .font(Theme.body)
             .padding(.horizontal, Theme.Spacing.m)
             .frame(height: Theme.noteHeader)
             Rectangle().fill(Theme.hairline).frame(height: 1)
+            ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(notes) { note in
-                        Button {
-                            store.select(note.id)
-                            done()
-                            NoteWindow.show()
-                        } label: {
+                        Button { open(note.id) } label: {
                             VStack(alignment: .leading, spacing: Theme.Spacing.xs / 2) {
                                 HStack {
                                     Text(verbatim: note.title).font(Theme.bodyStrong).foregroundStyle(Theme.text).lineLimit(1)
@@ -310,11 +327,12 @@ private struct NoteList: View {
                             .padding(.horizontal, Theme.Spacing.s)
                             .padding(.vertical, Theme.Spacing.s)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(note.id == store.currentID ? Theme.hover : .clear,
+                            .background(note.id == pointed ? Theme.hover : .clear,
                                         in: RoundedRectangle(cornerRadius: Theme.fieldRadius, style: .continuous))
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .id(note.id)
                         .contextMenu {
                             Button(L("Sil…", "Delete…"), role: .destructive) { NoteWindow.delete(note) }
                         }
@@ -327,6 +345,8 @@ private struct NoteList: View {
                 .padding(Theme.Spacing.xs)
             }
             .scrollIndicators(.never)
+            .onChange(of: highlighted) { _, id in if let id { proxy.scrollTo(id) } }
+            }
             Rectangle().fill(Theme.hairline).frame(height: 1)
             Button {
                 done()
@@ -343,6 +363,19 @@ private struct NoteList: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(MenuMaterial(blending: .withinWindow))
         .onAppear { focused = true }
+    }
+
+    private func step(_ offset: Int, in notes: [Note], from current: UUID?) -> KeyPress.Result {
+        guard !notes.isEmpty else { return .handled }
+        let index = notes.firstIndex { $0.id == current } ?? 0
+        highlighted = notes[min(max(index + offset, 0), notes.count - 1)].id
+        return .handled
+    }
+
+    private func open(_ id: UUID) {
+        store.select(id)
+        done()
+        NoteWindow.show()
     }
 }
 

@@ -126,6 +126,11 @@ enum Prefs {
     /// Files from Spotlight appear in launcher searches (always with "/").
     static let launcherFiles = "launcherFiles"
     static let launcherClipboard = "launcherClipboard"
+    /// The quicklink keyword the launcher searches the web with when nothing else matches.
+    static let launcherSearch = "launcherSearch"
+    /// Typing a snippet's keyword after `snippetPrefix` in any app replaces it with the snippet (needs Accessibility).
+    static let snippetExpand = "snippetExpand"
+    static let snippetPrefix = "snippetPrefix"
     /// ⌃⌥ arrows, Return and C move the front window.
     static let windowHotkeys = "windowHotkeys"
     /// The single note of 1.5, moved into the notes list on first launch.
@@ -254,7 +259,7 @@ enum Prefs {
             memoryAppCount: 5, cpuAppCount: 3,
             baseCurrency: defaultBaseCurrency, watchedCurrencies: "USD,EUR,GBP", aiBarAccount: AIFeatured.tightest,
             clipboardHotkey: true, clipboardEnabled: true, clipboardSave: true, clipboardLimit: 200, clipboardDays: 30,
-            clipboardExcluded: "", autoPaste: true, launcherApps: true, launcherClipboard: true, launcherShortcuts: true, launcherFiles: true, windowHotkeys: false,
+            clipboardExcluded: "", autoPaste: true, launcherApps: true, launcherClipboard: true, launcherShortcuts: true, launcherFiles: true, launcherSearch: "g", snippetExpand: false, snippetPrefix: ";", windowHotkeys: false,
             noteOnTop: true, noteHotkey: true, notesApp: "nabiz",
             pomodoroWork: 25, pomodoroShort: 5, pomodoroLong: 15, pomodoroLongEvery: 4, pomodoroAuto: true, pomodoroFocus: true,
             focusBlocked: "", focusHideOthers: false, focusHideDesktop: false, focusShortcutOn: "", focusShortcutOff: "", focusBlockSites: false, focusSites: "", mcpEnabled: false, mcpCommands: true, mcpNotes: true, mcpClipboard: false, mcpClipboardNow: false, mcpScreen: false, mcpScripts: false,

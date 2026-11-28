@@ -170,7 +170,9 @@ enum Calculator {
             return [Result(text: L("Kripto fiyatı yükleniyor…", "Loading crypto price…"), copy: "")]
         }
         guard let converted = money(value, from: from, to: to) else {
-            return RateStore.shared.table == nil ? [Result(text: L("Kurlar yükleniyor…", "Loading rates…"), copy: "")] : []
+            guard RateStore.shared.table == nil else { return [] }
+            return [Result(text: RateStore.shared.failed ? L("Kurlar alınamadı — çevrimdışı", "Rates unavailable — offline")
+                                                         : L("Kurlar yükleniyor…", "Loading rates…"), copy: "")]
         }
         var results = [moneyResult(value, from: from, converted, to: to)]
         if explicit == nil {
@@ -200,9 +202,20 @@ enum Calculator {
 
     private static func moneyResult(_ value: Double, from: String, _ converted: Double, to: String) -> Result {
         let digits = Crypto.isCrypto(to) ? (converted < 1 ? 8 : 6) : 2
+        // Fiat rates are daily; an older table (weekend, offline) says which day it is from.
+        let fiat = !Crypto.isCrypto(from) && !Crypto.isCrypto(to)
+        let day = fiat ? RateStore.shared.table.flatMap { rateDay($0.date) } : nil
         return Result(text: "\(moneyText(value, from)) = \(moneyText(converted, to))",
                       copy: Format.number(converted, maxDigits: digits, minDigits: Crypto.isCrypto(to) ? 0 : 2),
-                      raw: raw(converted), note: to)
+                      raw: raw(converted), note: day.map { "\(to) · \($0)" } ?? to)
+    }
+
+    /// "25 Nov" for a rates table from another day than today, nil for today's.
+    static func rateDay(_ iso: String, now: Date = Date()) -> String? {
+        var parser = Date.ISO8601FormatStyle().year().month().day()
+        parser.timeZone = .current
+        guard let date = try? parser.parse(iso), !Calendar.current.isDate(date, inSameDayAs: now) else { return nil }
+        return date.formatted(Date.FormatStyle().day().month(.abbreviated).locale(Format.locale))
     }
 
     private static func moneyText(_ value: Double, _ code: String) -> String {
@@ -443,7 +456,8 @@ enum CalcHistory {
     static func clear() { UserDefaults.standard.removeObject(forKey: key) }
 }
 
-/// Recursive descent: + - over * / mod over ^ over unary minus, percent, factorial and functions.
+/// Recursive descent: + - over * / mod over unary minus over ^ over percent, factorial and functions.
+/// Unary minus binds looser than ^, as in maths: -2^2 = -4, while 2^-2 = 0.25.
 /// "200 + %18" and "200 + 18%" add 18 percent of 200; elsewhere a percent is a hundredth.
 private struct Parser {
     typealias Term = (value: Double, percent: Bool)
@@ -475,23 +489,15 @@ private struct Parser {
     }
 
     private mutating func term() -> Term? {
-        guard var left = power() else { return nil }
+        guard var left = unary() else { return nil }
         while let c = peek(), c == "*" || c == "/" || c == "m" {
             i += 1
-            guard let right = power() else { return nil }
+            guard let right = unary() else { return nil }
             let r = plain(right)
             if c != "*" && r == 0 { return nil }
             left = (c == "*" ? plain(left) * r : c == "/" ? plain(left) / r : fmod(plain(left), r), false)
         }
         return left
-    }
-
-    private mutating func power() -> Term? {
-        guard let base = unary() else { return nil }
-        guard peek() == "^" else { return base }
-        i += 1
-        guard let exponent = power() else { return nil }
-        return (pow(plain(base), plain(exponent)), false)
     }
 
     private mutating func unary() -> Term? {
@@ -503,15 +509,29 @@ private struct Parser {
         case "+":
             i += 1
             return unary()
-        case "%":
+        default:
+            return power()
+        }
+    }
+
+    /// The exponent may carry its own sign: "2^-2".
+    private mutating func power() -> Term? {
+        guard let base = atom() else { return nil }
+        guard peek() == "^" else { return base }
+        i += 1
+        guard let exponent = unary() else { return nil }
+        return (pow(plain(base), plain(exponent)), false)
+    }
+
+    private mutating func atom() -> Term? {
+        if peek() == "%" {
             i += 1
             guard let value = postfix() else { return nil }
             return (value, true)
-        default:
-            guard let value = postfix() else { return nil }
-            if peek() == "%" { i += 1; return (value, true) }
-            return (value, false)
         }
+        guard let value = postfix() else { return nil }
+        if peek() == "%" { i += 1; return (value, true) }
+        return (value, false)
     }
 
     /// A value followed by "!" (factorial), any number of times.

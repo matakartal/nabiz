@@ -257,6 +257,7 @@ enum SettingsIndex {
         .init(.launcher, "launcher.main", "Başlatıcıyı aç", "Open the launcher", "raycast spotlight"),
         .init(.launcher, "launcher.main", "Uygulamaları ara", "Search apps", "app"),
         .init(.launcher, "launcher.main", "Başlatıcıda pano öğeleri", "Clipboard items in the launcher", "pano clipboard"),
+        .init(.launcher, "launcher.search", "Varsayılan arama motoru", "Default search engine", "web google duckduckgo bing arama search"),
         .init(.launcher, "launcher.quicklinks", "Hızlı bağlantılar", "Quicklinks", "web arama google github url kısaltma keyword"),
         .init(.launcher, "launcher.bindings", "Kendi kısayolların ve takma adların", "Your shortcuts and aliases", "alias hotkey"),
         .init(.launcher, "launcher.aiCommands", "Başlatıcıda AI komutları", "AI commands in the launcher", "istem prompt özetle çevir summarise translate"),
@@ -283,6 +284,7 @@ enum SettingsIndex {
         .init(.clipboard, "clipboard.clear", "Pano geçmişini temizle", "Clear clipboard history", "sil delete"),
         // Snippets
         .init(.snippets, "snippets.list", "Parçacık ekle", "Add a snippet", "metin text kısaltma keyword genişlet expand"),
+        .init(.snippets, "snippets.expand", "Her uygulamada genişlet", "Expand in any app", "yazarken typing kısaltma keyword ön ek prefix textexpander otomatik"),
         // Windows
         .init(.windows, "windows.shortcuts", "Pencere kısayolları", "Window shortcuts", "hotkey"),
         .init(.windows, "windows.layouts", "Yarım, çeyrek ve tam ekran", "Halves, quarters and full screen", "yerleşim layout sol sağ left right maximize"),

@@ -46,10 +46,24 @@ enum WorldClock {
         return map
     }()
 
-    static func zone(_ phrase: String) -> TimeZone? {
+    /// Time zone cities that are also everyday words or names ("christmas", "easter", "center", "wake"): they only
+    /// count with a clue that a time is meant ("time in easter", "saat wake", "15:00 darwin").
+    private static let ambiguous: Set<String> = [
+        "christmas", "easter", "center", "wake", "troll", "casey", "davis", "palmer", "midway", "reunion", "resolute",
+        "jersey", "darwin", "stanley", "phoenix", "nome", "knox", "regina", "lima", "chihuahua", "cayenne", "curacao",
+        "comoro", "cocos", "oral", "chita", "marengo", "bahia", "creston", "thule", "monticello", "beulah", "currie",
+        "dawson", "johnston", "wallis", "rothera", "mawson", "vostok", "syowa", "macquarie", "mcmurdo", "kanton",
+        "samara", "aden", "mahe", "new salem", "tell city", "south pole",
+    ]
+    /// Words that say a time is wanted.
+    private static let cues: Set<String> = ["time", "saat", "saati", "kac", "now", "simdi", "clock"]
+
+    /// `cue`: the query asked for a time, so ambiguous city names count too.
+    static func zone(_ phrase: String, cue: Bool = true) -> TimeZone? {
         let key = phrase.trimmingCharacters(in: .whitespaces)
         guard !key.isEmpty else { return nil }
-        if let id = aliases[key] ?? cities[key] { return TimeZone(identifier: id) }
+        if let id = aliases[key] { return TimeZone(identifier: id) }
+        if let id = cities[key], cue || !ambiguous.contains(key) { return TimeZone(identifier: id) }
         if abbreviations.contains(key) { return TimeZone(abbreviation: key.uppercased()) }
         return nil
     }
@@ -75,9 +89,11 @@ enum WorldClock {
         let separator = words.firstIndex { separators.contains($0) }
         let left = (separator.map { Array(words[..<$0]) } ?? words).filter { !fillers.contains($0) }
         let right = separator.map { Array(words[($0 + 1)...]).filter { !fillers.contains($0) } } ?? []
-        guard let from = zone(left.joined(separator: " ")) else { return nil }
+        // "what is easter" is a question, not a conversion: "is" alone is no clue.
+        let cue = time != nil || separator.map { words[$0] != "is" } == true || words.contains(where: cues.contains)
+        guard let from = zone(left.joined(separator: " "), cue: cue) else { return nil }
         // A bare number before a city isn't a time unless it looks like one ("21 tokyo" is fine, "5 tokyo" too).
-        let to = right.isEmpty ? nil : zone(right.joined(separator: " "))
+        let to = right.isEmpty ? nil : zone(right.joined(separator: " "), cue: cue)
         if !right.isEmpty && to == nil { return nil }
 
         var calendar = Calendar(identifier: .gregorian)
@@ -208,7 +224,24 @@ enum DateMath {
         }
         let parts = word.split(whereSeparator: { "-./".contains($0) }).compactMap { Int($0) }
         guard parts.count == 3 else { return nil }
-        let (year, month, day) = word.contains("-") ? (parts[0], parts[1], parts[2]) : (parts[2], parts[1], parts[0])
+        if word.contains("-") { return valid(year: parts[0], month: parts[1], day: parts[2]) }
+        // "25/12/2026" or "12/25/2026": the Mac's own order first (with slashes; dots are always day first),
+        // then the other one when the first can't be a date.
+        let monthFirst = word.contains("/") && Self.monthFirst
+        let dayFirst = valid(year: parts[2], month: parts[1], day: parts[0])
+        let monthBefore = valid(year: parts[2], month: parts[0], day: parts[1])
+        return monthFirst ? monthBefore ?? dayFirst : dayFirst ?? monthBefore
+    }
+
+    /// The Mac's region writes the month before the day (United States: 12/25/2026). Tests may change it.
+    static var monthFirst: Bool = {
+        let format = DateFormatter.dateFormat(fromTemplate: "ddMMyyyy", options: 0, locale: .current) ?? ""
+        guard let month = format.firstIndex(of: "M"), let day = format.firstIndex(of: "d") else { return false }
+        return month < day
+    }()
+
+    private static func valid(year: Int, month: Int, day: Int) -> Date? {
+        let calendar = Calendar.current
         guard (1...12).contains(month), (1...31).contains(day) else { return nil }
         let components = DateComponents(year: year, month: month, day: day)
         guard let date = calendar.date(from: components), calendar.component(.day, from: date) == day else { return nil }

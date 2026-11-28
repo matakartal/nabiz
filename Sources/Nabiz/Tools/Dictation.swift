@@ -17,6 +17,7 @@ final class Dictation {
     @ObservationIgnored private var engine: DictationEngine?
     @ObservationIgnored private var hud: NSPanel?
     @ObservationIgnored private var startedAt: Date?
+    @ObservationIgnored private var escMonitor: Any?
 
     func toggle() {
         if isListening { finish(paste: true) } else { start() }
@@ -80,9 +81,13 @@ final class Dictation {
             engine = nil
             hideHUD()
             guard paste, !result.isEmpty else { return }
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(result, forType: .string)
-            if Paster.canPaste { Paster.paste() } else { Monitor.panelActions.flash(L("Kopyalandı; yapıştırabilirsin", "Copied; paste it anywhere")) }
+            // Typed where the cursor is; the clipboard comes back as it was.
+            if Paster.canPaste {
+                Paster.paste(result, delay: .zero)
+            } else {
+                ClipboardHistory.shared.writeOwn(result)
+                Monitor.panelActions.flash(L("Kopyalandı; yapıştırabilirsin", "Copied; paste it anywhere"))
+            }
         }
     }
 
@@ -109,7 +114,7 @@ final class Dictation {
 
     private func showHUD() {
         let panel = hud ?? {
-            let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 460, height: 64),
+            let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: Theme.dictationWidth, height: DictationBar.height),
                                 styleMask: [.nonactivatingPanel, .borderless], backing: .buffered, defer: false)
             panel.isFloatingPanel = true
             panel.level = .statusBar
@@ -124,14 +129,23 @@ final class Dictation {
         hud = panel
         panel.contentView = NSHostingView(rootView: DictationBar())
         if let screen = (NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main)?.visibleFrame {
-            panel.setFrameOrigin(NSPoint(x: screen.midX - panel.frame.width / 2, y: screen.minY + 80))
+            panel.setFrameOrigin(NSPoint(x: screen.midX - panel.frame.width / 2, y: screen.minY + Theme.launcherField + Theme.Spacing.xl))
         }
         panel.orderFrontRegardless()
+        // Esc cancels, from any app: the bar never takes the keyboard, so it listens from outside too.
+        if escMonitor == nil {
+            escMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
+                guard event.keyCode == 53 else { return }
+                MainActor.assumeIsolated { Dictation.shared.finish(paste: false) }
+            }
+        }
     }
 
     private func hideHUD() {
         hud?.orderOut(nil)
         hud?.contentView = nil
+        if let escMonitor { NSEvent.removeMonitor(escMonitor) }
+        escMonitor = nil
     }
 }
 
@@ -199,10 +213,12 @@ private struct DictationBar: View {
     var body: some View {
         HStack(spacing: Theme.Spacing.m) {
             ZStack {
-                Circle().fill(Theme.accent.opacity(0.18)).frame(width: 30 + CGFloat(dictation.level) * 14)
-                Image(systemName: "mic.fill").foregroundStyle(Theme.accent)
+                // Grows with the voice: from icon-and-a-margin to the full mic column.
+                Circle().fill(Theme.accent.opacity(0.18))
+                    .frame(width: Theme.launcherIcon + Theme.Spacing.s + CGFloat(dictation.level) * Theme.Spacing.l)
+                Image(systemName: "mic.fill").font(Theme.body).foregroundStyle(Theme.accent)
             }
-            .frame(width: 44, height: 44)
+            .frame(width: Self.mic, height: Self.mic)
             .animation(.easeOut(duration: 0.12), value: dictation.level)
             Text(verbatim: dictation.text.isEmpty ? L("Dinliyorum…", "Listening…") : String(dictation.text.suffix(160)))
                 .font(Theme.body)
@@ -214,10 +230,17 @@ private struct DictationBar: View {
                 .buttonStyle(.borderedProminent).controlSize(.small)
             Button { dictation.finish(paste: false) } label: { Image(systemName: "xmark") }
                 .buttonStyle(TextButtonStyle(color: Theme.textMuted))
-                .help(L("Vazgeç", "Cancel"))
+                .help(L("Vazgeç (esc)", "Cancel (esc)"))
+                .accessibilityLabel(L("Vazgeç", "Cancel"))
         }
         .padding(.horizontal, Theme.Spacing.l)
-        .frame(width: 460, height: 64)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .frame(width: Theme.dictationWidth, height: Self.height)
+        .background(MenuMaterial())
+        .appearanceRoot()
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
     }
+
+    /// Room for two lines of words, like the launcher's field plus a margin.
+    static let height = Theme.launcherField + Theme.Spacing.m
+    static let mic = Theme.launcherField - Theme.Spacing.s
 }

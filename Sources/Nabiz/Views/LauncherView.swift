@@ -23,6 +23,8 @@ final class LauncherPanel {
         AppIndex.shared.refreshIfNeeded()
         Extensions.shared.refreshIfNeeded()
         AIEngines.shared.refreshIfNeeded()
+        // Accessibility may have been granted since the setting was turned on.
+        SnippetExpander.shared.update()
         if !isVisible {
             // An answer still being written keeps going; it's in the chat history.
             model.ai = nil
@@ -73,6 +75,10 @@ final class LauncherPanel {
         }
         // These run inside the launcher (an AI answer, a pasted link).
         if itemID == "cmd:download" || itemID.hasPrefix("aicmd:") { show(.all) }
+        // A search link or a script with values asks for them in the field.
+        let asks = itemID.hasPrefix("link:") && LauncherStore.shared.quicklinks.contains { "link:\($0.keyword)" == itemID && $0.takesQuery }
+            || itemID.hasPrefix("script:") && Extensions.shared.scripts.contains { "script:\($0.path)" == itemID && !$0.arguments.isEmpty }
+        if asks { show(.all) }
         item.primary()
     }
 
@@ -101,6 +107,11 @@ final class LauncherPanel {
         let shift = flags.contains(.shift)
         if command && key == "k" {
             model.togglePalette()
+            return true
+        }
+        // Esc stops a script or shortcut that is still running.
+        if keyCode == 53, Extensions.shared.running != nil {
+            Extensions.shared.cancelRunning()
             return true
         }
         if model.paletteOpen {
@@ -133,9 +144,16 @@ final class LauncherPanel {
             return true
         }
         switch Int(keyCode) {
+        case 125 where command && flags.contains(.option): model.moveFavoriteSelected(1)
+        case 126 where command && flags.contains(.option): model.moveFavoriteSelected(-1)
         case 125: model.move(1)
         case 126: model.move(-1)
+        case 36, 76 where shift && !command && model.mode == .clipboard: model.pastePlainSelected()
         case 36, 76: command ? model.runSecondary() : model.runPrimary()
+        case 48: return model.tab()
+        case 51 where !command && model.argument != nil && model.text.isEmpty: model.leaveArgument(keepKeyword: true)
+        case 53 where model.argument != nil:
+            if model.text.isEmpty { model.leaveArgument() } else { model.text = "" }
         case 53:
             if (model.mode == .clipboard && model.cameFromLauncher || model.mode == .ai) && model.text.isEmpty {
                 model.reset(mode: .all)
@@ -146,6 +164,10 @@ final class LauncherPanel {
         default:
             guard command else { return false }
             if key == "w" { close(); return true }
+            if model.mode == .clipboard, let number = key.flatMap(Int.init), (1...9).contains(number), !shift {
+                model.pasteClip(number: number)
+                return true
+            }
             return edit(key)
         }
         return true
@@ -172,10 +194,10 @@ struct LauncherView: View {
 
     var body: some View {
         // Reading these makes the list follow new rates, copies and file results while it is open.
-        let _ = (rates.table, clipboard.items.count, FileSearch.shared.results.count, FileSearch.shared.searching)
+        let _ = (rates.table, rates.failed, clipboard.items.count, FileSearch.shared.results.count, FileSearch.shared.searching)
         let sections = model.sections
         let items = sections.flatMap(\.items)
-        let selectedID = items.isEmpty ? nil : items[min(model.selection, items.count - 1)].id
+        let selectedID = model.resolvedSelection(items)
         VStack(spacing: 0) {
             field
             if model.mode == .ai, let chat = model.ai {
@@ -222,12 +244,36 @@ struct LauncherView: View {
                 }
             }
             .frame(width: Theme.launcherIcon)
+            if let argument = model.argument {
+                // The quicklink or script the text goes to; Backspace on an empty field takes it away.
+                Text(verbatim: argument.title)
+                    .font(Theme.bodyStrong).foregroundStyle(Theme.text)
+                    .padding(.horizontal, Theme.Spacing.s)
+                    .padding(.vertical, Theme.Spacing.xs)
+                    .background(Theme.track, in: Capsule())
+                    .fixedSize()
+            }
             TextField(placeholder, text: $model.text)
                 .textFieldStyle(.plain)
                 .font(Theme.input)
                 .foregroundStyle(Theme.text)
                 .focused($focus, equals: .search)
             if model.mode == .clipboard {
+                HStack(spacing: Theme.Spacing.xs) {
+                    ForEach(ClipFilter.allCases, id: \.self) { filter in
+                        Button { model.nextClipFilter(to: filter) } label: {
+                            Text(verbatim: filter.title)
+                                .font(Theme.small)
+                                .foregroundStyle(model.clipFilter == filter ? Theme.text : Theme.textMuted)
+                                .padding(.horizontal, Theme.Spacing.s)
+                                .padding(.vertical, Theme.Spacing.xs)
+                                .background(model.clipFilter == filter ? Theme.track : .clear, in: Capsule())
+                                .contentShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .focusable(false)
+                    }
+                }
                 Text(verbatim: "\(clipboard.items.count)").font(Theme.small).monospacedDigit().foregroundStyle(Theme.textMuted)
             }
         }
@@ -236,7 +282,8 @@ struct LauncherView: View {
     }
 
     private var placeholder: String {
-        switch model.mode {
+        if let argument = model.argument { return argument.placeholder }
+        return switch model.mode {
         case .clipboard: L("Panoda ara", "Search the clipboard")
         case .ai:
             if model.ai != nil { L("Devamını sor…", "Ask a follow-up…") } else if let aiEngine { L("\(aiEngine.shortName)'a sor…", "Ask \(aiEngine.shortName)…") } else { L("AI'a sor…", "Ask AI…") }
@@ -255,6 +302,11 @@ struct LauncherView: View {
                         model: Binding(get: { chat.model }, set: { chat.use(chat.engine, model: $0) }))
             Spacer()
             if chat.isRunning {
+                if model.queuedFollowUp != nil {
+                    Text(L("Cevap bitince gönderilecek", "Sends when this answer ends")).foregroundStyle(Theme.textMuted)
+                } else if !model.text.trimmingCharacters(in: .whitespaces).isEmpty {
+                    KeyHint(keys: "↩", title: L("Sıraya al", "Queue"), strong: true)
+                }
                 KeyHint(keys: "esc", title: L("Durdur", "Stop"), strong: false)
             } else if !model.text.trimmingCharacters(in: .whitespaces).isEmpty {
                 KeyHint(keys: "↩", title: L("Gönder", "Send"), strong: true)
@@ -283,19 +335,21 @@ struct LauncherView: View {
                             .padding(.top, Theme.Spacing.s)
                             .padding(.bottom, Theme.Spacing.xs)
                         ForEach(section.items) { item in
-                            LauncherRow(item: item, selected: item.id == selectedID, compact: model.mode == .clipboard)
-                                .id(item.id)
-                                .onContinuousHover { phase in
-                                    // Only a real pointer move selects: rows sliding under a still pointer while
-                                    // scrolling with the arrow keys must not steal the selection.
-                                    guard case .active = phase, model.pointerMoved(),
-                                          let index = items.firstIndex(where: { $0.id == item.id }) else { return }
-                                    model.selection = index
-                                }
-                                .onTapGesture {
-                                    if let index = items.firstIndex(where: { $0.id == item.id }) { model.selection = index }
-                                    model.runPrimary()
-                                }
+                            Button {
+                                model.selectedID = item.id
+                                model.runPrimary()
+                            } label: {
+                                LauncherRow(item: item, selected: item.id == selectedID, compact: model.mode == .clipboard)
+                            }
+                            .buttonStyle(.plain)
+                            .focusable(false)
+                            .id(item.id)
+                            .onContinuousHover { phase in
+                                // Only a real pointer move selects: rows sliding under a still pointer while
+                                // scrolling with the arrow keys must not steal the selection.
+                                guard case .active = phase, model.pointerMoved() else { return }
+                                model.selectedID = item.id
+                            }
                         }
                     }
                 }
@@ -313,9 +367,10 @@ struct LauncherView: View {
         VStack(spacing: Theme.Spacing.s) {
             Image(systemName: model.mode == .clipboard ? "doc.on.clipboard" : "magnifyingglass")
                 .font(Theme.title).foregroundStyle(Theme.textMuted)
-            Text(model.mode == .clipboard
+            Text(model.mode == .clipboard && clipboard.items.isEmpty
                  ? (Prefs.bool(Prefs.clipboardEnabled) ? L("Henüz kopyalanan bir şey yok.", "Nothing copied yet.")
                                                        : L("Pano geçmişi kapalı. Ayarlar → Pano'dan açabilirsin.", "Clipboard history is off. Turn it on in Settings → Clipboard."))
+                 : model.text.trimmingCharacters(in: .whitespaces).hasPrefix("/") ? L("Dosya bulunamadı", "No files found")
                  : L("Sonuç yok", "No results"))
                 .font(Theme.small).foregroundStyle(Theme.textMuted)
         }
@@ -325,25 +380,48 @@ struct LauncherView: View {
 
     private func footer(_ item: LauncherItem?) -> some View {
         HStack(spacing: Theme.Spacing.l) {
-            if model.mode == .clipboard && Prefs.bool(Prefs.autoPaste) && !Paster.isTrusted {
-                Button(L("Yapıştırmak için izin ver", "Allow pasting")) { Paster.requestTrust() }
-                    .buttonStyle(TextButtonStyle(font: Theme.small, color: Theme.accent))
+            if let running = Extensions.shared.running {
+                HStack(spacing: Theme.Spacing.s) {
+                    ProgressView().controlSize(.mini)
+                    Text(L("\(running) çalışıyor…", "Running \(running)…")).foregroundStyle(Theme.textMuted).lineLimit(1)
+                }
+                Spacer()
+                KeyHint(keys: "esc", title: L("Durdur", "Stop"), strong: true)
             } else {
-                Text(model.mode == .clipboard ? L("↑↓ seç · esc geri", "↑↓ to pick · esc back")
-                                              : (Prefs.bool(Prefs.aiAsk) ? L("= hesap · > komut · / dosya · : emoji · ? AI", "= maths · > commands · / files · : emoji · ? AI")
-                                                                         : L("= hesap · > komut · / dosya · : emoji", "= maths · > commands · / files · : emoji")))
-                    .foregroundStyle(Theme.textMuted)
-            }
-            Spacer()
-            if let item {
-                KeyHint(keys: "↩", title: item.primaryTitle, strong: true)
-                Rectangle().fill(Theme.hairline).frame(width: 1, height: Theme.Spacing.l)
-                KeyHint(keys: "⌘K", title: L("Eylemler", "Actions"), strong: model.paletteOpen)
+                footerContent(item)
             }
         }
         .font(Theme.small)
         .padding(.horizontal, Theme.Spacing.l)
         .frame(height: Theme.launcherFooter)
+    }
+
+    @ViewBuilder private func footerContent(_ item: LauncherItem?) -> some View {
+        if model.mode == .clipboard && Prefs.bool(Prefs.autoPaste) && !Paster.isTrusted {
+            Button(L("Yapıştırmak için izin ver", "Allow pasting")) { Paster.requestTrust() }
+                .buttonStyle(TextButtonStyle(font: Theme.small, color: Theme.accent))
+        } else {
+            Text(hint).foregroundStyle(Theme.textMuted).lineLimit(1)
+        }
+        Spacer()
+        if let item {
+            if model.mode == .clipboard, item.clip?.kind == .text || item.clip?.kind == .link, Paster.canPaste {
+                KeyHint(keys: "⇧↩", title: L("Düz metin", "Plain text"))
+            }
+            KeyHint(keys: "↩", title: item.primaryTitle, strong: true)
+            Rectangle().fill(Theme.hairline).frame(width: 1, height: Theme.Spacing.l)
+            KeyHint(keys: "⌘K", title: L("Eylemler", "Actions"), strong: model.paletteOpen)
+        }
+    }
+
+    private var hint: String {
+        if let argument = model.argument {
+            if case .script = argument.target, !argument.isLast { return L("⇥ sonraki · esc geri", "⇥ next · esc back") }
+            return L("⌫ geri · esc temizle", "⌫ back · esc clear")
+        }
+        if model.mode == .clipboard { return L("⇥ tür · ⌘1–9 yapıştır · esc geri", "⇥ type · ⌘1–9 paste · esc back") }
+        return Prefs.bool(Prefs.aiAsk) ? L("= hesap · > komut · / dosya · : emoji · ? AI", "= maths · > commands · / files · : emoji · ? AI")
+            : L("= hesap · > komut · / dosya · : emoji", "= maths · > commands · / files · : emoji")
     }
 }
 
@@ -368,13 +446,16 @@ private struct ActionPalette: View {
                                     .padding(.horizontal, Theme.Spacing.s)
                                     .frame(height: Theme.menuLine, alignment: .bottom)
                             }
-                            PaletteRow(action: action, selected: action.id == selectedID)
-                                .id(action.id)
-                                .onContinuousHover { phase in
-                                    guard case .active = phase, model.pointerMoved() else { return }
-                                    model.paletteSelection = index
-                                }
-                                .onTapGesture { model.runPaletteAction(action) }
+                            Button { model.runPaletteAction(action) } label: {
+                                PaletteRow(action: action, selected: action.id == selectedID)
+                            }
+                            .buttonStyle(.plain)
+                            .focusable(false)
+                            .id(action.id)
+                            .onContinuousHover { phase in
+                                guard case .active = phase, model.pointerMoved() else { return }
+                                model.paletteSelection = index
+                            }
                         }
                         if actions.isEmpty {
                             Text(L("Eylem yok", "No actions")).font(Theme.small).foregroundStyle(Theme.textMuted)
@@ -528,6 +609,7 @@ private struct ClipPreview: View {
                     info(L("Kaynak", "From"), clip.app ?? "—")
                     info(L("Zaman", "Copied"), clip.date.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(Format.locale)))
                     if let text = clip.text { info(L("Karakter", "Characters"), "\(text.count)") }
+                    if clip.rtf != nil || clip.html != nil { info(L("Biçim", "Format"), L("Biçimli metin", "Formatted text")) }
                 }
                 .padding(Theme.Spacing.l)
             } else {
@@ -540,7 +622,7 @@ private struct ClipPreview: View {
     @ViewBuilder private func content(_ clip: ClipItem) -> some View {
         switch clip.kind {
         case .image:
-            if let data = ClipboardHistory.shared.imageData(clip), let image = NSImage(data: data) {
+            if let image = Thumbnails.preview(for: clip) {
                 Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
                     .clipShape(RoundedRectangle(cornerRadius: Theme.fieldRadius, style: .continuous))
             }
@@ -557,7 +639,7 @@ private struct ClipPreview: View {
                 }
             }
         case .text, .link:
-            Text(verbatim: clip.text ?? "").font(.system(.body, design: .monospaced)).foregroundStyle(Theme.text)
+            Text(verbatim: clip.text ?? "").font(Theme.code).foregroundStyle(Theme.text)
                 .textSelection(.enabled)
         }
     }
@@ -590,7 +672,27 @@ enum Thumbnails {
         return image
     }
 
-    static func clear() { cache.removeAll() }
+    /// The preview's picture, decoded once per item (up to 1600 px) instead of on every redraw; a few are kept.
+    private static var previews: [(id: UUID, image: NSImage)] = []
+
+    static func preview(for clip: ClipItem) -> NSImage? {
+        if let hit = previews.first(where: { $0.id == clip.id }) { return hit.image }
+        guard let data = ClipboardHistory.shared.imageData(clip),
+              let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let decoded = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                  kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: 1600,
+                  kCGImageSourceCreateThumbnailWithTransform: true,
+              ] as CFDictionary) else { return nil }
+        let image = NSImage(cgImage: decoded, size: NSSize(width: decoded.width, height: decoded.height))
+        previews.insert((clip.id, image), at: 0)
+        if previews.count > 4 { previews.removeLast() }
+        return image
+    }
+
+    static func clear() {
+        cache.removeAll()
+        previews.removeAll()
+    }
 }
 
 extension Color {

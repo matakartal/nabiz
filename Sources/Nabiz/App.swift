@@ -209,6 +209,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Updater.shared.check()
         AppearanceMode.apply()
         ClipboardHistory.shared.update()
+        SnippetExpander.shared.update()
         AppIndex.shared.refreshIfNeeded()
         applyDock()
         HotKey.togglePanel = { [weak self] in self?.togglePanel() }
@@ -225,6 +226,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 CalendarAgenda.shared.update()
                 AppearanceMode.apply()
                 ClipboardHistory.shared.update()
+                SnippetExpander.shared.update()
                 AILimitsStore.shared.refreshIfNeeded()
                 self?.updateButton()
             }

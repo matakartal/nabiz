@@ -2497,6 +2497,7 @@ private struct LauncherPage: View {
     @AppStorage(Prefs.hotkey) private var hotkey = true
     @AppStorage(Prefs.launcherApps) private var apps = true
     @AppStorage(Prefs.launcherClipboard) private var clips = true
+    @AppStorage(Prefs.launcherSearch) private var searchEngine = "g"
     private let store = LauncherStore.shared
 
     var body: some View {
@@ -2510,6 +2511,14 @@ private struct LauncherPage: View {
             } footer: {
                 Footnote(L("Yaz: uygulama adı, komut (kilitle, uyut, sol yarı…), hesap (12*4, 100 usd, 5 km mi), \"25 dk\" zamanlayıcı ya da \"g kelime\" ile web araması. ↑↓ seç, ↩ çalıştır, ⌘↩ ikinci işlem, esc kapat.",
                            "Type an app name, a command (lock, sleep, left half…), maths (12*4, 100 usd, 5 km mi), \"25 min\" for a timer or \"g words\" to search the web. ↑↓ to pick, ↩ to run, ⌘↩ for the second action, esc to close."))
+            }
+            SettingsSection("launcher.search") {
+                Picker(L("Varsayılan arama motoru", "Default search engine"), selection: $searchEngine) {
+                    ForEach(store.quicklinks.filter(\.takesQuery)) { link in Text(verbatim: link.name).tag(link.keyword) }
+                }
+            } footer: {
+                Footnote(L("Başka sonuç olmayınca yazdığın bununla aranır. Kısaltmadan sonra Boşluk ya da ⇥ (\"gh\" ⇥) o bağlantıda arar.",
+                           "What you type is searched here when nothing else matches. Space or ⇥ after a keyword (\"gh\" ⇥) searches that link instead."))
             }
             SettingsSection("launcher.quicklinks") {
                 ForEach(store.quicklinks) { QuicklinkRow(link: $0) }
@@ -2526,8 +2535,8 @@ private struct LauncherPage: View {
             } header: {
                 Text(L("Hızlı bağlantılar", "Quicklinks"))
             } footer: {
-                Footnote(L("Adreste {query} yazan yere, kısaltmadan sonra yazdığın gelir: \"gh nabiz\" → GitHub'da nabiz araması. İlk bağlantı, başka sonuç olmayınca web araması için kullanılır.",
-                           "{query} in the address is replaced by what you type after the keyword: \"gh nabiz\" searches GitHub for nabiz. The first link is used for web search when nothing else matches."))
+                Footnote(L("Adreste {query} yazan yere, kısaltmadan sonra yazdığın gelir: \"gh nabiz\" → GitHub'da nabiz araması.",
+                           "{query} in the address is replaced by what you type after the keyword: \"gh nabiz\" searches GitHub for nabiz."))
             }
             BindingsSection()
             SettingsSection("launcher.aiCommands") {
@@ -3006,6 +3015,8 @@ private struct AccessibilityRow: View {
 
 private struct SnippetsPage: View {
     private let store = LauncherStore.shared
+    @AppStorage(Prefs.snippetExpand) private var expand = false
+    @AppStorage(Prefs.snippetPrefix) private var prefix = ";"
 
     var body: some View {
         Form {
@@ -3019,8 +3030,20 @@ private struct SnippetsPage: View {
                     store.save(snippet: Snippet(keyword: "", name: L("Yeni parçacık", "New snippet"), text: ""))
                 } label: { Label(L("Parçacık ekle", "Add a snippet"), systemImage: "plus") }
             } footer: {
-                Footnote(L("Başlatıcıda kısaltmayı ya da adını yaz, ↩ ile yapıştır. Metinde {date} bugünün tarihi, {time} saat, {clipboard} panodaki metin olur. Örnek: imza, adres, IBAN açıklaması, sık yazdığın yanıtlar.",
-                           "Type the keyword or name in the launcher and press ↩ to paste. In the text, {date} becomes today's date, {time} the time and {clipboard} what's on the clipboard. Good for a signature, an address, replies you write often."))
+                Footnote(L("Başlatıcıda kısaltmayı ya da adını yaz, ↩ ile yapıştır. Metinde {date} bugünün tarihi, {time} saat, {clipboard} panodaki metin olur; {cursor} imlecin duracağı yer. Örnek: imza, adres, IBAN açıklaması, sık yazdığın yanıtlar.",
+                           "Type the keyword or name in the launcher and press ↩ to paste. In the text, {date} becomes today's date, {time} the time and {clipboard} what's on the clipboard; {cursor} is where the cursor ends up. Good for a signature, an address, replies you write often."))
+            }
+            SettingsSection("snippets.expand") {
+                Toggle(L("Her uygulamada genişlet", "Expand in any app"), isOn: Binding(get: { expand }, set: { on in
+                    expand = on
+                    if on && !Paster.isTrusted { Paster.requestTrust() }
+                }))
+                TextField(L("Ön ek", "Prefix"), text: $prefix).frame(maxWidth: Theme.paletteWidth / 2)
+                    .disabled(!expand)
+                AccessibilityRow()
+            } footer: {
+                Footnote(L("Ön eki ve kısaltmayı yazınca (\(prefix)tarih) yerine parçacık gelir. Şifre alanlarında ve şifre yöneticilerinde çalışmaz. Erişilebilirlik izni gerekir.",
+                           "Type the prefix and a keyword (\(prefix)tarih) and it turns into the snippet. Never in password fields or password managers. Needs Accessibility permission."))
             }
         }
         .formStyle(.grouped)

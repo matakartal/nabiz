@@ -130,8 +130,8 @@ extension LauncherModel {
     func copyItem(_ id: String, _ symbol: String, _ value: String, subtitle: String? = nil) -> LauncherItem {
         let shown = value.count > 90 ? String(value.prefix(90)) + "…" : value
         let copy: @MainActor () -> Void = { [weak self] in
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(value, forType: .string)
+            // A generated value, not something the user copied: kept out of the history.
+            ClipboardHistory.shared.writeOwn(value)
             self?.close()
             Monitor.panelActions.flash(L("Kopyalandı", "Copied"))
         }

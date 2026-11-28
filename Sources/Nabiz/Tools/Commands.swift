@@ -4,7 +4,8 @@ import Observation
 
 // MARK: - Snippets
 
-/// Saved text typed from the launcher by keyword. Placeholders: {date} {time} {clipboard}.
+/// Saved text typed from the launcher (or anywhere, with expansion on) by keyword.
+/// Placeholders: {date} {time} {clipboard}, and {cursor} for where the cursor ends up.
 struct Snippet: Codable, Identifiable, Equatable, Sendable {
     var id = UUID()
     var keyword: String
@@ -13,8 +14,20 @@ struct Snippet: Codable, Identifiable, Equatable, Sendable {
 
     /// The text with its placeholders filled in.
     @MainActor
-    var expanded: String {
-        let now = Date()
+    var expanded: String { expandedWithCursor.text }
+
+    /// The filled-in text, and how many characters follow {cursor} so the cursor can be moved back there.
+    @MainActor
+    var expandedWithCursor: (text: String, cursorBack: Int) {
+        let parts = text.components(separatedBy: "{cursor}")
+        let before = Self.fill(parts[0])
+        let after = Self.fill(parts.dropFirst().joined())
+        return (before + after, parts.count > 1 ? after.count : 0)
+    }
+
+    @MainActor
+    static func fill(_ text: String, now: Date = Date()) -> String {
+        guard text.contains("{") else { return text }
         return text
             .replacingOccurrences(of: "{date}", with: now.formatted(Date.FormatStyle(date: .numeric, time: .omitted).locale(Format.locale)))
             .replacingOccurrences(of: "{time}", with: now.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(Format.locale)))
@@ -28,6 +41,9 @@ struct Quicklink: Codable, Identifiable, Equatable, Sendable {
     var keyword: String
     var name: String
     var url: String
+
+    /// The address has a place for a search ("{query}"); without one the link just opens.
+    var takesQuery: Bool { url.contains("{query}") }
 
     func url(for query: String) -> URL? {
         let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
@@ -54,6 +70,12 @@ final class LauncherStore {
         Quicklink(keyword: "çevir", name: L("Çeviri", "Translate"), url: "https://translate.google.com/?sl=auto&tl=tr&text={query}"),
         Quicklink(keyword: "harita", name: L("Haritalar", "Maps"), url: "maps://?q={query}"),
     ]
+
+    /// Searches the web when nothing else matches: the quicklink picked in Settings, else the first that can search.
+    var webSearch: Quicklink? {
+        let keyword = Prefs.string(Prefs.launcherSearch)
+        return quicklinks.first { $0.keyword == keyword && $0.takesQuery } ?? quicklinks.first(where: \.takesQuery)
+    }
 
     init() {
         let defaults = UserDefaults.standard
