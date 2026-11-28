@@ -54,6 +54,8 @@ enum Theme {
     static let fieldRadius: CGFloat = 6
     static let dot: CGFloat = 6
     /// Height of a usage bar: thin or thick, from Settings → Appearance.
+    /// The pace tick on a limit bar.
+    static let meterTick: CGFloat = 2
     static var meter: CGFloat { UserDefaults.standard.string(forKey: "meterStyle") == "thick" ? 5 : 3 }
     /// Menu-panel grid, copied from native macOS menus so every row lines up:
     /// icons start `menuInset` in, text starts `menuTextInset` in, values end `menuInset` before the edge.
@@ -70,8 +72,10 @@ enum Theme {
         }
     }
     static let menuValueColumn: CGFloat = 76
-    static let menuPercentColumn: CGFloat = 64
-    static let menuResetColumn: CGFloat = 44
+    /// AI limit rows: "Weekly ▬▬▬|▭▭ 55%  5d 3h" — label, bar, percent and time to reset in fixed columns.
+    static let limitLabelColumn: CGFloat = 52
+    static let limitPercentColumn: CGFloat = 40
+    static let limitResetColumn: CGFloat = 56
     /// A short row under a heading row (AI limit lines).
     static let menuLine: CGFloat = 20
     /// A tool tile in the panel's grid: one line of symbol, title and an optional value.
@@ -181,17 +185,26 @@ struct MeterBar: View {
     let fill: Color
     /// The smallest visible fill, so a tiny value still shows; 0 lets an empty bar look empty.
     var minimum: CGFloat = Theme.meter
+    /// A tick across the bar (0...1): where an even pace would be now.
+    var mark: Double?
 
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
-                Capsule().fill(Theme.field)
+                Capsule().fill(Theme.field).frame(height: Theme.meter)
                 if value > 0 || minimum > 0 {
-                    Capsule().fill(fill).frame(width: max(minimum, geo.size.width * min(max(value, 0), 1)))
+                    Capsule().fill(fill).frame(width: max(minimum, geo.size.width * min(max(value, 0), 1)), height: Theme.meter)
+                }
+                if let mark {
+                    let width = Theme.meterTick
+                    Capsule().fill(Theme.text)
+                        .frame(width: width, height: Theme.meter + Theme.Spacing.s)
+                        .offset(x: min(max(geo.size.width * mark - width / 2, 0), geo.size.width - width))
                 }
             }
+            .frame(maxHeight: .infinity)
         }
-        .frame(height: Theme.meter)
+        .frame(height: mark == nil ? Theme.meter : Theme.meter + Theme.Spacing.s)
     }
 }
 

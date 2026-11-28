@@ -1030,38 +1030,42 @@ private struct AISection: View {
     }
 }
 
-/// "5 saat  ▬▬▬▬▬▬▭▭  %22   2 sa": label, bar, percent and time to reset, each in its own column.
-/// "Weekly  ▬▬▭▭▭▭  6% left  5h". The bar shows the same thing as the number: what's left (shrinking as you use it)
-/// or what's used, as chosen in Settings. Its colour says where the window is heading; a line under it appears only
-/// when there is something to do about it.
+/// "Weekly  ▬▬▬▬|▭▭▭  55%  5d 3h": label, bar, percent and time to reset, each in its own column, on one line.
+/// The bar shows the same thing as the number: what's left (shrinking as you use it) or what's used, as chosen in
+/// Settings. The tick across it is where an even pace would be now; a fill past the tick means faster than normal.
+/// The colour says where the window is heading; the forecast and exact reset time are in the tooltip.
 private struct LimitRow: View {
     let limit: AILimit
     @AppStorage(Prefs.aiRemaining) private var showRemaining = true
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: Theme.Spacing.s) {
-                Text(verbatim: limit.label).font(Theme.small).foregroundStyle(Theme.textMuted).lineLimit(1)
-                    .frame(width: Theme.menuValueColumn, alignment: .leading)
-                MeterBar(value: showRemaining ? limit.remaining : limit.used, fill: color, minimum: 0)
-                Text(verbatim: spent ? L("Bitti", "Used up") : limit.displayText)
-                    .font(spent ? Theme.smallStrong : Theme.small).monospacedDigit()
-                    .foregroundStyle(spent ? Theme.danger : Theme.text)
-                    .frame(width: Theme.menuPercentColumn, alignment: .trailing)
-                Text(verbatim: limit.resetsAt.map(Format.countdown(until:)) ?? "")
-                    .font(Theme.small).monospacedDigit().foregroundStyle(Theme.textMuted)
-                    .frame(width: Theme.menuResetColumn, alignment: .trailing)
-            }
-            .frame(height: Theme.menuLine)
-            if let forecast {
-                Text(verbatim: forecast.text).font(Theme.small).foregroundStyle(forecast.color).lineLimit(1)
-                    .padding(.leading, Theme.menuValueColumn + Theme.Spacing.s)
-                    .padding(.bottom, Theme.Spacing.xs)
-            }
+        HStack(spacing: Theme.Spacing.s) {
+            Text(verbatim: limit.label).font(Theme.small).foregroundStyle(Theme.textMuted).lineLimit(1)
+                .frame(width: Theme.limitLabelColumn, alignment: .leading)
+            MeterBar(value: showRemaining ? limit.remaining : limit.used, fill: color, minimum: 0,
+                     mark: expected.map { showRemaining ? 1 - $0 : $0 })
+            Text(verbatim: spent ? L("Bitti", "Out") : limit.shortText)
+                .font(spent ? Theme.smallStrong : Theme.small).monospacedDigit().lineLimit(1)
+                .foregroundStyle(spent || limit.pace?.status == .behind ? Theme.danger : Theme.text)
+                .frame(width: Theme.limitPercentColumn, alignment: .trailing)
+            Text(verbatim: limit.resetsAt.map(Format.resetIn(until:)) ?? "")
+                .font(Theme.small).monospacedDigit().foregroundStyle(Theme.textMuted).lineLimit(1)
+                .frame(width: Theme.limitResetColumn, alignment: .trailing)
         }
+        .frame(height: Theme.menuLine)
         .padding(.leading, Theme.menuTextInset)
         .padding(.trailing, Theme.menuInset)
+        .contentShape(Rectangle())
         .help(help)
+        .accessibilityElement(children: .combine)
+    }
+
+    /// The share of the window that has passed: where an even pace would have used up to by now.
+    private var expected: Double? {
+        if let pace = limit.pace { return pace.expected }
+        guard let resetsAt = limit.resetsAt, let period = limit.period, period > 0 else { return nil }
+        let passed = 1 - resetsAt.timeIntervalSinceNow / period
+        return (0...1).contains(passed) ? passed : nil
     }
 
     private var spent: Bool { limit.used >= 1 }
@@ -1073,23 +1077,22 @@ private struct LimitRow: View {
         return Theme.accent
     }
 
-    private var forecast: (text: String, color: Color)? {
-        guard let pace = limit.pace else { return nil }
-        if pace.status == .behind, let runway = pace.runway {
-            return (L("Bu hızla \(Format.duration(runway)) sonra biter", "At this speed: out in \(Format.duration(runway))"), Theme.danger)
-        }
-        if pace.unusedNearReset {
-            return (L("\(Format.percent(limit.remaining)) kullanılmadan sıfırlanacak", "\(Format.percent(limit.remaining)) resets unused"),
-                    Palette.green.mark)
-        }
-        return nil
-    }
-
     private var help: String {
-        var lines: [String] = []
+        var lines = [limit.displayText]
+        if let expected {
+            lines.append(L("Normal hızla şu an \(Format.percent(expected)) kullanılmış olurdu; sen \(Format.percent(limit.used)) kullandın.",
+                           "An even pace would have used \(Format.percent(expected)) by now; you've used \(Format.percent(limit.used))."))
+        }
         if let pace = limit.pace, pace.status != .spent {
-            let projected = Format.percent(min(pace.projected, 1)) + (pace.projected > 1 ? "+" : "")
-            lines.append(L("Bu hızla sıfırlanırken ~\(projected) kullanılmış olur.", "At this speed ~\(projected) is used by the reset."))
+            if pace.status == .behind, let runway = pace.runway {
+                lines.append(L("Bu hızla \(Format.duration(runway)) sonra biter, sıfırlanmadan önce.",
+                               "At this speed it runs out in \(Format.duration(runway)), before the reset."))
+            } else if pace.unusedNearReset {
+                lines.append(L("\(Format.percent(limit.remaining)) kullanılmadan sıfırlanacak.", "\(Format.percent(limit.remaining)) resets unused."))
+            } else {
+                let projected = Format.percent(min(pace.projected, 1)) + (pace.projected > 1 ? "+" : "")
+                lines.append(L("Bu hızla sıfırlanırken ~\(projected) kullanılmış olur.", "At this speed ~\(projected) is used by the reset."))
+            }
         }
         if let resetsAt = limit.resetsAt {
             let date = resetsAt.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(Format.locale))

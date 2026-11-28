@@ -588,6 +588,15 @@ enum Format {
         return L("\((minutes + 720) / 1440) g", "\((minutes + 720) / 1440)d")
     }
 
+    /// Time to a reset, short but exact enough to plan by: "5g 3sa", "4sa 12dk", "12dk" / "5d 3h", "4h 12m", "12m".
+    static func resetIn(until date: Date) -> String {
+        let minutes = max(Int(date.timeIntervalSinceNow / 60), 0)
+        let days = minutes / 1440, hours = (minutes % 1440) / 60, mins = minutes % 60
+        if days > 0 { return hours > 0 ? L("\(days)g \(hours)sa", "\(days)d \(hours)h") : L("\(days)g", "\(days)d") }
+        if hours > 0 { return mins > 0 ? L("\(hours)sa \(mins)dk", "\(hours)h \(mins)m") : L("\(hours)sa", "\(hours)h") }
+        return L("\(mins)dk", "\(mins)m")
+    }
+
     /// "3 sa 20 dk", "45 dk", "2 g 4 sa" / "3h 20m", "45m", "2d 4h".
     static func duration(_ seconds: TimeInterval) -> String {
         let minutes = max(Int(seconds / 60), 1)
