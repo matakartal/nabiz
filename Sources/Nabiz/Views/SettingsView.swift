@@ -1149,6 +1149,7 @@ private struct MoveButtons: View {
 /// busiest first, with live price and 24-hour change. Ticking a market adds it to the panel.
 private struct MarketsPage: View {
     @AppStorage(Prefs.watchedMarkets) private var watched = ""
+    @AppStorage(Prefs.meterMarket) private var meterOn = true
     @AppStorage(Prefs.meterMarketID) private var meterID = "BTC"
     @State private var query = ""
     @State private var dex = "*"
@@ -1158,7 +1159,7 @@ private struct MarketsPage: View {
     /// Watched markets, plus BTC and whatever is picked now so the picker always has its value.
     private var meterChoices: [String] {
         var list = watchedIDs
-        for id in ["BTC", meterID] where !id.isEmpty && !list.contains(id) { list.insert(id, at: 0) }
+        for id in [meterID, "BTC"] where !id.isEmpty && !list.contains(id) { list.insert(id, at: 0) }
         return list
     }
 
@@ -1189,9 +1190,11 @@ private struct MarketsPage: View {
             }
 
             SettingsSection("markets.meter") {
-                Picker(L("Grafik", "Chart"), selection: $meterID) {
-                    Text(L("Kapalı", "Off")).tag("")
-                    ForEach(meterChoices, id: \.self) { Text(verbatim: $0).tag($0) }
+                Toggle(L("Grafiği göster", "Show the chart"), isOn: $meterOn)
+                if meterOn {
+                    Picker(L("Piyasa", "Market"), selection: $meterID) {
+                        ForEach(meterChoices, id: \.self) { Text(verbatim: $0).tag($0) }
+                    }
                 }
             } header: {
                 SectionTitle(L("Üstteki grafik", "Chart at the top"))

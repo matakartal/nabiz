@@ -1596,8 +1596,9 @@ private func openSettings(_ pane: String) {
 /// CPU, RAM and GPU with the last two minutes each, on the same grid as the rows.
 struct MetersView: View {
     let monitor: Monitor
+    @AppStorage(Prefs.meterMarket) private var meterMarket = true
     @AppStorage(Prefs.meterMarketID) private var meterMarketID = "BTC"
-    private var meterID: String? { meterMarketID.isEmpty ? nil : meterMarketID }
+    private var meterID: String? { meterMarket && !meterMarketID.isEmpty ? meterMarketID : nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.s) {

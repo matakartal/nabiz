@@ -3,7 +3,7 @@
 ## 1.12.0
 
 - **A market next to CPU, RAM and GPU:** the panel's header has a fourth meter with BTC's last 24 hours — the move,
-  the line and the price. Pick another market or turn it off in Settings → Markets → Chart at the top.
+  the line and the price. Turn it off or pick another market in Settings → Markets → Chart at the top.
 - **AI limits:** Claude's 5-hour window no longer shows twice (as "5-hour" and "Session"), and an Ultra account
   doesn't show one at all; Grok has xAI's real mark.
 

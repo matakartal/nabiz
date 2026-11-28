@@ -50,7 +50,10 @@ final class MarketStore {
 
     var watchedIDs: [String] { Prefs.string(Prefs.watchedMarkets).split(separator: ",").map(String.init) }
     /// The market shown as the fourth meter, or nil when that meter is off.
-    var meterID: String? { Prefs.string(Prefs.meterMarketID).isEmpty ? nil : Prefs.string(Prefs.meterMarketID) }
+    var meterID: String? {
+        let id = Prefs.string(Prefs.meterMarketID)
+        return Prefs.bool(Prefs.meterMarket) && !id.isEmpty ? id : nil
+    }
     /// The last 24 hours of closing prices (15-minute candles), oldest first, per market.
     private(set) var dayCloses: [String: [Double]] = [:]
     @ObservationIgnored private var dayAt: [String: Date] = [:]

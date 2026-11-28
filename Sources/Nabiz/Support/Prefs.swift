@@ -104,7 +104,8 @@ enum Prefs {
     static let barMarket = "barMarket"
     /// Which watched market the menu bar shows ("" = the first one).
     static let barMarketID = "barMarketID"
-    /// The market drawn as a fourth meter next to CPU, RAM and GPU ("" = none).
+    /// A market drawn as a fourth meter next to CPU, RAM and GPU, and which one.
+    static let meterMarket = "meterMarket"
     static let meterMarketID = "meterMarketID"
     static let baseCurrency = "baseCurrency"
     static let watchedCurrencies = "watchedCurrencies"
@@ -247,7 +248,7 @@ enum Prefs {
         defaults.register(defaults: [
             language: "system", refreshSeconds: 5, hotkey: true, panelHotkey: true, notifications: false, onboarded: false,
             barIcon: false, barLabels: true, barCPU: true, barRAM: true, barGPU: false, barNetwork: false,
-            barStyle: "stacked", aiRemaining: true, barMarket: false, barMarketID: "", meterMarketID: "BTC",
+            barStyle: "stacked", aiRemaining: true, barMarket: false, barMarketID: "", meterMarket: true, meterMarketID: "BTC",
             showMarkets: true, hiddenTools: "", accentColor: "green", textSize: "normal", panelWidth: 320,
             panelStyle: "material", barColors: false, barAnimate: true, rustAutoClean: false, rustAutoCleanDays: 14, watchedMarkets: "BTC,ETH,SOL,xyz:XYZ100,xyz:TSLA,xyz:GOLD", "expanded.markets": true, barSwap: false, barDisk: false, barBattery: false, barAI: false, barCurrency: false,
             showSystem: true, showCPUApps: true, collapsible: true, accordion: false,
