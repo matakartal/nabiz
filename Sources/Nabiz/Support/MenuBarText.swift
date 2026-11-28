@@ -40,7 +40,8 @@ enum MenuBarText {
         }
         // So do a Pomodoro block and a timed focus session.
         let pomodoro = Pomodoro.shared
-        if let left = pomodoro.remainingText {
+        // A block that is lined up but never started isn't counting down, so it isn't shown as a paused timer.
+        if let left = pomodoro.remainingText, !pomodoro.waitingToStart {
             let label = pomodoro.phase == .work ? L("Odak", "Focus") : L("Mola", "Break")
             parts.insert(MenuBarPart(item: .timer, label: label, value: (pomodoro.isRunning ? "" : "⏸ ") + left), at: 0)
         } else if FocusMode.shared.isOn {
@@ -118,13 +119,11 @@ enum MenuBarText {
             let tone: MenuBarPart.Tone = battery.plugged ? .normal : battery.percent <= 5 ? .danger : battery.percent <= 15 ? .warning : .normal
             return make(L("Pil", "Battery"), Format.percent(Double(battery.percent) / 100) + (battery.charging ? "⚡︎" : ""), tone)
         case .ai:
-            guard let status = AILimitsStore.shared.statuses.first(where: { !$0.limits.isEmpty }),
-                  let top = status.headline else { return nil }
+            // The account picked in Settings, or the one with the least left; a failed reading keeps the last value.
+            guard let (status, top) = AILimitsStore.shared.featured else { return nil }
             // Coloured by what is left, whichever number is shown: plenty left is green, running out is red.
-            // A fast burn (pace behind) only matters once half the limit is gone.
-            let behind = top.pace?.status == .behind && top.remaining < 0.5
             let tone: MenuBarPart.Tone = top.remaining < 0.1 ? .danger
-                : top.remaining < 0.25 || behind ? .warning
+                : top.remaining < 0.25 || top.burningFast ? .warning
                 : top.remaining >= 0.5 ? .up : .normal
             return make(status.provider.shortName, top.shortText, tone)
         case .market:
@@ -140,7 +139,8 @@ enum MenuBarText {
             guard let code = Prefs.watched.first(where: { $0 != base }) else { return nil }
             return make(code, rate(code, base).map { Format.number($0, maxDigits: 2, minDigits: 2) })
         case .weather:
-            guard let weather else { return nil }
+            // A report from hours ago is not the temperature now: leave it out until a fresh one arrives.
+            guard let weather, !weather.isStale() else { return nil }
             var part = make(L("Hava", "Temp"), Format.degrees(weather.temperature))
             part?.symbol = WeatherCode.symbol(weather.code, day: weather.isDay)
             return part

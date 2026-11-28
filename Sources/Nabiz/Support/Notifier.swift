@@ -12,6 +12,8 @@ final class Notifier {
     private var cpuWarned = false
     private var diskWarned = false
     private var batteryWarned = false
+    /// The last fresh reading of every AI limit, to notice a reset.
+    private var aiLast: [String: (used: Double, resetsAt: Date?)] = [:]
 
     /// Asks macOS for permission; the Notifications setting goes back off if the user declines
     /// (unless `keepSetting`, for price alerts, which don't depend on that setting).
@@ -73,13 +75,23 @@ final class Notifier {
             }
         }
 
-        for status in AILimitsStore.shared.statuses {
+        // Limits kept from an earlier reading (the latest one failed) say nothing new.
+        for status in AILimitsStore.shared.statuses where !status.stale {
             for limit in status.limits {
+                let before = aiLast[limit.id]
+                aiLast[limit.id] = (limit.used, limit.resetsAt)
+                if let before, AIResetRule.didReset(before: before, now: (limit.used, limit.resetsAt)),
+                   AIAlertLog.shouldSend("reset", limit: limit.id, resetsAt: limit.resetsAt) {
+                    send(id: "reset-\(limit.id)",
+                         title: L("\(AILimitsStore.shared.title(status)) limiti sıfırlandı", "\(AILimitsStore.shared.title(status)) limit has reset"),
+                         body: L("\(limit.label): yeniden \(Format.percent(limit.remaining)) kullanılabilir.",
+                                 "\(limit.label): \(Format.percent(limit.remaining)) is available again."))
+                }
                 guard let pace = limit.pace else {
                     almostUsed(status, limit)
                     continue
                 }
-                if pace.status == .behind, let runway = pace.runway,
+                if limit.burningFast, let runway = pace.runway,
                    AIAlertLog.shouldSend("burn", limit: limit.id, resetsAt: limit.resetsAt) {
                     send(id: "burn-\(limit.id)",
                          title: L("\(AILimitsStore.shared.title(status)) hızlı bitiyor", "\(AILimitsStore.shared.title(status)) is burning fast"),
@@ -110,6 +122,17 @@ final class Notifier {
         content.body = body
         content.sound = .default
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
+    }
+}
+
+/// A limit worth announcing as reset: at least half of it had been used, and now usage fell back by more than a
+/// quarter (providers move their reset time a little on every reading, so the time alone is not enough).
+enum AIResetRule {
+    static func didReset(before: (used: Double, resetsAt: Date?), now: (used: Double, resetsAt: Date?)) -> Bool {
+        guard before.used >= 0.5, now.used <= before.used - 0.25 else { return false }
+        // A window that rolled over ends later than the old one; a provider correcting a number does not.
+        guard let old = before.resetsAt, let new = now.resetsAt else { return true }
+        return new.timeIntervalSince(old) > 3600
     }
 }
 

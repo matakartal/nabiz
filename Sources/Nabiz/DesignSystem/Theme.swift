@@ -70,6 +70,10 @@ enum Theme {
     static let menuTextInset: CGFloat = 40
     static let menuHighlightInset: CGFloat = 6
     static let menuIcon: CGFloat = 16
+    /// The app icon in the panel header, a touch bigger than a row icon.
+    static let headerIcon: CGFloat = 18
+    /// Vertical padding inside a small pill (the status pill, the update button), half the smallest spacing.
+    static let pillPadding: CGFloat = 2
     /// Compact, normal or roomy, from Settings → Appearance.
     static var menuRow: CGFloat {
         switch UserDefaults.standard.string(forKey: "density") {

@@ -81,7 +81,7 @@ struct PanelContent: View {
     @AppStorage(Prefs.showAI) private var showAI = true
     @AppStorage(Prefs.memoryAppCount) private var memoryCount = 5
     @AppStorage(Prefs.cpuAppCount) private var cpuCount = 3
-    @AppStorage(Prefs.baseCurrency) private var base = "TRY"
+    @AppStorage(Prefs.baseCurrency) private var base = Prefs.defaultBaseCurrency
     @AppStorage(Prefs.watchedCurrencies) private var watched = "USD,EUR,GBP"
     @AppStorage(Prefs.sectionOrder) private var order = ""
     @AppStorage(Prefs.calendarEnabled) private var calendarOn = false
@@ -170,8 +170,17 @@ struct PanelContent: View {
             }
         case .weather:
             if showWeather, let report = WeatherStore.shared.report {
-                CollapsibleSection(.weather, summary: "\(Format.degrees(report.temperature)) · \(WeatherCode.title(report.code))") {
+                let summary = "\(Format.degrees(report.temperature)) · \(WeatherCode.title(report.code))"
+                CollapsibleSection(.weather, summary: report.isOld() ? "\(summary) · \(Format.ago(report.fetched))" : summary) {
                     WeatherSection(report: report)
+                }
+            } else if showWeather, WeatherStore.place == nil {
+                // The time zone named no city (or the guess hasn't found one yet): ask for one.
+                CollapsibleSection(.weather, summary: "") {
+                    PanelRow(icon: .symbol("mappin.and.ellipse"), title: L("Şehir seç…", "Pick a city…"), action: {
+                        actions.close()
+                        SettingsWindow.show(.weather)
+                    }) { _ in EmptyView() }
                 }
             }
         case .memory:
@@ -188,8 +197,9 @@ struct PanelContent: View {
             }
         case .markets:
             if showMarkets {
-                CollapsibleSection(.markets, summary: Summary.market()) {
-                    MarketsSection(ids: watchedMarkets.split(separator: ",").map(String.init), actions: actions)
+                let ids = watchedMarkets.split(separator: ",").map(String.init)
+                CollapsibleSection(.markets, summary: Summary.market(ids)) {
+                    MarketsSection(ids: ids, actions: actions)
                 }
             }
         case .currency:
@@ -200,8 +210,9 @@ struct PanelContent: View {
             }
         case .tools:
             if showTools {
+                // "Awake" means something is on: the accent, as everywhere else.
                 CollapsibleSection(.tools, summary: KeepAwake.shared.isOn ? L("Uyanık", "Awake") : "",
-                                   summaryColor: Palette.green.mark) {
+                                   summaryColor: Theme.accent) {
                     ToolsSection(monitor: monitor, actions: actions)
                 }
             }
@@ -224,19 +235,30 @@ private struct StatusSection: View {
                       color: system.swapTotal > 0 && system.swapFraction > 0.6 ? Theme.warning.mark : Theme.textMuted)
             }
             if let free = system.diskFree {
-                PanelRow(icon: .symbol("internaldrive"), title: L("Disk", "Disk"), action: { monitor.perform(.openStorage) }) { hovering in
+                PanelRow(icon: .symbol("internaldrive"), title: L("Disk", "Disk"), subtitle: diskActivity,
+                         action: { monitor.perform(.openStorage) }) { hovering in
                     if hovering { Value(Fix.openStorage.title, color: Palette.green.mark) } else { Value(L("\(Format.bytes(free)) boş", "\(Format.bytes(free)) free"),
                           color: free < 10 << 30 ? Theme.warning.mark : Theme.textMuted) }
                 }
+                .help(monitor.diskIO.map { L("Okuma \(Format.rate($0.read)) · yazma \(Format.rate($0.write))",
+                                             "Reading \(Format.rate($0.read)) · writing \(Format.rate($0.write))") } ?? "")
             }
             if let network = monitor.network {
-                PanelRow(icon: .symbol("wifi"), title: L("Ağ", "Network"),
-                         action: nil) { _ in
-                    TwoColumns("↓ " + Format.rate(network.down), "↑ " + Format.rate(network.up))
+                let link = monitor.networkLink
+                let settings = Fix.openSettings(URL(string: "x-apple.systempreferences:com.apple.Network-Settings.extension"))
+                PanelRow(icon: .symbol(link?.isWiFi ?? true ? "wifi" : "cable.connector"), title: L("Ağ", "Network"),
+                         subtitle: link.map { "\($0.kind) · \($0.address)" } ?? L("bağlı değil", "offline"),
+                         action: { monitor.perform(settings) }) { hovering in
+                    if hovering {
+                        Value(settings.title, color: Palette.green.mark)
+                    } else {
+                        TwoColumns("↓ " + Format.rate(network.down), "↑ " + Format.rate(network.up))
+                    }
                 }
             }
             if let battery = monitor.battery {
                 PanelRow(icon: .symbol(battery.charging ? "battery.100.bolt" : "battery.75"), title: L("Pil", "Battery"),
+                         subtitle: battery.minutesToFull.map { L("\(Format.duration(TimeInterval($0 * 60))) sonra dolu", "full in \(Format.duration(TimeInterval($0 * 60)))") },
                          action: nil) { _ in
                     TwoColumns(batteryDetail(battery), Format.percent(Double(battery.percent) / 100),
                                color: !battery.plugged && battery.percent <= 15 ? Theme.warning.mark : Theme.textMuted)
@@ -267,6 +289,12 @@ private struct StatusSection: View {
                 .help(monitor.security.map { ($0.on ? "✓ " : "✗ ") + $0.title }.joined(separator: "\n"))
             }
         }
+    }
+
+    /// "read 40 MB/s · write 2 MB/s" while the disk is busy; nothing when it is quiet.
+    private var diskActivity: String? {
+        guard let io = monitor.diskIO, io.read + io.write >= 1_048_576 else { return nil }
+        return L("okuma \(Format.rate(io.read)) · yazma \(Format.rate(io.write))", "read \(Format.rate(io.read)) · write \(Format.rate(io.write))")
     }
 
     private func thermalLabel(_ state: Int) -> String {
@@ -376,11 +404,14 @@ private struct SimulatorSection: View {
             }
             .task { if simulator.runtime != "Android" { SimTools.shared.loadApps(simulator.id) } }
         }
-        PanelRow(icon: .symbol("xmark.circle"), title: L("Hepsini kapat", "Shut down all"),
-                 action: monitor.stopping.contains("all") ? nil : {
-                     monitor.shutdownAllSimulators()
-                     flash(L("Simülatörler kapatılıyor", "Shutting down simulators"))
-                 }) { _ in EmptyView() }
+        // "Do it to all" only when there is more than one; a single simulator has its own Shut down.
+        if monitor.simulators.count > 1 {
+            PanelRow(icon: .symbol("xmark.circle"), title: L("Hepsini kapat", "Shut down all"),
+                     action: monitor.stopping.contains("all") ? nil : {
+                         monitor.shutdownAllSimulators()
+                         flash(L("Simülatörler kapatılıyor", "Shutting down simulators"))
+                     }) { _ in EmptyView() }
+        }
     }
 }
 
@@ -581,9 +612,12 @@ private struct WeatherSection: View {
     var body: some View {
         let open = { WeatherStore.openWeatherApp() }
         let feels = L("hissedilen \(Format.degrees(report.feelsLike))", "feels like \(Format.degrees(report.feelsLike))")
+        // An old report says how old it is, and its temperature goes muted: it is not the weather now.
+        let old = report.isOld()
         PanelRow(icon: .symbol(WeatherCode.symbol(report.code, day: report.isDay)), title: report.place.name,
-                 subtitle: "\(WeatherCode.title(report.code)) · \(feels)", action: open) { _ in
-            Value(Format.degrees(report.temperature), color: Theme.text)
+                 subtitle: old ? "\(Format.ago(report.fetched)) · \(WeatherCode.title(report.code))" : "\(WeatherCode.title(report.code)) · \(feels)",
+                 action: open) { _ in
+            Value(Format.degrees(report.temperature), color: old ? Theme.textMuted : Theme.text)
         }
         .help(details)
         if showDetails, let line = report.humidityAndWind {
@@ -632,7 +666,7 @@ private struct CalendarSection: View {
             PanelRow(icon: .dot(event.color), title: event.title, titleColor: event.isNow ? Theme.text : nil,
                      action: { event.meetingURL != nil ? agenda.join(event) : agenda.openInCalendar() }) { hovering in
                 if hovering && event.meetingURL != nil {
-                    Value(L("Katıl", "Join"), color: Theme.accent)
+                    Value(L("Katıl", "Join"), color: Palette.green.mark)
                 } else {
                     Value(CalendarAgenda.timeText(event), color: event.isNow ? Theme.accent : Theme.textMuted)
                 }
@@ -686,6 +720,11 @@ private struct MarketsSection: View {
                         }
                     }
                     .help(L("\(store.dexTitle(market.dex)) · Hyperliquid'de aç", "\(store.dexTitle(market.dex)) · open on Hyperliquid"))
+                } else {
+                    // A watched id Hyperliquid sent nothing for (renamed, delisted, mistyped): say so, don't hide it.
+                    PanelRow(icon: .none, title: id, titleColor: Theme.textMuted) { _ in Value(L("veri yok", "no data")) }
+                        .help(L("Hyperliquid bu piyasa için fiyat göndermedi. Ayarlar → Piyasalar'dan değiştirebilirsin.",
+                                "Hyperliquid sent no price for this market. You can change it in Settings → Markets."))
                 }
             }
         }
@@ -820,7 +859,7 @@ private struct ToolsSection: View {
                 if !pomodoro.isActive {
                     Chip(L("Başlat \(pomodoro.minutes(.work)) dk", "Start \(pomodoro.minutes(.work))m")) { pomodoro.start(); chips = nil }
                 } else {
-                    Chip(pomodoro.isRunning ? L("Duraklat", "Pause") : L("Devam", "Resume")) { pomodoro.toggle(); chips = nil }
+                    Chip(pomodoro.toggleTitle) { pomodoro.toggle(); chips = nil }
                     Chip(L("Atla", "Skip")) { pomodoro.skip(); chips = nil }
                     Chip(L("Bitir", "Stop")) { pomodoro.stop(); chips = nil }
                 }
@@ -995,23 +1034,29 @@ private struct AISection: View {
         } else {
             // One block per account; a second account of the same provider carries its nickname (or e-mail).
             ForEach(store.statuses) { status in
-                PanelRow(icon: icon(status.provider), title: status.provider.name, subtitle: store.label(status),
-                         hoverable: status.needsSignIn) { hovering in
-                    if hovering {
+                // Last good limits after a failed reading: how old they are sits inline, why in the tooltip.
+                let age = status.stale ? status.readAt.map { Format.ago($0) } : nil
+                let subtitle = [store.label(status), age].compactMap { $0 }.joined(separator: " · ")
+                PanelRow(icon: icon(status.provider), title: status.provider.name,
+                         subtitle: subtitle.isEmpty ? nil : subtitle,
+                         hoverable: status.needsSignIn || status.stale) { hovering in
+                    if hovering && status.needsSignIn {
                         InlineButton(L("Giriş yap…", "Sign in…")) {
                             actions.close()
                             store.signIn(status.account)
                         }
+                    } else if hovering {
+                        InlineButton(L("Tekrar dene", "Try again")) { store.refreshIfNeeded(force: true) }
                     } else {
                         Value(status.plan ?? "")
                     }
                 }
-                .help(store.details(status.account, email: status.email))
-                if let problem = status.problem {
-                    Text(verbatim: problem).font(Theme.small).foregroundStyle(Theme.textMuted).lineLimit(1)
-                        .padding(.leading, Theme.menuTextInset)
-                        .padding(.trailing, Theme.menuInset)
-                        .frame(height: Theme.menuLine)
+                .help([store.details(status.account, email: status.email), status.stale ? status.problem : nil]
+                    .compactMap { $0 }.joined(separator: "\n"))
+                if let problem = status.problem, !status.stale || status.needsSignIn {
+                    AIProblemLine(problem: problem, canRetry: !status.needsSignIn && !store.loading) {
+                        store.refreshIfNeeded(force: true)
+                    }
                 }
                 ForEach(status.limits) { LimitRow(limit: $0) }
             }
@@ -1036,6 +1081,34 @@ private struct AISection: View {
     }
 }
 
+/// Why an account's limits could not be read, on the text edge under it. When trying again can help (not a
+/// sign-in problem), hovering offers it.
+private struct AIProblemLine: View {
+    let problem: String
+    let canRetry: Bool
+    let retry: () -> Void
+    @State private var hovering = false
+    @Environment(\.panelOpen) private var panelOpen
+
+    var body: some View {
+        HStack(spacing: Theme.Spacing.s) {
+            Text(verbatim: problem).font(Theme.small).foregroundStyle(Theme.textMuted).lineLimit(1).truncationMode(.tail)
+            Spacer(minLength: Theme.Spacing.s)
+            if hovering && canRetry {
+                Button(action: retry) { Text(L("Tekrar dene", "Try again")) }
+                    .buttonStyle(TextButtonStyle(font: Theme.small, color: Palette.green.mark))
+            }
+        }
+        .padding(.leading, Theme.menuTextInset)
+        .padding(.trailing, Theme.menuInset)
+        .frame(height: Theme.menuLine)
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .onChange(of: panelOpen) { if !panelOpen { hovering = false } }
+        .help(problem)
+    }
+}
+
 /// "Weekly  ▬▬▬▬|▭▭▭  55%  5d 3h": label, bar, percent and time to reset, each in its own column, on one line.
 /// The bar shows the same thing as the number: what's left (shrinking as you use it) or what's used, as chosen in
 /// Settings. The tick across it is where an even pace would be now; a fill past the tick means faster than normal.
@@ -1052,7 +1125,7 @@ private struct LimitRow: View {
                      mark: expected.map { showRemaining ? 1 - $0 : $0 })
             Text(verbatim: spent ? L("Bitti", "Out") : limit.shortText)
                 .font(spent ? Theme.smallStrong : Theme.small).monospacedDigit().lineLimit(1)
-                .foregroundStyle(spent || limit.pace?.status == .behind ? Theme.danger : Theme.text)
+                .foregroundStyle(spent || limit.burningFast ? Theme.danger : Theme.text)
                 .frame(width: Theme.limitPercentColumn, alignment: .trailing)
             Text(verbatim: limit.resetsAt.map(Format.resetIn(until:)) ?? "")
                 .font(Theme.small).monospacedDigit().foregroundStyle(Theme.textMuted).lineLimit(1)
@@ -1076,10 +1149,11 @@ private struct LimitRow: View {
 
     private var spent: Bool { limit.used >= 1 }
 
-    /// Red when it is used up or will run out before the reset, orange when little is left, green otherwise.
+    /// Red when it is used up or surely runs out before the reset, orange when little is left or it is heading
+    /// that way (too early in the window to be sure), green otherwise.
     private var color: Color {
-        if spent || limit.pace?.status == .behind { return Theme.danger }
-        if limit.remaining < 0.1 || limit.pace?.status == .onTrack { return Theme.warning.fill }
+        if spent || limit.burningFast { return Theme.danger }
+        if limit.remaining < 0.1 || limit.pace?.status == .onTrack || limit.pace?.status == .behind { return Theme.warning.fill }
         return Theme.accent
     }
 
@@ -1090,7 +1164,7 @@ private struct LimitRow: View {
                            "An even pace would have used \(Format.percent(expected)) by now; you've used \(Format.percent(limit.used))."))
         }
         if let pace = limit.pace, pace.status != .spent {
-            if pace.status == .behind, let runway = pace.runway {
+            if limit.burningFast, let runway = pace.runway {
                 lines.append(L("Bu hızla \(Format.duration(runway)) sonra biter, sıfırlanmadan önce.",
                                "At this speed it runs out in \(Format.duration(runway)), before the reset."))
             } else if pace.unusedNearReset {
@@ -1293,7 +1367,7 @@ private struct StatusPill: View {
             Text(verbatim: text).font(Theme.smallStrong).foregroundStyle(Theme.text)
         }
         .padding(.horizontal, Theme.Spacing.s)
-        .padding(.vertical, Theme.Spacing.xs / 2)
+        .padding(.vertical, Theme.pillPadding)
         .background(Theme.track, in: Capsule())
     }
 }
@@ -1315,7 +1389,7 @@ private struct PanelFooter: View {
                     }
                     .foregroundStyle(.white)
                     .padding(.horizontal, Theme.Spacing.s)
-                    .padding(.vertical, Theme.Spacing.xs / 2)
+                    .padding(.vertical, Theme.pillPadding)
                     .background(Theme.accent, in: Capsule())
                 }
                 .buttonStyle(.plain)
@@ -1389,15 +1463,17 @@ enum Summary {
     }
 
     static func ai() -> String {
-        guard let status = AILimitsStore.shared.statuses.first(where: { !$0.limits.isEmpty }),
-              let top = status.headline else { return "" }
+        let store = AILimitsStore.shared
+        guard let (status, top) = store.featured else { return "" }
+        let name = store.title(status)
         return Prefs.bool(Prefs.aiRemaining)
-            ? L("\(status.provider.shortName) \(top.shortText) kaldı", "\(status.provider.shortName) \(top.shortText) left")
-            : "\(status.provider.shortName) \(top.shortText)"
+            ? L("\(name) \(top.shortText) kaldı", "\(name) \(top.shortText) left")
+            : "\(name) \(top.shortText)"
     }
 
-    static func market() -> String {
-        guard let market = MarketStore.shared.watched.first else { return "" }
+    /// The first of the panel's own ids that has a price, so the header and the rows never disagree.
+    static func market(_ ids: [String]) -> String {
+        guard let market = ids.lazy.compactMap({ MarketStore.shared.markets[$0] }).first else { return "" }
         return "\(market.name) \(Format.price(market.price))"
     }
 
@@ -1523,7 +1599,7 @@ struct MetersView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.s) {
             HStack(spacing: Theme.Spacing.s) {
-                Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: Theme.menuIcon + 2, height: Theme.menuIcon + 2)
+                Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: Theme.headerIcon, height: Theme.headerIcon)
                 Text(verbatim: "Nabız").font(Theme.bodyStrong).foregroundStyle(Theme.text)
                 Spacer()
                 StatusPill(monitor: monitor)

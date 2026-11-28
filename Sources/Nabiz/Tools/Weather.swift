@@ -63,6 +63,11 @@ final class WeatherStore {
             }
             return parts.isEmpty ? nil : parts.joined(separator: " · ")
         }
+
+        /// Past two hours the panel says how old the report is ("3h ago"); past six the menu bar stops showing its
+        /// temperature as if it were now.
+        func isOld(now: Date = Date()) -> Bool { now.timeIntervalSince(fetched) > 2 * 3600 }
+        func isStale(now: Date = Date()) -> Bool { now.timeIntervalSince(fetched) > 6 * 3600 }
     }
 
     private(set) var report: Report?
@@ -70,8 +75,10 @@ final class WeatherStore {
     /// When the last try ended, good or not: a success waits 15 minutes, a failure 2 (no request every tick offline).
     @ObservationIgnored private var triedAt: Date?
     @ObservationIgnored private var lastFailed = false
-    /// The time-zone guess is tried once per launch; a zone like "Etc/GMT+3" names no city.
-    @ObservationIgnored private var guessed = false
+    /// When the city was last guessed from the time zone. A guess that found nothing (offline, say) is tried again
+    /// after `guessRetry`; a zone like "Etc/GMT+3" names no city, and then the panel asks for one.
+    @ObservationIgnored private var guessedAt: Date?
+    static let guessRetry: TimeInterval = 600
     @ObservationIgnored var onChange: (() -> Void)?
 
     private static let cacheKey = "weatherCache"
@@ -123,12 +130,12 @@ final class WeatherStore {
         let stale = triedAt.map { Date().timeIntervalSince($0) > wait } ?? true
         let changed = report.map { $0.place != Self.place || $0.fahrenheit != Self.fahrenheit } ?? true
         guard !loading, stale || (changed && Self.place != nil) else { return }
-        if Self.place == nil && guessed && !stale { return }
         loading = true
         Task {
             defer { loading = false }
-            if Self.place == nil, !guessed, let city = Self.cityFromTimeZone() {
-                guessed = true
+            if Self.place == nil, let city = Self.cityFromTimeZone(),
+               guessedAt.map({ Date().timeIntervalSince($0) > Self.guessRetry }) ?? true {
+                guessedAt = Date()
                 let found = await Self.search(city).first
                 // Only if nothing was picked in Settings meanwhile.
                 if let found, Self.place == nil {

@@ -19,6 +19,13 @@ struct AILimit: Identifiable, Sendable {
 
     var remaining: Double { max(0, 1 - used) }
 
+    /// On pace to run out before the reset, and sure enough to say so: at least a tenth of the window has passed
+    /// (an early burst says little) and less than half is left. Panel colour, alerts and suggestions all use this.
+    var burningFast: Bool {
+        guard let pace, pace.status == .behind else { return false }
+        return pace.expected >= 0.1 && remaining < 0.5
+    }
+
     /// "6% left" or "94%", as the user chose in Settings.
     var displayText: String {
         Prefs.bool(Prefs.aiRemaining)
@@ -90,6 +97,9 @@ struct AIStatus: Identifiable, Sendable {
     var email: String?
     /// Who the provider says this is; two folders signed in to the same account are shown once.
     var identity: String?
+    /// When `limits` were read. With `stale` set, the latest reading failed and these are the last good ones.
+    var readAt: Date?
+    var stale = false
 
     init(account: AIAccount) {
         self.account = account
@@ -102,6 +112,30 @@ struct AIStatus: Identifiable, Sendable {
 
     /// The limit to show when there is room for one: the main window, never a per-model one.
     var headline: AILimit? { limits.first(where: \.primary) ?? limits.first }
+
+    /// A failed reading keeps the last good limits (and plan) of the same account, marked stale, so one network
+    /// hiccup doesn't blank the panel and the menu bar. The new problem stays, for the tooltip.
+    func keepingLimits(of previous: AIStatus?) -> AIStatus {
+        guard limits.isEmpty, problem != nil, let previous, !previous.limits.isEmpty else { return self }
+        var status = self
+        status.limits = previous.limits
+        status.plan = plan ?? previous.plan
+        status.readAt = previous.readAt
+        status.stale = true
+        return status
+    }
+}
+
+/// Which account's limit the menu bar, the closed AI header and the history follow.
+enum AIFeatured {
+    /// "" in `Prefs.aiBarAccount`: whichever account has the least left in its main window.
+    static let tightest = ""
+
+    static func pick(_ statuses: [AIStatus], account: String) -> (status: AIStatus, limit: AILimit)? {
+        let candidates = statuses.compactMap { status in status.headline.map { (status: status, limit: $0) } }
+        if account != tightest, let chosen = candidates.first(where: { $0.status.id == account }) { return chosen }
+        return candidates.min { $0.limit.remaining < $1.limit.remaining }
+    }
 }
 
 /// Reads subscription limits with the sign-ins the official CLIs already keep on this Mac, for every account found.
@@ -124,6 +158,12 @@ final class AILimitsStore {
     private(set) var hidden = Set(UserDefaults.standard.stringArray(forKey: Prefs.aiHiddenAccounts) ?? [])
     @ObservationIgnored private var fetchedAt: Date?
     @ObservationIgnored private var fetchedFor: [String] = []
+    /// Looking for accounts lists the home folder, asks the Keychain and parses ~/.claude.json, so it runs at most
+    /// every few minutes, or when the providers or folders change, not on every reading.
+    @ObservationIgnored private var discoveredAt: Date?
+    @ObservationIgnored private var discoveredFor = ""
+    static let discoveryMaxAge: TimeInterval = 300
+    @ObservationIgnored private var signInStarted: Date?
     @ObservationIgnored private var looking = false
     @ObservationIgnored private var again = false
     /// Showing made-up accounts (`--snapshot … --ai-demo`): nothing is read.
@@ -147,8 +187,14 @@ final class AILimitsStore {
     /// Limits on pace to run out before they reset, with their account.
     var burning: [(status: AIStatus, limit: AILimit)] {
         statuses.flatMap { status in
-            status.limits.filter { $0.pace?.status == .behind }.map { (status, $0) }
+            status.limits.filter(\.burningFast).map { (status, $0) }
         }
+    }
+
+    /// The limit the menu bar, the closed header and the history show: the account picked in Settings, or the
+    /// tightest main window across accounts.
+    var featured: (status: AIStatus, limit: AILimit)? {
+        AIFeatured.pick(statuses, account: Prefs.string(Prefs.aiBarAccount))
     }
 
     var enabled: [AIProvider] { AIProvider.allCases.filter { Prefs.bool($0.prefKey) } }
@@ -159,38 +205,60 @@ final class AILimitsStore {
     /// Folders the user added by hand, by provider.
     var folders: [String: [String]] { UserDefaults.standard.dictionary(forKey: Prefs.aiFolders) as? [String: [String]] ?? [:] }
 
-    /// Looks for accounts, then fetches again when the last result is older than `maxAge` seconds or the accounts
-    /// changed (a new sign-in, a provider turned on or off).
-    func refreshIfNeeded(force: Bool = false, maxAge: TimeInterval = 120) {
+    /// Fetches again when the last result is older than `maxAge` seconds or the accounts changed (a new sign-in,
+    /// a provider turned on or off). Accounts are looked for again every few minutes, when the providers or folders
+    /// change, or with `rediscover` (coming back from a sign-in in Terminal).
+    func refreshIfNeeded(force: Bool = false, maxAge: TimeInterval = 120, rediscover: Bool = false) {
         let providers = enabled
         guard !demo else { return }
         guard !providers.isEmpty else {
             statuses = []
             accounts = []
             fetchedFor = []
+            discoveredAt = nil
             return
         }
         guard !loading, !looking else {
             if force { again = true }
             return
         }
-        looking = true
         let extra = folders
+        let signature = providers.map(\.rawValue).joined(separator: ",") + "|"
+            + extra.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value.joined(separator: ","))" }.joined(separator: ";")
+        let now = Date()
+        // Right after a sign-in was started in Terminal, look more often so the new account shows up soon.
+        let signingIn = signInStarted.map { now.timeIntervalSince($0) < 600 } ?? false
+        let discoveryAge = signingIn ? 30 : Self.discoveryMaxAge
+        let discoveryFresh = !rediscover && signature == discoveredFor
+            && (discoveredAt.map { now.timeIntervalSince($0) < discoveryAge } ?? false)
+        let readingFresh = !force && (fetchedAt.map { now.timeIntervalSince($0) < maxAge } ?? false)
+        // The usual case on a monitor tick: nothing changed and the reading is recent. No disk, no Keychain.
+        if discoveryFresh && readingFresh && wanted(accounts).map(\.id) == fetchedFor { return }
+        if discoveryFresh {
+            loading = true
+            Task { await fetch(wanted(accounts)) }
+            return
+        }
+        looking = true
         Task {
             let found = await Task.detached(priority: .utility) { AIAccounts.discover(providers, extra: extra) }.value
             looking = false
+            discoveredAt = Date()
+            discoveredFor = signature
             if found != accounts { accounts = found }
-            let wanted = found.filter { !hidden.contains($0.id) }
-            if !force, let fetchedAt, Date().timeIntervalSince(fetchedAt) < maxAge, wanted.map(\.id) == fetchedFor {
+            if readingFresh, wanted(found).map(\.id) == fetchedFor {
                 runAgainIfAsked()
                 return
             }
-            await fetch(wanted)
+            loading = true
+            await fetch(wanted(found))
         }
     }
 
+    private func wanted(_ found: [AIAccount]) -> [AIAccount] { found.filter { !hidden.contains($0.id) } }
+
+    /// Reads every account. A failed one keeps its last good limits (see `AIStatus.keepingLimits`).
     private func fetch(_ wanted: [AIAccount]) async {
-        loading = true
         var results: [AIStatus] = []
         await withTaskGroup(of: AIStatus.self) { group in
             for account in wanted {
@@ -198,12 +266,21 @@ final class AILimitsStore {
             }
             for await status in group { results.append(status) }
         }
+        let previous = statuses
+        let now = Date()
         // The provider can tell that two folders are one account even when their files could not.
         var seen = Set<String>()
         statuses = wanted.compactMap { account in results.first { $0.id == account.id } }
             .filter { status in status.identity.map { seen.insert("\(status.provider.rawValue):\($0)").inserted } ?? true }
             .filter { !hidden.contains($0.id) }
-            .map(withPace)
+            .map { status in
+                guard status.limits.isEmpty else {
+                    var fresh = withPace(status)
+                    fresh.readAt = now
+                    return fresh
+                }
+                return status.keepingLimits(of: previous.first { $0.id == status.id })
+            }
         fetchedFor = wanted.map(\.id)
         fetchedAt = Date()
         loading = false
@@ -261,6 +338,7 @@ final class AILimitsStore {
 
     /// Opens Terminal with the provider's own sign-in for this account (its folder, if it has one).
     func signIn(_ account: AIAccount) {
+        signInStarted = Date()
         TerminalLauncher.open(NSHomeDirectory(), run: account.signInCommand,
                               title: L("\(account.provider.shortName) girişi", "\(account.provider.shortName) sign-in"))
     }
@@ -307,12 +385,13 @@ final class AILimitsStore {
         accounts = demo.map(\.account)
         nicknames = demoNicknames
         fetchedAt = Date()
+        for index in statuses.indices where statuses[index].readAt == nil { statuses[index].readAt = fetchedAt }
     }
 }
 
 // MARK: - Fetching
 
-private enum AIFetch {
+enum AIFetch {
     static func status(for account: AIAccount) async -> AIStatus {
         var status = switch account.provider {
         case .claude: await claude(account)
@@ -347,14 +426,16 @@ private enum AIFetch {
             status.needsSignIn = credentials.error == nil
             return status
         }
-        if let expires = number(oauth["expiresAt"]), expires / 1000 < Date().timeIntervalSince1970 {
-            expired(&status, tr: "Claude Code'u", en: "Claude Code")
-            return status
-        }
+        // The expiry in the stored sign-in is only a hint: Claude Code renews the token while it runs, and the
+        // server may still take it. Ask anyway; only the server saying no means the sign-in really ran out.
+        let pastExpiry = number(oauth["expiresAt"]).map { $0 / 1000 < Date().timeIntervalSince1970 } ?? false
         var request = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/usage")!, timeoutInterval: 10)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
-        guard let json = await load(request, into: &status) else { return status }
+        guard let json = await load(request, into: &status) else {
+            if pastExpiry && status.needsSignIn { expired(&status, tr: "Claude Code'u", en: "Claude Code") }
+            return status
+        }
 
         // { "five_hour": { "utilization": 22.0, "resets_at": "…" }, "seven_day": {…}, "seven_day_opus": {…} }
         // Newer responses list every window in "limits", including per-model ones (e.g. a model's own weekly cap).
@@ -363,16 +444,23 @@ private enum AIFetch {
                 status.limits.append(AILimit(id: "claude.five_hour", label: windowLabel("five_hour"), used: percent / 100,
                                              resetsAt: date(five["resets_at"]), period: 5 * 3600))
             }
-            for (index, limit) in limits.enumerated() {
+            var ids = Set(status.limits.map(\.id))
+            for limit in limits {
                 guard let percent = number(limit["percent"]) else { continue }
-                let model = ((limit["scope"] as? [String: Any])?["model"] as? [String: Any])?["display_name"] as? String
+                let scope = (limit["scope"] as? [String: Any])?["model"] as? [String: Any]
+                let model = scope?["display_name"] as? String
                 let group = limit["group"] as? String ?? ""
+                let kind = limit["kind"] as? String ?? ""
                 let label = model ?? (group == "weekly" ? windowLabel("seven_day") : group.replacingOccurrences(of: "_", with: " ").capitalized)
-                let overall = model == nil && (limit["kind"] as? String ?? "").hasSuffix("_all") && group == "weekly"
-                status.limits.append(AILimit(id: "claude.limit.\(index)", label: label, used: percent / 100,
+                let overall = model == nil && kind.hasSuffix("_all") && group == "weekly"
+                // Keyed by what the limit is, not where it sits in the list, so pace history and sent alerts stay
+                // with the right limit when Anthropic adds or reorders one.
+                let id = claudeLimitID(group: group, kind: kind, model: scope?["id"] as? String ?? model, taken: &ids)
+                status.limits.append(AILimit(id: id, label: label, used: percent / 100,
                                              resetsAt: date(limit["resets_at"]), primary: overall,
                                              period: group == "weekly" ? 7 * 86_400 : nil))
             }
+            if status.limits.isEmpty { status.problem = L("Limit bilgisi yok", "No limit data") }
             await claudeProfile(token: token, into: &status)
             return status
         }
@@ -480,6 +568,22 @@ private enum AIFetch {
     private static func oauth(from data: Data?) -> [String: Any]? {
         guard let data, let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
         return json["claudeAiOauth"] as? [String: Any]
+    }
+
+    /// "claude.weekly.weekly_all", "claude.weekly.weekly_model.claude-opus-4"; a second limit with the same
+    /// description gets ".2". The old ids ("claude.limit.0") simply stop being used: pace history lives in memory,
+    /// and an alert already sent under an old id can at worst go out once more.
+    static func claudeLimitID(group: String, kind: String, model: String?, taken: inout Set<String>) -> String {
+        let base = ["claude", group, kind, model ?? ""].filter { !$0.isEmpty }
+            .map { $0.lowercased().replacingOccurrences(of: " ", with: "-") }.joined(separator: ".")
+        var id = base == "claude" ? "claude.limit" : base
+        var number = 2
+        while taken.contains(id) {
+            id = "\(base).\(number)"
+            number += 1
+        }
+        taken.insert(id)
+        return id
     }
 
     private static func windowLabel(_ key: String) -> String {

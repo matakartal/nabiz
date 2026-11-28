@@ -425,16 +425,56 @@ enum DevCleanup {
     // MARK: Clean
 
     struct Outcome: Sendable {
-        var freed: UInt64
+        /// Measured on disk where the targets are folders; the scan's size when everything else went through;
+        /// nil when part of it failed and there is nothing to measure (then the message says "cleaned", no number).
+        var freed: UInt64?
         /// Targets left alone because they changed or came into use since the scan, or the tool refused.
         var skipped = 0
+        /// The tool is missing or said no: nothing was cleaned.
+        var failed = false
+    }
+
+    /// The folders a clean-up empties, so what it freed can be measured before and after; nil when it works
+    /// through a tool (simulators, Docker, git) and there is no folder to measure.
+    static func measuredPaths(_ item: CleanupItem) -> [String]? {
+        switch item.kind {
+        case .xcodePreviews, .derivedData, .buildCopies, .pnpmStore, .npmCache, .brewCache, .playwright, .claudeTranscripts:
+            item.targets
+        case .nodeModules:
+            item.targets.compactMap { $0.split(separator: "|", maxSplits: 1).map(String.init).last }
+        case .simUnavailable, .simNeverUsed, .simRuntimes, .worktrees, .dockerVolumes, .dockerImages, .mergedBranches:
+            nil
+        }
+    }
+
+    /// What to report: measured when possible; the scan's estimate only when every target went through.
+    static func freed(before: UInt64?, after: UInt64?, estimate: UInt64, skipped: Int, failed: Bool) -> UInt64? {
+        if failed { return nil }
+        if let before, let after { return before > after ? before - after : 0 }
+        return skipped == 0 ? estimate : nil
     }
 
     /// Runs one clean-up, checking each target again first. Blocking.
     @discardableResult
     static func clean(_ item: CleanupItem) -> Outcome {
+        let paths = measuredPaths(item)
+        let before = paths.map { sizes($0).reduce(0, +) }
+        var outcome = run(item)
+        let after = paths.map { sizes($0).reduce(0, +) }
+        outcome.freed = freed(before: before, after: after, estimate: item.size, skipped: outcome.skipped, failed: outcome.failed)
+        return outcome
+    }
+
+    /// A CLI clean-up (`pnpm store prune`…): failed when the tool isn't installed or exits with an error.
+    private static func tool(_ name: String, _ arguments: [String], timeout: TimeInterval) -> Bool {
+        guard Shell.which(name) != nil else { return false }
+        return Shell.run(name, arguments, timeout: timeout).ok
+    }
+
+    private static func run(_ item: CleanupItem) -> Outcome {
         let fm = FileManager.default
         var skipped = 0
+        var failed = false
         switch item.kind {
         case .simUnavailable:
             // Only the devices the scan listed, and only if still unavailable (not every device an Xcode switch hides).
@@ -449,11 +489,11 @@ enum DevCleanup {
                 skipped += 1
             }
         case .simNeverUsed:
-            for udid in item.targets { Shell.run("/usr/bin/xcrun", ["simctl", "delete", udid], timeout: 60) }
+            for udid in item.targets where !Shell.run("/usr/bin/xcrun", ["simctl", "delete", udid], timeout: 60).ok { skipped += 1 }
         case .simRuntimes:
-            for id in item.targets { Shell.run("/usr/bin/xcrun", ["simctl", "runtime", "delete", id], timeout: 300) }
+            for id in item.targets where !Shell.run("/usr/bin/xcrun", ["simctl", "runtime", "delete", id], timeout: 300).ok { skipped += 1 }
         case .xcodePreviews:
-            Shell.run("/usr/bin/xcrun", ["simctl", "--set", "previews", "delete", "all"], timeout: 120)
+            failed = !Shell.run("/usr/bin/xcrun", ["simctl", "--set", "previews", "delete", "all"], timeout: 120).ok
         case .derivedData:
             if xcodeBuilding { skipped = item.targets.count } else { for path in item.targets { removeChildren(of: path) } }
         case .buildCopies:
@@ -484,9 +524,9 @@ enum DevCleanup {
                 idle[parts[0]] = ok
                 if ok { try? fm.removeItem(atPath: parts[1]) } else { skipped += 1 }
             }
-        case .pnpmStore: Shell.run("pnpm", ["store", "prune"], timeout: 600)
-        case .npmCache: Shell.run("npm", ["cache", "clean", "--force"], timeout: 600)
-        case .brewCache: Shell.run("brew", ["cleanup", "-s", "--prune=all"], timeout: 600)
+        case .pnpmStore: failed = !tool("pnpm", ["store", "prune"], timeout: 600)
+        case .npmCache: failed = !tool("npm", ["cache", "clean", "--force"], timeout: 600)
+        case .brewCache: failed = !tool("brew", ["cleanup", "-s", "--prune=all"], timeout: 600)
         case .playwright:
             for path in item.targets where path.contains("/ms-playwright/") { try? fm.removeItem(atPath: path) }
         case .dockerVolumes:
@@ -498,7 +538,7 @@ enum DevCleanup {
                 skipped += 1
             }
         case .dockerImages:
-            if let cli = Docker.cli { Shell.run(cli, ["image", "prune", "-f"], timeout: 300) }
+            failed = Docker.cli.map { !Shell.run($0, ["image", "prune", "-f"], timeout: 300).ok } ?? true
         case .claudeTranscripts:
             for path in item.targets where path.contains("/.claude/projects/") {
                 try? fm.trashItem(at: URL(fileURLWithPath: path), resultingItemURL: nil)
@@ -519,7 +559,7 @@ enum DevCleanup {
                       Shell.run("git", ["branch", "-d", parts[1]], in: parts[0], timeout: 15).ok else { skipped += 1; continue }
             }
         }
-        return Outcome(freed: skipped == 0 ? item.size : item.size / 2, skipped: skipped)
+        return Outcome(freed: nil, skipped: skipped, failed: failed)
     }
 
     // MARK: Rules (pure, tested)
@@ -749,9 +789,18 @@ final class DevCleanupStore {
             items.removeAll { $0.kind == item.kind }
             lastTotal = total
             UserDefaults.standard.set(Double(total), forKey: "devCleanup.total")
-            Monitor.panelActions.flash(outcome.skipped == 0 ? L("\(item.title): temizlendi", "\(item.title): cleaned")
-                : L("\(item.title): \(outcome.skipped) tanesi kullanımda ya da değişmiş, bırakıldı", "\(item.title): \(outcome.skipped) in use or changed, left alone"))
-            if outcome.skipped > 0 { scan() }
+            let message: String
+            if outcome.failed {
+                message = L("\(item.title): temizlenemedi", "\(item.title): couldn't clean")
+            } else if outcome.skipped > 0 {
+                message = L("\(item.title): \(outcome.skipped) tanesi kullanımda ya da değişmiş, bırakıldı", "\(item.title): \(outcome.skipped) in use or changed, left alone")
+            } else if let freed = outcome.freed, freed > 0 {
+                message = L("\(item.title): \(Format.bytes(freed)) boşaldı", "\(item.title): \(Format.bytes(freed)) freed")
+            } else {
+                message = L("\(item.title): temizlendi", "\(item.title): cleaned")
+            }
+            Monitor.panelActions.flash(message)
+            if outcome.skipped > 0 || outcome.failed { scan() }
         }
     }
 
@@ -765,12 +814,17 @@ final class DevCleanupStore {
             let safe = items.filter(\.isSafe)
             guard !safe.isEmpty else { return }
             for item in safe { cleaning.insert(item.kind) }
-            let freed = await Task.detached(priority: .utility) { safe.reduce(UInt64(0)) { $0 + DevCleanup.clean($1).freed } }.value
+            let outcomes = await Task.detached(priority: .utility) { safe.map { DevCleanup.clean($0) } }.value
             for item in safe { cleaning.remove(item.kind) }
             items.removeAll(where: \.isSafe)
             lastTotal = total
             UserDefaults.standard.set(Double(total), forKey: "devCleanup.total")
-            let message = L("Geliştirici temizliği: ~\(Format.bytes(freed)) boşaldı", "Developer clean-up: ~\(Format.bytes(freed)) freed")
+            let freed = outcomes.compactMap(\.freed).reduce(0, +)
+            let failed = outcomes.filter(\.failed).count
+            var message = freed > 0 ? L("Geliştirici temizliği: \(Format.bytes(freed)) boşaldı", "Developer clean-up: \(Format.bytes(freed)) freed")
+                                    : L("Geliştirici temizliği bitti", "Developer clean-up done")
+            if failed > 0 { message += L(" · \(failed) temizlenemedi", " · \(failed) couldn't be cleaned") }
+            if failed > 0 || outcomes.contains(where: { $0.skipped > 0 }) { scan() }
             if notify { Notifier.shared.post(id: "devCleanup", title: "Nabız", body: message) } else { Monitor.panelActions.flash(message) }
         }
     }

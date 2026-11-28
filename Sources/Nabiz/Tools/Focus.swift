@@ -30,8 +30,18 @@ final class Pomodoro {
     /// Work blocks finished in a row, for the long break.
     private(set) var streak = 0
 
+    /// A block ended with auto-start off: the next one is lined up but has not begun, so it is not "paused".
+    private(set) var waitingToStart = false
+
     var isRunning: Bool { endsAt != nil }
     var isActive: Bool { endsAt != nil || pausedLeft != nil }
+
+    /// What the play/pause button says: "Pause", "Resume", or "Start break" / "Start focus" for a lined-up block.
+    var toggleTitle: String {
+        if isRunning { return L("Duraklat", "Pause") }
+        if waitingToStart { return phase == .work ? L("Odağı başlat", "Start focus") : L("Molayı başlat", "Start break") }
+        return L("Devam", "Resume")
+    }
 
     var left: TimeInterval? {
         if let pausedLeft { return pausedLeft }
@@ -65,6 +75,7 @@ final class Pomodoro {
     func start(_ phase: Phase = .work) {
         self.phase = phase
         pausedLeft = nil
+        waitingToStart = false
         endsAt = Date().addingTimeInterval(Double(minutes(phase)) * 60)
         Monitor.panelActions.flash("\(phase.title): \(minutes(phase)) " + L("dk", "min"))
         Notifier.shared.requestPermission(keepSetting: true)
@@ -80,6 +91,8 @@ final class Pomodoro {
     }
 
     func resume() {
+        // A lined-up block starts properly (with focus mode for a work block), not like a paused one.
+        if waitingToStart { return start(phase) }
         guard let pausedLeft else { return }
         endsAt = Date().addingTimeInterval(pausedLeft)
         self.pausedLeft = nil
@@ -98,6 +111,7 @@ final class Pomodoro {
     func stop() {
         endsAt = nil
         pausedLeft = nil
+        waitingToStart = false
         streak = 0
         phase = .work
         FocusMode.shared.stop(onlyIfPomodoro: true)
@@ -132,6 +146,7 @@ final class Pomodoro {
             phase = next
             endsAt = nil
             pausedLeft = Double(minutes(next)) * 60
+            waitingToStart = true
             if next != .work { FocusMode.shared.stop(onlyIfPomodoro: true) }
         }
     }
@@ -166,7 +181,19 @@ final class FocusMode {
     /// Apps it kept in the background this session, for the summary.
     private(set) var blockedCount = 0
     @ObservationIgnored private var observer: NSObjectProtocol?
-    @ObservationIgnored private var hidDesktop = false
+    /// Kept on disk: if Nabız quits (or crashes) during focus, the next launch brings the desktop icons back.
+    @ObservationIgnored private var hidDesktop = UserDefaults.standard.bool(forKey: FocusMode.hidDesktopKey) {
+        didSet { UserDefaults.standard.set(hidDesktop, forKey: Self.hidDesktopKey) }
+    }
+    private static let hidDesktopKey = "focusHidDesktop"
+
+    init() {
+        // A session from an earlier launch can't still be on: undo what it hid.
+        if hidDesktop {
+            Toolbox.shared.setDesktopIcons(visible: true)
+            hidDesktop = false
+        }
+    }
 
     static let defaultBlocked = [
         "com.tinyspeck.slackmacgap", "com.hnc.Discord", "ru.keepcoder.Telegram", "org.telegram.desktop", "net.whatsapp.WhatsApp",
