@@ -127,13 +127,32 @@ extension LauncherModel {
     func aiReturn() {
         let message = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if !message.isEmpty {
-            guard ai?.isRunning != true else { return }
+            if let chat = ai, chat.isRunning {
+                queue(message, after: chat)
+                return
+            }
             ask(message)
         } else if let answer = ai?.lastAnswer?.text, !answer.isEmpty, ai?.isRunning == false {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(answer, forType: .string)
             close()
             Monitor.panelActions.flash(L("Cevap kopyalandı", "Answer copied"))
+        }
+    }
+
+    /// Keeps a follow-up typed during an answer and sends it when that answer ends (in the same chat only).
+    private func queue(_ message: String, after chat: AIConversation) {
+        let waiting = queuedFollowUp != nil
+        queuedFollowUp = queuedFollowUp.map { $0 + "\n" + message } ?? message
+        text = ""
+        guard !waiting else { return }
+        let id = chat.id
+        Task { [weak self] in
+            while chat.isRunning { try? await Task.sleep(for: .milliseconds(150)) }
+            guard let self, let next = self.queuedFollowUp else { return }
+            self.queuedFollowUp = nil
+            guard self.mode == .ai, self.ai?.id == id else { return }
+            self.ask(next)
         }
     }
 
@@ -146,6 +165,9 @@ extension LauncherModel {
     /// Escape: stop a running answer, then clear the box, then go back to the list.
     func aiEscape() {
         if let chat = ai, chat.isRunning {
+            // Stopping drops a waiting follow-up too, and puts it back in the box to edit.
+            if let queued = queuedFollowUp, text.isEmpty { text = queued }
+            queuedFollowUp = nil
             chat.stop()
         } else if !text.isEmpty {
             text = ""

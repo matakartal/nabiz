@@ -175,7 +175,7 @@ struct LauncherView: View {
         let _ = (rates.table, rates.failed, clipboard.items.count, FileSearch.shared.results.count, FileSearch.shared.searching)
         let sections = model.sections
         let items = sections.flatMap(\.items)
-        let selectedID = items.isEmpty ? nil : items[min(model.selection, items.count - 1)].id
+        let selectedID = model.resolvedSelection(items)
         VStack(spacing: 0) {
             field
             if model.mode == .ai, let chat = model.ai {
@@ -255,6 +255,11 @@ struct LauncherView: View {
                         model: Binding(get: { chat.model }, set: { chat.use(chat.engine, model: $0) }))
             Spacer()
             if chat.isRunning {
+                if model.queuedFollowUp != nil {
+                    Text(L("Cevap bitince gönderilecek", "Sends when this answer ends")).foregroundStyle(Theme.textMuted)
+                } else if !model.text.trimmingCharacters(in: .whitespaces).isEmpty {
+                    KeyHint(keys: "↩", title: L("Sıraya al", "Queue"), strong: true)
+                }
                 KeyHint(keys: "esc", title: L("Durdur", "Stop"), strong: false)
             } else if !model.text.trimmingCharacters(in: .whitespaces).isEmpty {
                 KeyHint(keys: "↩", title: L("Gönder", "Send"), strong: true)
@@ -283,19 +288,21 @@ struct LauncherView: View {
                             .padding(.top, Theme.Spacing.s)
                             .padding(.bottom, Theme.Spacing.xs)
                         ForEach(section.items) { item in
-                            LauncherRow(item: item, selected: item.id == selectedID, compact: model.mode == .clipboard)
-                                .id(item.id)
-                                .onContinuousHover { phase in
-                                    // Only a real pointer move selects: rows sliding under a still pointer while
-                                    // scrolling with the arrow keys must not steal the selection.
-                                    guard case .active = phase, model.pointerMoved(),
-                                          let index = items.firstIndex(where: { $0.id == item.id }) else { return }
-                                    model.selection = index
-                                }
-                                .onTapGesture {
-                                    if let index = items.firstIndex(where: { $0.id == item.id }) { model.selection = index }
-                                    model.runPrimary()
-                                }
+                            Button {
+                                model.selectedID = item.id
+                                model.runPrimary()
+                            } label: {
+                                LauncherRow(item: item, selected: item.id == selectedID, compact: model.mode == .clipboard)
+                            }
+                            .buttonStyle(.plain)
+                            .focusable(false)
+                            .id(item.id)
+                            .onContinuousHover { phase in
+                                // Only a real pointer move selects: rows sliding under a still pointer while
+                                // scrolling with the arrow keys must not steal the selection.
+                                guard case .active = phase, model.pointerMoved() else { return }
+                                model.selectedID = item.id
+                            }
                         }
                     }
                 }
@@ -316,6 +323,7 @@ struct LauncherView: View {
             Text(model.mode == .clipboard
                  ? (Prefs.bool(Prefs.clipboardEnabled) ? L("Henüz kopyalanan bir şey yok.", "Nothing copied yet.")
                                                        : L("Pano geçmişi kapalı. Ayarlar → Pano'dan açabilirsin.", "Clipboard history is off. Turn it on in Settings → Clipboard."))
+                 : model.text.trimmingCharacters(in: .whitespaces).hasPrefix("/") ? L("Dosya bulunamadı", "No files found")
                  : L("Sonuç yok", "No results"))
                 .font(Theme.small).foregroundStyle(Theme.textMuted)
         }
@@ -368,13 +376,16 @@ private struct ActionPalette: View {
                                     .padding(.horizontal, Theme.Spacing.s)
                                     .frame(height: Theme.menuLine, alignment: .bottom)
                             }
-                            PaletteRow(action: action, selected: action.id == selectedID)
-                                .id(action.id)
-                                .onContinuousHover { phase in
-                                    guard case .active = phase, model.pointerMoved() else { return }
-                                    model.paletteSelection = index
-                                }
-                                .onTapGesture { model.runPaletteAction(action) }
+                            Button { model.runPaletteAction(action) } label: {
+                                PaletteRow(action: action, selected: action.id == selectedID)
+                            }
+                            .buttonStyle(.plain)
+                            .focusable(false)
+                            .id(action.id)
+                            .onContinuousHover { phase in
+                                guard case .active = phase, model.pointerMoved() else { return }
+                                model.paletteSelection = index
+                            }
                         }
                         if actions.isEmpty {
                             Text(L("Eylem yok", "No actions")).font(Theme.small).foregroundStyle(Theme.textMuted)

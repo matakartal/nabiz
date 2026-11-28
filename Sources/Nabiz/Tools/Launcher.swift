@@ -43,7 +43,7 @@ final class LauncherModel {
     var text = "" {
         didSet {
             guard text != oldValue else { return }
-            selection = 0
+            clearSelection()
             // "?" at the start switches to asking AI.
             if mode == .all, text.hasPrefix("?"), Prefs.bool(Prefs.aiAsk) {
                 mode = .ai
@@ -63,7 +63,24 @@ final class LauncherModel {
               let first = query.first, !"=>:?".contains(first), Downloader.videoURL(query) == nil else { return "" }
         return query
     }
-    var selection = 0
+    /// The row picked with the arrows or the pointer, by id: rows arriving later (files, AI) move the others, and
+    /// Return must still run the one that was highlighted.
+    var selectedID: String?
+    /// Until a row is picked, the first row shown for this text stays the highlighted one.
+    @ObservationIgnored private var anchorID: String?
+
+    private func clearSelection() {
+        selectedID = nil
+        anchorID = nil
+    }
+
+    /// The highlighted row's id in this list: the picked one, else the first row shown since the text changed.
+    func resolvedSelection(_ items: [LauncherItem]) -> String? {
+        if let selectedID, items.contains(where: { $0.id == selectedID }) { return selectedID }
+        if let anchorID, items.contains(where: { $0.id == anchorID }) { return anchorID }
+        anchorID = items.first?.id
+        return anchorID
+    }
     /// The ⌘K actions palette for the selected row.
     var paletteOpen = false {
         didSet { paletteQuery = ""; paletteSelection = 0 }
@@ -76,6 +93,8 @@ final class LauncherModel {
     var ai: AIConversation?
     /// What was typed before asking, so Escape can go back to it.
     var aiReturnText = ""
+    /// A follow-up typed while the answer is still being written; it is sent when that answer ends.
+    var queuedFollowUp: String?
     /// Text selected in the app in front when the launcher opened.
     var selectedText: String?
     /// The clipboard list was opened from the launcher, so Escape goes back to it instead of closing.
@@ -98,7 +117,7 @@ final class LauncherModel {
         paletteOpen = false
         self.mode = mode
         self.text = text
-        selection = 0
+        clearSelection()
         PortCache.shared.refresh()
         ProjectStore.shared.refresh()
     }
@@ -168,13 +187,24 @@ final class LauncherModel {
 
     var selected: LauncherItem? {
         let items = items
-        return items.isEmpty ? nil : items[min(selection, items.count - 1)]
+        let id = resolvedSelection(items)
+        return items.first { $0.id == id }
     }
 
     func move(_ offset: Int) {
+        let items = items
         let count = items.count
         guard count > 0 else { return }
-        selection = (min(selection, count - 1) + offset + count) % count
+        let id = resolvedSelection(items)
+        let index = items.firstIndex { $0.id == id } ?? 0
+        selectedID = items[(index + offset + count) % count].id
+    }
+
+    /// After the selected row goes away, its neighbour below (or above, at the end) takes over.
+    func selectNeighbour(of id: String, in before: [LauncherItem]) {
+        guard let index = before.firstIndex(where: { $0.id == id }) else { return }
+        let rest = before.filter { $0.id != id }
+        selectedID = rest.isEmpty ? nil : rest[min(index, rest.count - 1)].id
     }
 
     func runPrimary() {
@@ -242,9 +272,10 @@ final class LauncherModel {
     }
 
     func deleteSelected() {
-        guard let clip = selected?.clip else { return }
+        let before = items
+        guard let item = before.first(where: { $0.id == resolvedSelection(before) }), let clip = item.clip else { return }
+        selectNeighbour(of: item.id, in: before)
         ClipboardHistory.shared.delete(clip)
-        selection = min(selection, max(items.count - 1, 0))
     }
 
     // MARK: Everything
@@ -268,8 +299,11 @@ final class LauncherModel {
         if query.hasPrefix("/") {
             let search = FileSearch.shared
             let rest = query.dropFirst().trimmingCharacters(in: .whitespaces)
+            let done = search.term == rest && !search.searching
             let files = search.term == rest ? search.results.map(fileItem) : []
-            let title = rest.count < 2 ? L("Dosya adı yaz", "Type a file name") : search.searching && files.isEmpty ? L("Aranıyor…", "Searching…") : L("Dosyalar", "Files")
+            // Finished with nothing found: the empty state says so instead of a bare heading.
+            if rest.count >= 2 && done && files.isEmpty { return [] }
+            let title = rest.count < 2 ? L("Dosya adı yaz", "Type a file name") : !done && files.isEmpty ? L("Aranıyor…", "Searching…") : L("Dosyalar", "Files")
             return [LauncherSection(id: "files", title: title, items: files)]
         }
 
@@ -1275,8 +1309,8 @@ extension LauncherModel {
             }
             list.append(LauncherAction(id: "delete", title: L("Geçmişten sil", "Delete from history"), symbol: "trash", shortcut: "⌘⌫",
                                        group: main, destructive: true) { [weak self] in
+                if let self { selectNeighbour(of: item.id, in: items) }
                 ClipboardHistory.shared.delete(current)
-                if let self { selection = min(selection, max(items.count - 1, 0)) }
             })
         }
 

@@ -106,14 +106,26 @@ enum NoteWindow {
         case "b": editor?.wrap("**")
         case "i": editor?.wrap("_")
         case "c" where shift: copyCurrent()
-        case "c": editor?.copy(nil)
-        case "v": editor?.pasteAsPlainText(nil)
-        case "x": editor?.cut(nil)
-        case "a": editor?.selectAll(nil)
-        case "z": if shift { editor?.undoManager?.redo() } else { editor?.undoManager?.undo() }
+        // Editing keys go to whatever has the cursor: the note, or the list's search field.
+        case "c": sendEdit(#selector(NSText.copy(_:)))
+        case "v": if inEditor { editor?.pasteAsPlainText(nil) } else { sendEdit(#selector(NSText.paste(_:))) }
+        case "x": sendEdit(#selector(NSText.cut(_:)))
+        case "a": sendEdit(#selector(NSText.selectAll(_:)))
+        case "z": sendEdit(shift ? Selector(("redo:")) : Selector(("undo:")))
         default: return false
         }
         return true
+    }
+
+    /// The note's own editor has the cursor (not the list's search field).
+    private static var inEditor: Bool {
+        guard let editor else { return false }
+        return panel?.firstResponder === editor
+    }
+
+    /// To the first responder of the note window, which is key while it takes typing.
+    private static func sendEdit(_ action: Selector) {
+        NSApp.sendAction(action, to: nil, from: nil)
     }
 
     static func copyCurrent() {
@@ -145,6 +157,8 @@ enum NoteWindow {
             guard alert.runModal() == .alertFirstButtonReturn else { return }
         }
         NoteStore.shared.delete(note.id)
+        // Deleted from the launcher with the window closed: it stays closed (its view is gone until shown again).
+        guard isVisible else { return }
         if NoteStore.shared.current == nil { close() } else { panel?.makeKeyAndOrderFront(nil) }
     }
 }
