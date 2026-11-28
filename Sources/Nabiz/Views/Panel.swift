@@ -1033,20 +1033,23 @@ private struct AISection: View {
             PanelRow(icon: .symbol("sparkles"), title: L("Okunuyor…", "Reading…")) { _ in ProgressView().controlSize(.mini) }
         } else {
             // One block per account; a second account of the same provider carries its nickname (or e-mail).
+            let pick = AISwitch.suggestion(store.statuses)
             ForEach(store.statuses) { status in
                 // Last good limits after a failed reading: how old they are sits inline, why in the tooltip.
                 let age = status.stale ? status.readAt.map { Format.ago($0) } : nil
                 let subtitle = [store.label(status), age].compactMap { $0 }.joined(separator: " · ")
                 PanelRow(icon: icon(status.provider), title: status.provider.name,
-                         subtitle: subtitle.isEmpty ? nil : subtitle,
-                         hoverable: status.needsSignIn || status.stale) { hovering in
+                         subtitle: subtitle.isEmpty ? nil : subtitle, hoverable: true) { hovering in
                     if hovering && status.needsSignIn {
                         InlineButton(L("Giriş yap…", "Sign in…")) {
                             actions.close()
                             store.signIn(status.account)
                         }
                     } else if hovering {
-                        InlineButton(L("Tekrar dene", "Try again")) { store.refreshIfNeeded(force: true) }
+                        HStack(spacing: Theme.Spacing.m) {
+                            if status.stale { InlineButton(L("Tekrar dene", "Try again")) { store.refreshIfNeeded(force: true) } }
+                            CLIMenu(account: status.account, title: L("Aç…", "Open…"), window: store.title(status), actions: actions)
+                        }
                     } else {
                         Value(status.plan ?? "")
                     }
@@ -1059,8 +1062,27 @@ private struct AISection: View {
                     }
                 }
                 ForEach(status.limits) { LimitRow(limit: $0) }
+                // Under the provider's last account: another one of its accounts has room.
+                if let pick, pick.to.provider == status.provider,
+                   store.statuses.last(where: { $0.provider == status.provider })?.id == status.id {
+                    switchRow(pick)
+                }
             }
         }
+    }
+
+    @ViewBuilder private func switchRow(_ pick: (from: AIStatus, to: AIStatus)) -> some View {
+        let left = Format.percent(1 - (AISwitch.fullness(pick.to) ?? 0))
+        PanelRow(icon: .symbol("arrow.left.arrow.right"), title: L("Diğer hesaba geç", "Switch account"),
+                 subtitle: store.title(pick.to), hoverable: true) { hovering in
+            if hovering {
+                CLIMenu(account: pick.to.account, title: L("Aç…", "Open…"), window: store.title(pick.to), actions: actions)
+            } else {
+                Value(L("\(left) boş", "\(left) left"), color: Palette.green.mark)
+            }
+        }
+        .help(L("\(store.title(pick.from)) neredeyse doldu. Aç… yeni bir Terminal'de \(store.title(pick.to)) hesabıyla başlatır; açık oturumlar kendi hesabında sürer, hiçbir şeyi kapatman gerekmez.",
+                "\(store.title(pick.from)) is nearly out. Open… starts a new Terminal with \(store.title(pick.to)); running sessions keep their own account, nothing needs to close."))
     }
 
     private func icon(_ provider: AIProvider) -> RowIcon {
@@ -1074,6 +1096,39 @@ private struct AISection: View {
         }
         if provider == .grok { return .xai }
         return .symbol(provider == .gemini ? "sparkle" : "bubble.left.and.text.bubble.right")
+    }
+}
+
+/// Starts the provider's CLI signed in as this account, in a new Terminal: in a recent project or the home folder.
+private struct CLIMenu: View {
+    let account: AIAccount
+    let title: String
+    /// The Terminal window's title, "Claude · Work".
+    let window: String
+    let actions: PanelActions
+
+    var body: some View {
+        let recent = ProjectStore.shared.projects.filter { !$0.isWorktree }
+            .sorted { ($0.lastActivity ?? .distantPast) > ($1.lastActivity ?? .distantPast) }.prefix(8)
+        Menu {
+            ForEach(Array(recent)) { project in
+                Button { open(project.path) } label: { Text(verbatim: project.displayName) }
+            }
+            if !recent.isEmpty { Divider() }
+            Button(L("Ana klasör", "Home folder")) { open(NSHomeDirectory()) }
+        } label: {
+            Text(verbatim: title).font(Theme.body).foregroundStyle(Palette.green.mark)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .tint(Palette.green.mark)
+        .fixedSize()
+        .help(L("\(account.provider.shortName) komut satırını bu hesapla yeni bir Terminal'de aç", "Open the \(account.provider.shortName) CLI with this account in a new Terminal"))
+    }
+
+    private func open(_ folder: String) {
+        actions.close()
+        TerminalLauncher.open(folder, run: account.launchCommand, title: window)
     }
 }
 

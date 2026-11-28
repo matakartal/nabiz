@@ -138,6 +138,30 @@ enum AIFeatured {
     }
 }
 
+/// One account of a provider nearly out while another has room: the CLI can carry on with the other one. Running
+/// sessions keep their own account; only a new one starts with the roomier sign-in.
+enum AISwitch {
+    static let full = 0.85
+    static let roomy = 0.6
+
+    /// How full an account is: its main window, or its 5-hour window when that is fuller. Per-model caps don't count.
+    static func fullness(_ status: AIStatus) -> Double? {
+        guard !status.needsSignIn else { return nil }
+        let windows = status.limits.filter { $0.primary || $0.period == 5 * 3600 }
+        return (windows.isEmpty ? status.headline.map { [$0] } ?? [] : windows).map(\.used).max()
+    }
+
+    static func suggestion(_ statuses: [AIStatus]) -> (from: AIStatus, to: AIStatus)? {
+        for provider in AIProvider.allCases {
+            let rated = statuses.filter { $0.provider == provider }.compactMap { status in fullness(status).map { (status, $0) } }
+            guard let most = rated.max(by: { $0.1 < $1.1 }), most.1 >= full,
+                  let least = rated.min(by: { $0.1 < $1.1 }), least.1 <= roomy, least.0.id != most.0.id else { continue }
+            return (most.0, least.0)
+        }
+        return nil
+    }
+}
+
 /// Reads subscription limits with the sign-ins the official CLIs already keep on this Mac, for every account found.
 /// Tokens never leave the Mac except to their own provider and are never stored by Nabız. An expired one is renewed
 /// with the CLI's own refresh token: Gemini's only in memory (Google keeps the refresh token), Grok's written back to

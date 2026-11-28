@@ -28,10 +28,12 @@ struct AIAccount: Identifiable, Equatable, Sendable {
     var folderName: String? { folder.map { ($0 as NSString).abbreviatingWithTildeInPath } }
 
     /// The Terminal command that signs this account in again (or for the first time), with its own folder.
-    var signInCommand: String {
-        let env = folder.map { "\(provider.homeVariable)=\(Shell.quote($0)) " } ?? ""
-        return env + provider.signInCommand
-    }
+    var signInCommand: String { environment + provider.signInCommand }
+
+    /// The CLI itself, signed in as this account.
+    var launchCommand: String { environment + provider.rawValue }
+
+    private var environment: String { folder.map { "\(provider.homeVariable)=\(Shell.quote($0)) " } ?? "" }
 }
 
 extension AIProvider {

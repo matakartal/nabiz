@@ -583,11 +583,11 @@ enum Snapshot {
         codex.email = "ata@example.com"
         var first = AIStatus(account: personal)
         first.plan = "Max 20x"
-        first.limits = [limit("a5", L("5 saat", "5-hour"), used: 0.22, hours: 2, period: 5),
+        first.limits = [limit("a5", L("5 saat", "5-hour"), used: 0.92, hours: 2, period: 5),
                         limit("aw", L("Haftalık", "Weekly"), used: 0.41, hours: 70, period: 168, primary: true)]
         var second = AIStatus(account: work)
         second.plan = "Pro"
-        second.limits = [limit("b5", L("5 saat", "5-hour"), used: 0.64, hours: 3, period: 5),
+        second.limits = [limit("b5", L("5 saat", "5-hour"), used: 0.34, hours: 3, period: 5),
                          limit("bw", L("Haftalık", "Weekly"), used: 0.18, hours: 120, period: 168, primary: true)]
         var third = AIStatus(account: codex)
         third.plan = "Plus"

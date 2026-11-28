@@ -51,6 +51,23 @@ struct AILimitsTests {
         #expect(again == "claude.weekly.weekly_model.claude-opus-4.2")
     }
 
+    @Test func aFullAccountPointsToOneWithRoom() {
+        let main = AIAccount(provider: .claude)
+        let second = AIAccount(provider: .claude, folder: "/tmp/.claude-two")
+        // The 5-hour window counts when it is the fuller one; a per-model cap (not primary, no period) doesn't.
+        var full = status(main, used: [0.5])
+        full.limits.append(AILimit(id: "five", label: "5-hour", used: 0.9, resetsAt: nil, period: 5 * 3600))
+        full.limits.append(AILimit(id: "model", label: "Fable", used: 1, resetsAt: nil))
+        let roomy = status(second, used: [0.2])
+        #expect(AISwitch.fullness(full) == 0.9)
+        let pick = AISwitch.suggestion([full, roomy])
+        #expect(pick?.from.id == main.id && pick?.to.id == second.id)
+        // Nothing to say when no one is nearly out, or the other one is busy too, or it is another provider.
+        #expect(AISwitch.suggestion([status(main, used: [0.7]), roomy]) == nil)
+        #expect(AISwitch.suggestion([full, status(second, used: [0.7])]) == nil)
+        #expect(AISwitch.suggestion([full, status(AIAccount(provider: .codex), used: [0.1])]) == nil)
+    }
+
     @Test func ultraHidesTheFiveHourWindow() {
         #expect(AIFetch.hidesFiveHour(plan: "Ultra", limitID: "claude.five_hour"))
         #expect(AIFetch.hidesFiveHour(plan: "Ultra", limitID: "claude.session.session_all"))
