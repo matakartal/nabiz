@@ -100,6 +100,13 @@ enum AIAccounts {
             }
         }
         if provider == .claude { paths.append(home + "/Library/Developer/Xcode/CodingAssistant/ClaudeAgentConfig") }
+        // Apps that run the CLIs with accounts of their own (Synara: ~/.synara/userdata/provider-homes/claude/<id>/.claude).
+        for app in ((try? FileManager.default.contentsOfDirectory(atPath: home)) ?? []) where app.hasPrefix(".synara") {
+            let homes = "\(home)/\(app)/userdata/provider-homes/\(provider.rawValue)"
+            for instance in (try? FileManager.default.contentsOfDirectory(atPath: homes)) ?? [] {
+                paths += ["\(homes)/\(instance)/\(provider.folderStem)", "\(homes)/\(instance)"]
+            }
+        }
         paths += extra
         var seen = Set<String>()
         return paths.map { URL(fileURLWithPath: $0).standardizedFileURL.path }
