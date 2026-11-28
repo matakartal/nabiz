@@ -210,8 +210,9 @@ struct PanelContent: View {
             }
         case .tools:
             if showTools {
+                // "Awake" means something is on: the accent, as everywhere else.
                 CollapsibleSection(.tools, summary: KeepAwake.shared.isOn ? L("Uyanık", "Awake") : "",
-                                   summaryColor: Palette.green.mark) {
+                                   summaryColor: Theme.accent) {
                     ToolsSection(monitor: monitor, actions: actions)
                 }
             }
@@ -403,11 +404,14 @@ private struct SimulatorSection: View {
             }
             .task { if simulator.runtime != "Android" { SimTools.shared.loadApps(simulator.id) } }
         }
-        PanelRow(icon: .symbol("xmark.circle"), title: L("Hepsini kapat", "Shut down all"),
-                 action: monitor.stopping.contains("all") ? nil : {
-                     monitor.shutdownAllSimulators()
-                     flash(L("Simülatörler kapatılıyor", "Shutting down simulators"))
-                 }) { _ in EmptyView() }
+        // "Do it to all" only when there is more than one; a single simulator has its own Shut down.
+        if monitor.simulators.count > 1 {
+            PanelRow(icon: .symbol("xmark.circle"), title: L("Hepsini kapat", "Shut down all"),
+                     action: monitor.stopping.contains("all") ? nil : {
+                         monitor.shutdownAllSimulators()
+                         flash(L("Simülatörler kapatılıyor", "Shutting down simulators"))
+                     }) { _ in EmptyView() }
+        }
     }
 }
 
@@ -662,7 +666,7 @@ private struct CalendarSection: View {
             PanelRow(icon: .dot(event.color), title: event.title, titleColor: event.isNow ? Theme.text : nil,
                      action: { event.meetingURL != nil ? agenda.join(event) : agenda.openInCalendar() }) { hovering in
                 if hovering && event.meetingURL != nil {
-                    Value(L("Katıl", "Join"), color: Theme.accent)
+                    Value(L("Katıl", "Join"), color: Palette.green.mark)
                 } else {
                     Value(CalendarAgenda.timeText(event), color: event.isNow ? Theme.accent : Theme.textMuted)
                 }
@@ -1363,7 +1367,7 @@ private struct StatusPill: View {
             Text(verbatim: text).font(Theme.smallStrong).foregroundStyle(Theme.text)
         }
         .padding(.horizontal, Theme.Spacing.s)
-        .padding(.vertical, Theme.Spacing.xs / 2)
+        .padding(.vertical, Theme.pillPadding)
         .background(Theme.track, in: Capsule())
     }
 }
@@ -1385,7 +1389,7 @@ private struct PanelFooter: View {
                     }
                     .foregroundStyle(.white)
                     .padding(.horizontal, Theme.Spacing.s)
-                    .padding(.vertical, Theme.Spacing.xs / 2)
+                    .padding(.vertical, Theme.pillPadding)
                     .background(Theme.accent, in: Capsule())
                 }
                 .buttonStyle(.plain)
@@ -1595,7 +1599,7 @@ struct MetersView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.s) {
             HStack(spacing: Theme.Spacing.s) {
-                Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: Theme.menuIcon + 2, height: Theme.menuIcon + 2)
+                Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: Theme.headerIcon, height: Theme.headerIcon)
                 Text(verbatim: "Nabız").font(Theme.bodyStrong).foregroundStyle(Theme.text)
                 Spacer()
                 StatusPill(monitor: monitor)
