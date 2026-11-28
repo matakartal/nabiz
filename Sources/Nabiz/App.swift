@@ -625,7 +625,7 @@ enum Snapshot {
         if let anchor = value(after: "--anchor") { selection.go(SettingsTarget(page: page ?? .general, anchor: anchor)) }
         let root: AnyView
         if args.contains("--welcome") {
-            root = AnyView(WelcomeView {})
+            root = AnyView(WelcomeView(step: args.contains("--permissions") ? .permissions : .intro) {})
         } else if args.contains("--help") {
             HelpState.shared.tab = value(after: "--tab").flatMap(HelpTab.init(rawValue:)) ?? .start
             HelpState.shared.query = value(after: "--find") ?? ""
