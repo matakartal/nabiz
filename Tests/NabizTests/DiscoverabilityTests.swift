@@ -17,7 +17,7 @@ struct DiscoverabilityTests {
         #expect(WhatsNew.shouldShow(seen: "older", onboarded: true))
         #expect(!WhatsNew.shouldShow(seen: WhatsNew.id, onboarded: true))
         #expect(!WhatsNew.shouldShow(seen: "", onboarded: false))
-        #expect(WhatsNew.items.contains { $0.id == "ai-chat" })
+        #expect(WhatsNew.items.contains { $0.id == "accounts" })
     }
 
     @Test func aiChatHasItsOwnShortcutAndTile() {
