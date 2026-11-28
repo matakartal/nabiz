@@ -235,6 +235,8 @@ enum SettingsIndex {
         .init(.aiLimits, "aiLimits.accounts", "Hesaplar ve takma adlar", "Accounts and nicknames",
               "ikinci hesap second account nickname iş work kişisel personal ekle add klasör folder"),
         .init(.aiLimits, "aiLimits.display", "Kalanı ya da kullanılanı göster", "Show what's left or used", "yüzde percent"),
+        .init(.aiLimits, "aiLimits.display", "Menü çubuğunda hangi limit", "Menu bar shows",
+              "en sıkı tightest hesap account menü çubuğu menu bar"),
         .init(.aiLimits, "aiLimits.grok", "Grok", "Grok", "xai"),
         .init(.aiLimits, "aiLimits.refresh", "Limitleri şimdi yenile", "Refresh limits now", "güncelle update"),
         // MCP

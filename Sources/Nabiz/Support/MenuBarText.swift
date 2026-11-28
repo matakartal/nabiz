@@ -118,13 +118,11 @@ enum MenuBarText {
             let tone: MenuBarPart.Tone = battery.plugged ? .normal : battery.percent <= 5 ? .danger : battery.percent <= 15 ? .warning : .normal
             return make(L("Pil", "Battery"), Format.percent(Double(battery.percent) / 100) + (battery.charging ? "⚡︎" : ""), tone)
         case .ai:
-            guard let status = AILimitsStore.shared.statuses.first(where: { !$0.limits.isEmpty }),
-                  let top = status.headline else { return nil }
+            // The account picked in Settings, or the one with the least left; a failed reading keeps the last value.
+            guard let (status, top) = AILimitsStore.shared.featured else { return nil }
             // Coloured by what is left, whichever number is shown: plenty left is green, running out is red.
-            // A fast burn (pace behind) only matters once half the limit is gone.
-            let behind = top.pace?.status == .behind && top.remaining < 0.5
             let tone: MenuBarPart.Tone = top.remaining < 0.1 ? .danger
-                : top.remaining < 0.25 || behind ? .warning
+                : top.remaining < 0.25 || top.burningFast ? .warning
                 : top.remaining >= 0.5 ? .up : .normal
             return make(status.provider.shortName, top.shortText, tone)
         case .market:

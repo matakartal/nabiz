@@ -995,23 +995,29 @@ private struct AISection: View {
         } else {
             // One block per account; a second account of the same provider carries its nickname (or e-mail).
             ForEach(store.statuses) { status in
-                PanelRow(icon: icon(status.provider), title: status.provider.name, subtitle: store.label(status),
-                         hoverable: status.needsSignIn) { hovering in
-                    if hovering {
+                // Last good limits after a failed reading: how old they are sits inline, why in the tooltip.
+                let age = status.stale ? status.readAt.map { Format.ago($0) } : nil
+                let subtitle = [store.label(status), age].compactMap { $0 }.joined(separator: " · ")
+                PanelRow(icon: icon(status.provider), title: status.provider.name,
+                         subtitle: subtitle.isEmpty ? nil : subtitle,
+                         hoverable: status.needsSignIn || status.stale) { hovering in
+                    if hovering && status.needsSignIn {
                         InlineButton(L("Giriş yap…", "Sign in…")) {
                             actions.close()
                             store.signIn(status.account)
                         }
+                    } else if hovering {
+                        InlineButton(L("Tekrar dene", "Try again")) { store.refreshIfNeeded(force: true) }
                     } else {
                         Value(status.plan ?? "")
                     }
                 }
-                .help(store.details(status.account, email: status.email))
-                if let problem = status.problem {
-                    Text(verbatim: problem).font(Theme.small).foregroundStyle(Theme.textMuted).lineLimit(1)
-                        .padding(.leading, Theme.menuTextInset)
-                        .padding(.trailing, Theme.menuInset)
-                        .frame(height: Theme.menuLine)
+                .help([store.details(status.account, email: status.email), status.stale ? status.problem : nil]
+                    .compactMap { $0 }.joined(separator: "\n"))
+                if let problem = status.problem, !status.stale || status.needsSignIn {
+                    AIProblemLine(problem: problem, canRetry: !status.needsSignIn && !store.loading) {
+                        store.refreshIfNeeded(force: true)
+                    }
                 }
                 ForEach(status.limits) { LimitRow(limit: $0) }
             }
@@ -1036,6 +1042,34 @@ private struct AISection: View {
     }
 }
 
+/// Why an account's limits could not be read, on the text edge under it. When trying again can help (not a
+/// sign-in problem), hovering offers it.
+private struct AIProblemLine: View {
+    let problem: String
+    let canRetry: Bool
+    let retry: () -> Void
+    @State private var hovering = false
+    @Environment(\.panelOpen) private var panelOpen
+
+    var body: some View {
+        HStack(spacing: Theme.Spacing.s) {
+            Text(verbatim: problem).font(Theme.small).foregroundStyle(Theme.textMuted).lineLimit(1).truncationMode(.tail)
+            Spacer(minLength: Theme.Spacing.s)
+            if hovering && canRetry {
+                Button(action: retry) { Text(L("Tekrar dene", "Try again")) }
+                    .buttonStyle(TextButtonStyle(font: Theme.small, color: Palette.green.mark))
+            }
+        }
+        .padding(.leading, Theme.menuTextInset)
+        .padding(.trailing, Theme.menuInset)
+        .frame(height: Theme.menuLine)
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .onChange(of: panelOpen) { if !panelOpen { hovering = false } }
+        .help(problem)
+    }
+}
+
 /// "Weekly  ▬▬▬▬|▭▭▭  55%  5d 3h": label, bar, percent and time to reset, each in its own column, on one line.
 /// The bar shows the same thing as the number: what's left (shrinking as you use it) or what's used, as chosen in
 /// Settings. The tick across it is where an even pace would be now; a fill past the tick means faster than normal.
@@ -1052,7 +1086,7 @@ private struct LimitRow: View {
                      mark: expected.map { showRemaining ? 1 - $0 : $0 })
             Text(verbatim: spent ? L("Bitti", "Out") : limit.shortText)
                 .font(spent ? Theme.smallStrong : Theme.small).monospacedDigit().lineLimit(1)
-                .foregroundStyle(spent || limit.pace?.status == .behind ? Theme.danger : Theme.text)
+                .foregroundStyle(spent || limit.burningFast ? Theme.danger : Theme.text)
                 .frame(width: Theme.limitPercentColumn, alignment: .trailing)
             Text(verbatim: limit.resetsAt.map(Format.resetIn(until:)) ?? "")
                 .font(Theme.small).monospacedDigit().foregroundStyle(Theme.textMuted).lineLimit(1)
@@ -1076,10 +1110,11 @@ private struct LimitRow: View {
 
     private var spent: Bool { limit.used >= 1 }
 
-    /// Red when it is used up or will run out before the reset, orange when little is left, green otherwise.
+    /// Red when it is used up or surely runs out before the reset, orange when little is left or it is heading
+    /// that way (too early in the window to be sure), green otherwise.
     private var color: Color {
-        if spent || limit.pace?.status == .behind { return Theme.danger }
-        if limit.remaining < 0.1 || limit.pace?.status == .onTrack { return Theme.warning.fill }
+        if spent || limit.burningFast { return Theme.danger }
+        if limit.remaining < 0.1 || limit.pace?.status == .onTrack || limit.pace?.status == .behind { return Theme.warning.fill }
         return Theme.accent
     }
 
@@ -1090,7 +1125,7 @@ private struct LimitRow: View {
                            "An even pace would have used \(Format.percent(expected)) by now; you've used \(Format.percent(limit.used))."))
         }
         if let pace = limit.pace, pace.status != .spent {
-            if pace.status == .behind, let runway = pace.runway {
+            if limit.burningFast, let runway = pace.runway {
                 lines.append(L("Bu hızla \(Format.duration(runway)) sonra biter, sıfırlanmadan önce.",
                                "At this speed it runs out in \(Format.duration(runway)), before the reset."))
             } else if pace.unusedNearReset {
@@ -1389,11 +1424,12 @@ enum Summary {
     }
 
     static func ai() -> String {
-        guard let status = AILimitsStore.shared.statuses.first(where: { !$0.limits.isEmpty }),
-              let top = status.headline else { return "" }
+        let store = AILimitsStore.shared
+        guard let (status, top) = store.featured else { return "" }
+        let name = store.title(status)
         return Prefs.bool(Prefs.aiRemaining)
-            ? L("\(status.provider.shortName) \(top.shortText) kaldı", "\(status.provider.shortName) \(top.shortText) left")
-            : "\(status.provider.shortName) \(top.shortText)"
+            ? L("\(name) \(top.shortText) kaldı", "\(name) \(top.shortText) left")
+            : "\(name) \(top.shortText)"
     }
 
     static func market() -> String {

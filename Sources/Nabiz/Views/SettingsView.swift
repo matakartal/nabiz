@@ -1507,6 +1507,7 @@ private struct AILimitsPage: View {
     @AppStorage("ai.gemini") private var gemini = false
     @AppStorage("ai.grok") private var grok = false
     @AppStorage(Prefs.aiRemaining) private var remaining = true
+    @AppStorage(Prefs.aiBarAccount) private var barAccount = AIFeatured.tightest
     @State private var adding: AIProvider?
     @State private var newNickname = ""
     @State private var folderMessage = ""
@@ -1567,6 +1568,14 @@ private struct AILimitsPage: View {
                     Text(L("Kullanılan", "What's used")).tag(false)
                 }
                 .pickerStyle(.segmented)
+                Picker(L("Menü çubuğunda", "Menu bar shows"), selection: $barAccount) {
+                    Text(L("En sıkı limit", "Tightest limit")).tag(AIFeatured.tightest)
+                    ForEach(store.accounts.filter(store.isShown)) { account in
+                        let nick = store.nickname(account)
+                        Text(verbatim: "\(account.provider.shortName) · \(nick.isEmpty ? store.details(account) : nick)")
+                            .tag(account.id)
+                    }
+                }
             } footer: {
                 Footnote(L("Örnek: haftalık limitin %94'ü kullanıldıysa \"%6 kaldı\" ya da \"%94\" yazar. Çubuk da aynısını gösterir; kalanı seçersen harcadıkça kısalır.",
                            "Example: with 94% of the weekly limit used it reads \"6% left\" or \"94%\". The bar shows the same; with what's left it shrinks as you use it."))
@@ -1588,9 +1597,9 @@ private struct AILimitsPage: View {
         }
         .formStyle(.grouped)
         // A sign-in finished in Terminal shows up as soon as you come back.
-        .onAppear { store.refreshIfNeeded() }
+        .onAppear { store.refreshIfNeeded(rediscover: true) }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            store.refreshIfNeeded()
+            store.refreshIfNeeded(rediscover: true)
         }
         .onChange(of: [claude, codex, gemini, grok]) { store.refreshIfNeeded() }
     }

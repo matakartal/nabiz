@@ -146,7 +146,7 @@ final class Monitor {
         busySince = snapshot.cpu > 0.9 ? (busySince ?? Date()) : nil
         tightSince = snapshot.pressure != .normal ? (tightSince ?? Date()) : nil
         UsageHistory.shared.record(cpu: snapshot.cpu, memory: snapshot.memoryFraction, gpu: snapshot.gpu,
-                                   ai: AILimitsStore.shared.statuses.first(where: { !$0.limits.isEmpty })?.headline?.used)
+                                   ai: AILimitsStore.shared.featured?.limit.used)
         // With the panel closed, the per-app scan (the heaviest part) runs every sixth tick: enough for suggestions.
         if panelVisible || groups.isEmpty || ticks % 6 == 0 {
             groups = await processSampler.sample()
@@ -604,6 +604,15 @@ enum Format {
         if days > 0 { return L("\(days) g \(hours) sa", "\(days)d \(hours)h") }
         if hours > 0 { return L("\(hours) sa \(mins) dk", "\(hours)h \(mins)m") }
         return L("\(mins) dk", "\(mins)m")
+    }
+
+    /// How long ago something was read: "az önce", "12 dk önce", "3 sa önce" / "just now", "12m ago", "3h ago".
+    static func ago(_ date: Date, now: Date = Date()) -> String {
+        let minutes = Int(now.timeIntervalSince(date) / 60)
+        if minutes < 1 { return L("az önce", "just now") }
+        if minutes < 60 { return L("\(minutes) dk önce", "\(minutes)m ago") }
+        if minutes < 48 * 60 { return L("\(minutes / 60) sa önce", "\(minutes / 60)h ago") }
+        return L("\(minutes / 1440) g önce", "\(minutes / 1440)d ago")
     }
 
     /// "1,2 MB/s", "40 KB/s".

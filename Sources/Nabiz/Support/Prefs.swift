@@ -34,6 +34,8 @@ enum Prefs {
     static let aiNicknames = "aiNicknames"
     static let aiHiddenAccounts = "aiHiddenAccounts"
     static let aiFolders = "aiFolders"
+    /// The account whose limit the menu bar and the closed AI header show; "" follows the tightest one.
+    static let aiBarAccount = "aiBarAccount"
 
     static let showSystem = "showSystem"
     static let showCPUApps = "showCPUApps"
@@ -232,7 +234,7 @@ enum Prefs {
             menuBarHider: false, menuBarHiderDelay: 10, showApps: true, showCurrency: true, showWeather: true, barWeather: false, weatherUnit: "system", weatherDetails: false, "expanded.weather": false, showTools: true, showAI: true,
             "ai.claude": false, "ai.codex": false, "ai.gemini": false, "ai.grok": false,
             memoryAppCount: 5, cpuAppCount: 3,
-            baseCurrency: "TRY", watchedCurrencies: "USD,EUR,GBP",
+            baseCurrency: "TRY", watchedCurrencies: "USD,EUR,GBP", aiBarAccount: AIFeatured.tightest,
             clipboardHotkey: true, clipboardEnabled: true, clipboardSave: true, clipboardLimit: 200, clipboardDays: 30,
             clipboardExcluded: "", autoPaste: true, launcherApps: true, launcherClipboard: true, launcherShortcuts: true, launcherFiles: true, windowHotkeys: false,
             noteOnTop: true, noteHotkey: true, notesApp: "nabiz",
