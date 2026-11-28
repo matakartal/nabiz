@@ -87,6 +87,10 @@ final class Monitor {
     /// Dev servers listening on local ports, refreshed while the panel is open.
     private(set) var devServers: [DevServer] = []
     private(set) var network: NetworkRate?
+    /// What the Mac is online through and its address; read while the panel is open.
+    private(set) var networkLink: NetworkLink?
+    /// Disk read and write speed in bytes per second; read while the panel is open.
+    private(set) var diskIO: (read: Double, write: Double)?
     private(set) var battery: BatteryState?
     private(set) var batteryHealth: BatteryHealth?
     private(set) var security: [SecurityCheck] = []
@@ -113,6 +117,7 @@ final class Monitor {
     @ObservationIgnored private let systemSampler = SystemSampler()
     @ObservationIgnored private let processSampler = ProcessSampler()
     @ObservationIgnored private let networkSampler = NetworkSampler()
+    @ObservationIgnored private let diskSampler = DiskIOSampler()
     @ObservationIgnored private var loop: Task<Void, Never>?
     @ObservationIgnored private var ticks = 0
     /// Called after every sample, so the native menu can refresh its items.
@@ -152,6 +157,11 @@ final class Monitor {
             groups = await processSampler.sample()
         }
         network = await networkSampler.sample()
+        if panelVisible {
+            diskIO = await diskSampler.sample()
+            let link = await Task.detached(priority: .utility) { NetworkLink.current() }.value
+            if link != networkLink { networkLink = link }
+        }
         battery = Battery.read()
         if panelVisible || batteryHealth == nil || ticks % 60 == 0 {
             batteryHealth = battery == nil ? nil : BatteryHealthReader.read()

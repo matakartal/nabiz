@@ -234,19 +234,30 @@ private struct StatusSection: View {
                       color: system.swapTotal > 0 && system.swapFraction > 0.6 ? Theme.warning.mark : Theme.textMuted)
             }
             if let free = system.diskFree {
-                PanelRow(icon: .symbol("internaldrive"), title: L("Disk", "Disk"), action: { monitor.perform(.openStorage) }) { hovering in
+                PanelRow(icon: .symbol("internaldrive"), title: L("Disk", "Disk"), subtitle: diskActivity,
+                         action: { monitor.perform(.openStorage) }) { hovering in
                     if hovering { Value(Fix.openStorage.title, color: Palette.green.mark) } else { Value(L("\(Format.bytes(free)) boş", "\(Format.bytes(free)) free"),
                           color: free < 10 << 30 ? Theme.warning.mark : Theme.textMuted) }
                 }
+                .help(monitor.diskIO.map { L("Okuma \(Format.rate($0.read)) · yazma \(Format.rate($0.write))",
+                                             "Reading \(Format.rate($0.read)) · writing \(Format.rate($0.write))") } ?? "")
             }
             if let network = monitor.network {
-                PanelRow(icon: .symbol("wifi"), title: L("Ağ", "Network"),
-                         action: nil) { _ in
-                    TwoColumns("↓ " + Format.rate(network.down), "↑ " + Format.rate(network.up))
+                let link = monitor.networkLink
+                let settings = Fix.openSettings(URL(string: "x-apple.systempreferences:com.apple.Network-Settings.extension"))
+                PanelRow(icon: .symbol(link?.isWiFi ?? true ? "wifi" : "cable.connector"), title: L("Ağ", "Network"),
+                         subtitle: link.map { "\($0.kind) · \($0.address)" } ?? L("bağlı değil", "offline"),
+                         action: { monitor.perform(settings) }) { hovering in
+                    if hovering {
+                        Value(settings.title, color: Palette.green.mark)
+                    } else {
+                        TwoColumns("↓ " + Format.rate(network.down), "↑ " + Format.rate(network.up))
+                    }
                 }
             }
             if let battery = monitor.battery {
                 PanelRow(icon: .symbol(battery.charging ? "battery.100.bolt" : "battery.75"), title: L("Pil", "Battery"),
+                         subtitle: battery.minutesToFull.map { L("\(Format.duration(TimeInterval($0 * 60))) sonra dolu", "full in \(Format.duration(TimeInterval($0 * 60)))") },
                          action: nil) { _ in
                     TwoColumns(batteryDetail(battery), Format.percent(Double(battery.percent) / 100),
                                color: !battery.plugged && battery.percent <= 15 ? Theme.warning.mark : Theme.textMuted)
@@ -277,6 +288,12 @@ private struct StatusSection: View {
                 .help(monitor.security.map { ($0.on ? "✓ " : "✗ ") + $0.title }.joined(separator: "\n"))
             }
         }
+    }
+
+    /// "read 40 MB/s · write 2 MB/s" while the disk is busy; nothing when it is quiet.
+    private var diskActivity: String? {
+        guard let io = monitor.diskIO, io.read + io.write >= 1_048_576 else { return nil }
+        return L("okuma \(Format.rate(io.read)) · yazma \(Format.rate(io.write))", "read \(Format.rate(io.read)) · write \(Format.rate(io.write))")
     }
 
     private func thermalLabel(_ state: Int) -> String {
