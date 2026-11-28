@@ -47,6 +47,31 @@ struct ClipItem: Codable, Identifiable, Equatable, Sendable {
     }
 }
 
+/// The kinds the clipboard list can be narrowed to.
+enum ClipFilter: CaseIterable, Sendable {
+    case all, text, links, images, files
+
+    var title: String {
+        switch self {
+        case .all: L("Tümü", "All")
+        case .text: L("Metin", "Text")
+        case .links: L("Bağlantılar", "Links")
+        case .images: L("Görseller", "Images")
+        case .files: L("Dosyalar", "Files")
+        }
+    }
+
+    func matches(_ item: ClipItem) -> Bool {
+        switch self {
+        case .all: true
+        case .text: item.kind == .text || item.kind == .color
+        case .links: item.kind == .link
+        case .images: item.kind == .image
+        case .files: item.kind == .files
+        }
+    }
+}
+
 /// Encrypts the clipboard history on disk (AES-GCM) with a key kept in the login Keychain, so a copy of the files
 /// alone reveals nothing. Only this Mac's user can read it back.
 enum ClipVault {

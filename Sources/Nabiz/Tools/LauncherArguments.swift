@@ -62,8 +62,13 @@ extension LauncherModel {
     }
 
     /// Tab: a quicklink or script with values to ask for takes the field; in a script, the next value.
-    /// Always handled in the main list, so Tab never moves the focus out of the field.
+    /// Always handled in the lists, so Tab never moves the focus out of the field.
     func tab() -> Bool {
+        // In the clipboard list, Tab steps through the kinds instead.
+        if mode == .clipboard {
+            nextClipFilter()
+            return true
+        }
         guard mode == .all else { return false }
         if let argument {
             if case .script = argument.target, !argument.isLast { advanceArgument() }

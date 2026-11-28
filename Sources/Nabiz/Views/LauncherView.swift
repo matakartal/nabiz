@@ -23,6 +23,8 @@ final class LauncherPanel {
         AppIndex.shared.refreshIfNeeded()
         Extensions.shared.refreshIfNeeded()
         AIEngines.shared.refreshIfNeeded()
+        // Accessibility may have been granted since the setting was turned on.
+        SnippetExpander.shared.update()
         if !isVisible {
             // An answer still being written keeps going; it's in the chat history.
             model.ai = nil
@@ -142,8 +144,11 @@ final class LauncherPanel {
             return true
         }
         switch Int(keyCode) {
+        case 125 where command && flags.contains(.option): model.moveFavoriteSelected(1)
+        case 126 where command && flags.contains(.option): model.moveFavoriteSelected(-1)
         case 125: model.move(1)
         case 126: model.move(-1)
+        case 36, 76 where shift && !command && model.mode == .clipboard: model.pastePlainSelected()
         case 36, 76: command ? model.runSecondary() : model.runPrimary()
         case 48: return model.tab()
         case 51 where !command && model.argument != nil && model.text.isEmpty: model.leaveArgument(keepKeyword: true)
@@ -159,6 +164,10 @@ final class LauncherPanel {
         default:
             guard command else { return false }
             if key == "w" { close(); return true }
+            if model.mode == .clipboard, let number = key.flatMap(Int.init), (1...9).contains(number), !shift {
+                model.pasteClip(number: number)
+                return true
+            }
             return edit(key)
         }
         return true
@@ -250,6 +259,21 @@ struct LauncherView: View {
                 .foregroundStyle(Theme.text)
                 .focused($focus, equals: .search)
             if model.mode == .clipboard {
+                HStack(spacing: Theme.Spacing.xs) {
+                    ForEach(ClipFilter.allCases, id: \.self) { filter in
+                        Button { model.nextClipFilter(to: filter) } label: {
+                            Text(verbatim: filter.title)
+                                .font(Theme.small)
+                                .foregroundStyle(model.clipFilter == filter ? Theme.text : Theme.textMuted)
+                                .padding(.horizontal, Theme.Spacing.s)
+                                .padding(.vertical, Theme.Spacing.xs)
+                                .background(model.clipFilter == filter ? Theme.track : .clear, in: Capsule())
+                                .contentShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .focusable(false)
+                    }
+                }
                 Text(verbatim: "\(clipboard.items.count)").font(Theme.small).monospacedDigit().foregroundStyle(Theme.textMuted)
             }
         }
@@ -343,7 +367,7 @@ struct LauncherView: View {
         VStack(spacing: Theme.Spacing.s) {
             Image(systemName: model.mode == .clipboard ? "doc.on.clipboard" : "magnifyingglass")
                 .font(Theme.title).foregroundStyle(Theme.textMuted)
-            Text(model.mode == .clipboard
+            Text(model.mode == .clipboard && clipboard.items.isEmpty
                  ? (Prefs.bool(Prefs.clipboardEnabled) ? L("Henüz kopyalanan bir şey yok.", "Nothing copied yet.")
                                                        : L("Pano geçmişi kapalı. Ayarlar → Pano'dan açabilirsin.", "Clipboard history is off. Turn it on in Settings → Clipboard."))
                  : model.text.trimmingCharacters(in: .whitespaces).hasPrefix("/") ? L("Dosya bulunamadı", "No files found")
@@ -585,6 +609,7 @@ private struct ClipPreview: View {
                     info(L("Kaynak", "From"), clip.app ?? "—")
                     info(L("Zaman", "Copied"), clip.date.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(Format.locale)))
                     if let text = clip.text { info(L("Karakter", "Characters"), "\(text.count)") }
+                    if clip.rtf != nil || clip.html != nil { info(L("Biçim", "Format"), L("Biçimli metin", "Formatted text")) }
                 }
                 .padding(Theme.Spacing.l)
             } else {
@@ -597,7 +622,7 @@ private struct ClipPreview: View {
     @ViewBuilder private func content(_ clip: ClipItem) -> some View {
         switch clip.kind {
         case .image:
-            if let data = ClipboardHistory.shared.imageData(clip), let image = NSImage(data: data) {
+            if let image = Thumbnails.preview(for: clip) {
                 Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
                     .clipShape(RoundedRectangle(cornerRadius: Theme.fieldRadius, style: .continuous))
             }
@@ -614,7 +639,7 @@ private struct ClipPreview: View {
                 }
             }
         case .text, .link:
-            Text(verbatim: clip.text ?? "").font(.system(.body, design: .monospaced)).foregroundStyle(Theme.text)
+            Text(verbatim: clip.text ?? "").font(Theme.code).foregroundStyle(Theme.text)
                 .textSelection(.enabled)
         }
     }
@@ -647,7 +672,27 @@ enum Thumbnails {
         return image
     }
 
-    static func clear() { cache.removeAll() }
+    /// The preview's picture, decoded once per item (up to 1600 px) instead of on every redraw; a few are kept.
+    private static var previews: [(id: UUID, image: NSImage)] = []
+
+    static func preview(for clip: ClipItem) -> NSImage? {
+        if let hit = previews.first(where: { $0.id == clip.id }) { return hit.image }
+        guard let data = ClipboardHistory.shared.imageData(clip),
+              let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let decoded = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                  kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: 1600,
+                  kCGImageSourceCreateThumbnailWithTransform: true,
+              ] as CFDictionary) else { return nil }
+        let image = NSImage(cgImage: decoded, size: NSSize(width: decoded.width, height: decoded.height))
+        previews.insert((clip.id, image), at: 0)
+        if previews.count > 4 { previews.removeLast() }
+        return image
+    }
+
+    static func clear() {
+        cache.removeAll()
+        previews.removeAll()
+    }
 }
 
 extension Color {

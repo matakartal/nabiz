@@ -105,6 +105,10 @@ final class LauncherModel {
     var queuedFollowUp: String?
     /// A quicklink or script waiting for its query or values (Tab, or Space after a keyword).
     var argument: LauncherArgument?
+    /// Which kind of copies the clipboard list shows.
+    var clipFilter: ClipFilter = .all
+    /// Bumped when favourites are reordered (they live in UserDefaults), so the list redraws.
+    var favoritesChanged = 0
     /// Text selected in the app in front when the launcher opened.
     var selectedText: String?
     /// The clipboard list was opened from the launcher, so Escape goes back to it instead of closing.
@@ -126,6 +130,7 @@ final class LauncherModel {
         lastPointer = NSEvent.mouseLocation
         paletteOpen = false
         argument = nil
+        clipFilter = .all
         self.mode = mode
         self.text = text
         clearSelection()
@@ -191,6 +196,7 @@ final class LauncherModel {
         if id.hasPrefix("bt:") {
             return BluetoothDevices.devices(for: "bluetooth").first { "bt:\($0.id)" == id }.map(bluetoothItem)
         }
+        if id.hasPrefix("pane:") { return SystemPane.all.first { "pane:\($0.id)" == id }.map(paneItem) }
         return commandItems().first { $0.id == id }
     }
 
@@ -229,15 +235,23 @@ final class LauncherModel {
     }
 
     func run(_ item: LauncherItem, _ action: @MainActor () -> Void) {
-        if item.remember { Recents.add(item.id) }
+        remember(item)
         action()
+    }
+
+    /// A picked app or command moves up in the recents, and up for what was typed to find it.
+    func remember(_ item: LauncherItem) {
+        guard item.remember else { return }
+        Recents.add(item.id)
+        let query = text.trimmingCharacters(in: .whitespaces)
+        if mode == .all, argument == nil, !query.isEmpty { QueryMemory.record(query, item.id) }
     }
 
     // MARK: Clipboard mode
 
     private func clipboardSections() -> [LauncherSection] {
         let query = text.trimmingCharacters(in: .whitespaces)
-        let history = ClipboardHistory.shared.items
+        let history = ClipboardHistory.shared.items.filter(clipFilter.matches)
         let matches = query.isEmpty ? history : history.filter { item in
             Fuzzy.contains(query, item.preview) || (item.app.map { Fuzzy.contains(query, $0) } ?? false)
         }
@@ -263,10 +277,31 @@ final class LauncherModel {
                      clip: clip, remember: false)
     }
 
-    private func paste(_ clip: ClipItem) {
-        ClipboardHistory.shared.copy(clip)
+    /// With its formatting by default; `plain` (⇧↩) drops it.
+    private func paste(_ clip: ClipItem, plain: Bool = false) {
+        ClipboardHistory.shared.copy(clip, plain: plain)
         close()
         if Paster.canPaste { Paster.paste() } else { Monitor.panelActions.flash(L("Kopyalandı", "Copied")) }
+    }
+
+    /// ⇧↩ in the clipboard list.
+    func pastePlainSelected() {
+        guard let clip = selected?.clip else { return }
+        paste(clip, plain: true)
+    }
+
+    /// ⌘1…⌘9: the nth row of the clipboard list as it is shown.
+    func pasteClip(number: Int) {
+        let clips = items.compactMap(\.clip)
+        guard clips.indices.contains(number - 1) else { return }
+        paste(clips[number - 1])
+    }
+
+    /// ⇥ in the clipboard list: the next kind to show.
+    func nextClipFilter(to chosen: ClipFilter? = nil) {
+        let all = ClipFilter.allCases
+        clipFilter = chosen ?? all[((all.firstIndex(of: clipFilter) ?? 0) + 1) % all.count]
+        clearSelection()
     }
 
     /// Pastes text where the cursor was and gives the user's clipboard back afterwards; without permission it is
@@ -346,12 +381,16 @@ final class LauncherModel {
 
         if query.isEmpty {
             let all = commands + apps + LauncherStore.shared.quicklinks.map { searchItem($0, "") } + ProjectStore.shared.projects.map(projectItem)
+                + SystemPane.all.map(paneItem)
+            _ = favoritesChanged
             let favorites = Favorites.ids.compactMap { id in all.first { $0.id == id } }
             sections.append(LauncherSection(id: "favorites", title: L("Favoriler", "Favourites"), items: favorites))
             if Prefs.bool(Prefs.aiAsk), let selectedText {
                 sections.append(LauncherSection(id: "selection", title: L("Seçili metin", "Selected text"), items: aiTaskItems(selectedText, source: "sel")))
             }
-            let recents = Recents.ids.compactMap { id in all.first { $0.id == id } }.filter { item in !favorites.contains { $0.id == item.id } }
+            // Twenty are remembered for ranking; the top eight show here.
+            let recents = Array(Recents.ids.compactMap { id in all.first { $0.id == id } }
+                .filter { item in !favorites.contains { $0.id == item.id } }.prefix(8))
             sections.append(LauncherSection(id: "recents", title: L("Son kullanılanlar", "Recent"), items: recents))
             if Prefs.bool(Prefs.clipboardEnabled) && Prefs.bool(Prefs.launcherClipboard) {
                 let clips = ClipboardHistory.shared.items.prefix(3).map(clipRow)
@@ -372,6 +411,12 @@ final class LauncherModel {
            let hit = (commands + apps).first(where: { $0.id == id }) ?? item(id: id) {
             aliased = hit.id
             sections.append(LauncherSection(id: "alias", title: L("Takma ad", "Alias"), items: [hit]))
+        }
+
+        // "note buy milk", "not süt al": saved as a note right away, without opening an empty one.
+        let note = Self.quickNote(query)
+        if let note {
+            sections.append(LauncherSection(id: "quicknote", title: L("Not", "Note"), items: [quickNoteItem(note)]))
         }
 
         // ":3000", "jwt eyJ…", "1732636800", "sha256 text": developer answers.
@@ -439,10 +484,13 @@ final class LauncherModel {
             sections.append(LauncherSection(id: "search", title: L("Ara", "Search"), items: [searchItem(link, words[1])]))
         }
 
+        // Used lately, starred, and picked before for these very letters: each lifts a match.
+        let recentIDs = Set(Recents.ids), favoriteIDs = Set(Favorites.ids), learned = QueryMemory.bonus(for: query)
         func ranked(_ items: [LauncherItem], keywords: (LauncherItem) -> String, limit: Int) -> [LauncherItem] {
             items.compactMap { item -> (Int, LauncherItem)? in
                 let best = [Fuzzy.score(query, item.title), Fuzzy.keyword(query, keywords(item))].compactMap { $0 }.max()
-                return best.map { ($0 + (Recents.ids.contains(item.id) ? 50 : 0) + (Favorites.ids.contains(item.id) ? 100 : 0), item) }
+                let lift = (recentIDs.contains(item.id) ? 50 : 0) + (favoriteIDs.contains(item.id) ? 100 : 0) + (learned[item.id] ?? 0)
+                return best.map { ($0 + lift, item) }
             }
             .sorted { $0.0 > $1.0 }
             .prefix(limit)
@@ -462,6 +510,10 @@ final class LauncherModel {
                                             if item.id.hasPrefix("cmd:port-") { return "port dev server sunucu durdur stop kill \(item.subtitle ?? "")" }
                                             return Self.keywords[item.id] ?? item.id.split(separator: ":").last.map(String.init) ?? ""
                                         }, limit: 8)))
+        sections.append(LauncherSection(id: "panes", title: L("Sistem Ayarları", "System Settings"),
+                                        items: ranked(SystemPane.all.map(paneItem), keywords: { item in
+                                            SystemPane.all.first { "pane:\($0.id)" == item.id }?.keywords ?? ""
+                                        }, limit: 4)))
 
         let notes = NoteStore.shared.sorted.filter { !$0.isEmpty && (Fuzzy.score(query, $0.title) != nil || Fuzzy.contains(query, $0.text)) }
         sections.append(LauncherSection(id: "notes", title: L("Notlar", "Notes"), items: notes.prefix(4).map(noteItem)))
@@ -492,7 +544,8 @@ final class LauncherModel {
         if Prefs.bool(Prefs.aiAsk) && query.count >= 3 && !secret {
             let ask = LauncherSection(id: "ai", title: "AI", items: [askItem(query)])
             let words = query.split(whereSeparator: \.isWhitespace).count
-            let question = query.hasSuffix("?") || words >= 4
+            // A note being typed stays first, however long it gets.
+            let question = note == nil && (query.hasSuffix("?") || words >= 4)
             if question || sections.allSatisfy({ $0.items.isEmpty }) { sections.insert(ask, at: 0) } else { sections.append(ask) }
         }
         // Nothing else fits: search the web for it.
@@ -672,11 +725,61 @@ final class LauncherModel {
                      remember: false)
     }
 
+    private func paneItem(_ pane: SystemPane) -> LauncherItem {
+        LauncherItem(id: "pane:\(pane.id)", icon: .symbol("gearshape"), title: pane.title,
+                     accessory: L("Sistem Ayarları", "System Settings"), primaryTitle: L("Aç", "Open"),
+                     primary: { [weak self] in
+                         self?.close()
+                         pane.open()
+                     })
+    }
+
+    /// "note buy milk" / "not süt al" → "buy milk"; the bare word stays the Notes command.
+    static func quickNote(_ query: String) -> String? {
+        let lower = query.lowercased()
+        guard let word = ["note ", "not "].first(where: { lower.hasPrefix($0) }) else { return nil }
+        let rest = query.dropFirst(word.count).trimmingCharacters(in: .whitespaces)
+        return rest.isEmpty ? nil : rest
+    }
+
+    private func quickNoteItem(_ body: String) -> LauncherItem {
+        let store = NoteStore.shared
+        let apple = Prefs.string(Prefs.notesApp) == "apple"
+        let last = apple ? nil : store.sorted.first { !$0.isEmpty }
+        var item = LauncherItem(id: "quicknote", icon: .symbol("note.text.badge.plus"), title: body,
+                                subtitle: L("yeni not", "new note"), accessory: L("Not", "Note"),
+                                primaryTitle: L("Not olarak kaydet", "Save as a note"),
+                                primary: { [weak self] in
+                                    self?.close()
+                                    if apple {
+                                        AppleNotes.create(body)
+                                    } else {
+                                        store.create(body)
+                                        store.saveNow()
+                                        Monitor.panelActions.flash(L("Not kaydedildi", "Note saved"))
+                                    }
+                                },
+                                remember: false)
+        if let last {
+            item.secondaryTitle = L("Son nota ekle: \(last.title)", "Add to \(last.title)")
+            item.secondary = { [weak self] in
+                self?.close()
+                store.update(last.id, text: last.text.hasSuffix("\n") ? last.text + body : last.text + "\n" + body)
+                store.saveNow()
+                Monitor.panelActions.flash(L("Nota eklendi", "Added to the note"))
+            }
+        }
+        return item
+    }
+
     private func snippetItem(_ snippet: Snippet) -> LauncherItem {
         LauncherItem(id: "snippet:\(snippet.id)", icon: .symbol("text.quote"), title: snippet.name,
                      subtitle: snippet.text.replacingOccurrences(of: "\n", with: " "), accessory: snippet.keyword,
                      primaryTitle: Paster.canPaste ? L("Yapıştır", "Paste") : L("Kopyala", "Copy"),
-                     primary: { [weak self] in self?.paste(text: snippet.expanded) },
+                     primary: { [weak self] in
+                         let (text, back) = snippet.expandedWithCursor
+                         self?.paste(text: text, cursorBack: back)
+                     },
                      secondaryTitle: L("Kopyala", "Copy"),
                      secondary: { [weak self] in
                          NSPasteboard.general.clearContents()
@@ -1027,20 +1130,120 @@ enum Favorites {
         if let index = list.firstIndex(of: id) { list.remove(at: index) } else { list.append(id) }
         UserDefaults.standard.set(list, forKey: key)
     }
+
+    /// ⌥⌘↑ / ⌥⌘↓: one place earlier or later in the list.
+    static func move(_ id: String, by offset: Int) {
+        var list = ids
+        guard let index = list.firstIndex(of: id) else { return }
+        let target = index + offset
+        guard list.indices.contains(target) else { return }
+        list.swapAt(index, target)
+        UserDefaults.standard.set(list, forKey: key)
+    }
 }
 
-/// The last apps and commands run from the launcher, newest first.
+/// How often and how lately something was picked; each pick counts half as much after `halfLife`.
+struct LauncherUse: Codable, Equatable {
+    var count: Double
+    var last: Date
+
+    func weight(now: Date, halfLife: TimeInterval) -> Double {
+        count * pow(0.5, max(now.timeIntervalSince(last), 0) / halfLife)
+    }
+
+    /// One more pick now, on top of what is left of the earlier ones.
+    func picked(now: Date, halfLife: TimeInterval) -> LauncherUse {
+        LauncherUse(count: weight(now: now, halfLife: halfLife) + 1, last: now)
+    }
+}
+
+/// The apps and commands run from the launcher, by frecency: often and lately first.
 @MainActor
 enum Recents {
-    private static let key = "launcherRecents"
+    private static let key = "launcherRecentUses"
+    /// Before: just the last six ids, newest first.
+    private static let legacyKey = "launcherRecents"
+    static let limit = 20
+    static let halfLife: TimeInterval = 7 * 86_400
 
-    static var ids: [String] { UserDefaults.standard.stringArray(forKey: key) ?? [] }
+    private static var cache: [String: LauncherUse]?
+
+    private static var uses: [String: LauncherUse] {
+        if let cache { return cache }
+        let defaults = UserDefaults.standard
+        var loaded = defaults.data(forKey: key).flatMap { try? JSONDecoder().decode([String: LauncherUse].self, from: $0) } ?? [:]
+        if loaded.isEmpty, let old = defaults.stringArray(forKey: legacyKey) {
+            for (index, id) in old.enumerated() { loaded[id] = LauncherUse(count: 1, last: Date().addingTimeInterval(-Double(index) * 60)) }
+        }
+        cache = loaded
+        return loaded
+    }
+
+    static var ids: [String] { ordered(uses, now: Date()) }
+
+    static func ordered(_ uses: [String: LauncherUse], now: Date) -> [String] {
+        uses.sorted { $0.value.weight(now: now, halfLife: halfLife) > $1.value.weight(now: now, halfLife: halfLife) }.map(\.key)
+    }
 
     static func add(_ id: String) {
-        var list = ids.filter { $0 != id }
-        list.insert(id, at: 0)
-        UserDefaults.standard.set(Array(list.prefix(6)), forKey: key)
+        let now = Date()
+        var list = uses
+        list[id] = list[id]?.picked(now: now, halfLife: halfLife) ?? LauncherUse(count: 1, last: now)
+        let kept = Set(ordered(list, now: now).prefix(limit))
+        list = list.filter { kept.contains($0.key) }
+        cache = list
+        UserDefaults.standard.set(try? JSONEncoder().encode(list), forKey: key)
     }
+}
+
+/// What was picked for what was typed ("s" → Slack), so the same letters find it first next time.
+struct PickMemory: Codable, Equatable {
+    static let halfLife: TimeInterval = 14 * 86_400
+    var picks: [String: [String: LauncherUse]] = [:]
+
+    private static func key(_ query: String) -> String { Fuzzy.fold(query.trimmingCharacters(in: .whitespaces)) }
+
+    mutating func record(_ query: String, _ id: String, now: Date = Date()) {
+        let key = Self.key(query)
+        guard !key.isEmpty, key.count <= 40 else { return }
+        var list = picks[key] ?? [:]
+        list[id] = list[id]?.picked(now: now, halfLife: Self.halfLife) ?? LauncherUse(count: 1, last: now)
+        // A few items per query, a few hundred queries: the least used go first.
+        if list.count > 5, let weakest = list.min(by: { $0.value.weight(now: now, halfLife: Self.halfLife) < $1.value.weight(now: now, halfLife: Self.halfLife) })?.key {
+            list[weakest] = nil
+        }
+        picks[key] = list
+        if picks.count > 300, let oldest = picks.min(by: { ($0.value.values.map(\.last).max() ?? .distantPast) < ($1.value.values.map(\.last).max() ?? .distantPast) })?.key {
+            picks[oldest] = nil
+        }
+    }
+
+    /// Extra ranking points per item id for this query: up to 400, fading as the picks age.
+    func bonus(for query: String, now: Date = Date()) -> [String: Int] {
+        (picks[Self.key(query)] ?? [:]).mapValues { min(400, Int(($0.weight(now: now, halfLife: Self.halfLife) * 150).rounded())) }
+    }
+}
+
+@MainActor
+enum QueryMemory {
+    private static let key = "launcherPicks"
+    private static var cache: PickMemory?
+
+    private static var memory: PickMemory {
+        if let cache { return cache }
+        let loaded = UserDefaults.standard.data(forKey: key).flatMap { try? JSONDecoder().decode(PickMemory.self, from: $0) } ?? PickMemory()
+        cache = loaded
+        return loaded
+    }
+
+    static func record(_ query: String, _ id: String) {
+        var memory = memory
+        memory.record(query, id)
+        cache = memory
+        UserDefaults.standard.set(try? JSONEncoder().encode(memory), forKey: key)
+    }
+
+    static func bonus(for query: String) -> [String: Int] { memory.bonus(for: query) }
 }
 
 /// Typo-tolerant matching for the launcher: exact > prefix > word prefix > initials > substring > letters in order.
@@ -1209,13 +1412,21 @@ extension LauncherModel {
         guard let action = chosen ?? (actions.isEmpty ? nil : actions[min(paletteSelection, actions.count - 1)]) else { return }
         paletteOpen = false
         guard let item = selected else { action.run(); return }
-        if item.remember && (action.id == "primary" || action.id == "secondary") { Recents.add(item.id) }
+        if action.id == "primary" || action.id == "secondary" { remember(item) }
         action.run()
     }
 
     func toggleFavoriteSelected() {
         guard let item = selected, item.remember else { return }
         Favorites.toggle(item.id)
+    }
+
+    /// ⌥⌘↑ / ⌥⌘↓ on a favourite: moves it in the list; the selection follows it.
+    func moveFavoriteSelected(_ offset: Int) {
+        guard let item = selected, Favorites.ids.contains(item.id) else { return }
+        Favorites.move(item.id, by: offset)
+        selectedID = item.id
+        favoritesChanged += 1
     }
 
     /// Everything that can be done with a row: its two main actions, then what fits its kind.
@@ -1461,6 +1672,16 @@ extension LauncherModel {
                                        symbol: starred ? "star.slash" : "star", shortcut: "⇧⌘F", group: L("Başlatıcı", "Launcher")) {
                 Favorites.toggle(item.id)
             })
+            if starred, let index = Favorites.ids.firstIndex(of: item.id) {
+                if index > 0 {
+                    list.append(LauncherAction(id: "favoriteUp", title: L("Favorilerde yukarı taşı", "Move up in favourites"), symbol: "arrow.up",
+                                               shortcut: "⌥⌘↑", group: L("Başlatıcı", "Launcher")) { [weak self] in self?.moveFavoriteSelected(-1) })
+                }
+                if index < Favorites.ids.count - 1 {
+                    list.append(LauncherAction(id: "favoriteDown", title: L("Favorilerde aşağı taşı", "Move down in favourites"), symbol: "arrow.down",
+                                               shortcut: "⌥⌘↓", group: L("Başlatıcı", "Launcher")) { [weak self] in self?.moveFavoriteSelected(1) })
+                }
+            }
         }
         return list
     }
