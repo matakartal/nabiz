@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.11.0
 
 - **Open source:** Nabız is now free software under the GPL v3. The name and icon stay with the author; forks use their
   own (see TRADEMARK.md).

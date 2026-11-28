@@ -5,7 +5,7 @@ import Foundation
 /// Change `id` whenever the list changes, so people who closed the old one see the new one.
 @MainActor
 enum WhatsNew {
-    static let id = "1.10-weather"
+    static let id = "1.11-review"
 
     struct Item: Identifiable {
         let id: String
@@ -23,29 +23,25 @@ enum WhatsNew {
 
     static var items: [Item] {
         [
-            Item(id: "weather", symbol: "cloud.sun", title: L("Hava durumu", "Weather"),
-                 detail: L("Şehrinde şu an, yağmur ve önümüzdeki günler; konum izni istemez.",
-                           "Now, rain on the way and the coming days for your city; no location permission."),
-                 keys: "") { SettingsWindow.show(.weather) },
-            Item(id: "web", symbol: "globe", title: L("AI sohbette web araması", "Web search in AI chat"),
-                 detail: L("Claude, Codex ve Grok güncel bilgiyi kaynağıyla bulur.", "Claude, Codex and Grok find current facts, with sources."),
-                 keys: Prefs.bool(Prefs.aiChatHotkey) ? HotKey.label(.aiChat) : "") { AIChatWindow.show() },
-            Item(id: "dock", symbol: "dock.rectangle", title: L("Dock'ta göster", "Show in Dock"),
-                 detail: L("İstersen Nabız Dock'ta ve ⌘⇥'de de durur.", "Optionally, Nabız sits in the Dock and ⌘⇥ too."),
-                 keys: "") { SettingsWindow.show(.general) },
-            Item(id: "ai-chat", symbol: "sparkles", title: L("AI sohbet", "AI chat"),
-                 detail: L("Claude, Codex, Gemini, Grok ya da Apple'ın ücretsiz modeliyle, kendi aboneliklerinle.",
-                           "Claude, Codex, Gemini, Grok or Apple's free model, on your own subscriptions."),
-                 keys: Prefs.bool(Prefs.aiChatHotkey) ? HotKey.label(.aiChat) : "") { AIChatWindow.show() },
-            Item(id: "shot", symbol: "camera.viewfinder", title: L("Ekran görüntüsü ve düzenleme", "Screenshots with markup"),
-                 detail: L("Ok, kutu, yazı, numara, bulanıklaştırma ve çerçeve.", "Arrows, boxes, text, steps, blur and a frame."),
-                 keys: Prefs.bool(Prefs.shotHotkey) ? HotKey.label(.screenshot) : "") { Capture.run(.area) },
-            Item(id: "dictation", symbol: "mic", title: L("Dikte", "Dictation"),
-                 detail: L("Konuş, imlecin olduğu yere yazılsın.", "Speak, and it's typed where the cursor is."),
-                 keys: "") { SettingsWindow.show(.ai) },
-            Item(id: "calendar", symbol: "calendar", title: L("Takvim", "Calendar"),
-                 detail: L("Bugünkü toplantılar panelde, tek tıkla katıl.", "Today's meetings in the panel, one click to join."),
-                 keys: "") { SettingsWindow.show(.calendar) },
+            Item(id: "accounts", symbol: "person.2", title: L("Birden çok AI hesabı", "Several AI accounts"),
+                 detail: L("Her hesap kendi limitiyle; menü çubuğu en az kalanı gösterir.",
+                           "Each account with its own limits; the menu bar shows the one with least left."),
+                 keys: "") { SettingsWindow.show(.aiLimits) },
+            Item(id: "snippets", symbol: "text.insert", title: L("Her uygulamada parçacık", "Snippets in any app"),
+                 detail: L("; ve kısa adı yaz, metin açılsın. Ayarlardan aç.", "Type ; and a keyword to expand it. Turn it on in Settings."),
+                 keys: "") { SettingsWindow.show(.snippets) },
+            Item(id: "chat", symbol: "sparkles", title: L("AI sohbette talimatlar ve sürümler", "Instructions and versions in AI chat"),
+                 detail: L("Kendi talimatların, klasör talimatları; yeniden yazınca eski cevap ‹ 1/2 › kalır.",
+                           "Your own and per-folder instructions; writing again keeps the old answer as ‹ 1/2 ›."),
+                 keys: "") { SettingsWindow.show(.aiChat) },
+            Item(id: "launcher", symbol: "magnifyingglass", title: L("Daha akıllı başlatıcı", "A smarter launcher"),
+                 detail: L("gh ⇥ ile ara, seçtiklerini öğrenir, Sistem Ayarları sayfalarını bulur, \"not …\" not kaydeder.",
+                           "gh ⇥ to search, learns what you pick, finds System Settings pages, \"note …\" saves a note."),
+                 keys: "") { SettingsWindow.show(.launcher) },
+            Item(id: "recordings", symbol: "film.stack", title: L("Kayıt listesi", "Your recordings"),
+                 detail: L("Eski kayıtlar boyutlarıyla; eski olanları tek seferde temizle.",
+                           "Past recordings with their sizes; clear out old ones at once."),
+                 keys: "") { SettingsWindow.show(.screenshot) },
         ]
     }
 }
