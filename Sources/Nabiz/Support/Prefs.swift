@@ -30,6 +30,10 @@ enum Prefs {
     static let barStyle = "barStyle"
     /// AI limits show what is left ("6% left") instead of what is used ("94%").
     static let aiRemaining = "aiRemaining"
+    /// AI accounts: nicknames by account ("Work", "Personal"), the ones turned off, and CLI folders added by hand.
+    static let aiNicknames = "aiNicknames"
+    static let aiHiddenAccounts = "aiHiddenAccounts"
+    static let aiFolders = "aiFolders"
 
     static let showSystem = "showSystem"
     static let showCPUApps = "showCPUApps"

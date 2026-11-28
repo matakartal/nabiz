@@ -989,11 +989,23 @@ private struct AISection: View {
                 actions.close()
                 SettingsWindow.show(.aiLimits)
             }) { _ in EmptyView() }
-        } else if store.statuses.isEmpty {
+        } else if !store.hasRead {
             PanelRow(icon: .symbol("sparkles"), title: L("Okunuyor…", "Reading…")) { _ in ProgressView().controlSize(.mini) }
         } else {
+            // One block per account; a second account of the same provider carries its nickname (or e-mail).
             ForEach(store.statuses) { status in
-                PanelRow(icon: icon(status.provider), title: status.provider.name) { _ in Value(status.plan ?? "") }
+                PanelRow(icon: icon(status.provider), title: status.provider.name, subtitle: store.label(status),
+                         hoverable: status.needsSignIn) { hovering in
+                    if hovering {
+                        InlineButton(L("Giriş yap…", "Sign in…")) {
+                            actions.close()
+                            store.signIn(status.account)
+                        }
+                    } else {
+                        Value(status.plan ?? "")
+                    }
+                }
+                .help(store.details(status.account, email: status.email))
                 if let problem = status.problem {
                     Text(verbatim: problem).font(Theme.small).foregroundStyle(Theme.textMuted).lineLimit(1)
                         .padding(.leading, Theme.menuTextInset)

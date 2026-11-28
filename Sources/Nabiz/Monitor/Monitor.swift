@@ -306,7 +306,7 @@ final class Monitor {
         }
 
         if let burn = AILimitsStore.shared.burning.first, let runway = burn.limit.pace?.runway {
-            let name = "\(burn.provider.shortName) · \(burn.limit.label)"
+            let name = "\(AILimitsStore.shared.title(burn.status)) · \(burn.limit.label)"
             list.append(Advice(.aiBurn, title: L("\(name) hızlı bitiyor", "\(name) is burning fast"),
                                detail: L("Bu hızla \(Format.duration(runway)) sonra biter, sıfırlanmadan önce.",
                                          "At this speed it runs out in \(Format.duration(runway)), before it resets."),

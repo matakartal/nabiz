@@ -82,13 +82,13 @@ final class Notifier {
                 if pace.status == .behind, let runway = pace.runway,
                    AIAlertLog.shouldSend("burn", limit: limit.id, resetsAt: limit.resetsAt) {
                     send(id: "burn-\(limit.id)",
-                         title: L("\(status.provider.shortName) hızlı bitiyor", "\(status.provider.shortName) is burning fast"),
+                         title: L("\(AILimitsStore.shared.title(status)) hızlı bitiyor", "\(AILimitsStore.shared.title(status)) is burning fast"),
                          body: L("\(limit.label): bu hızla \(Format.duration(runway)) sonra biter, sıfırlanmadan önce.",
                                  "\(limit.label): at this speed it runs out in \(Format.duration(runway)), before it resets."))
                 }
                 if pace.unusedNearReset, AIAlertLog.shouldSend("unused", limit: limit.id, resetsAt: limit.resetsAt) {
                     send(id: "unused-\(limit.id)",
-                         title: L("\(status.provider.shortName): kullan ya da kaybet", "\(status.provider.shortName): use it or lose it"),
+                         title: L("\(AILimitsStore.shared.title(status)): kullan ya da kaybet", "\(AILimitsStore.shared.title(status)): use it or lose it"),
                          body: L("\(limit.label) limitinin \(Format.percent(limit.remaining))'i duruyor ve bir günden az sonra sıfırlanıyor.",
                                  "\(Format.percent(limit.remaining)) of \(limit.label) is left and it resets in under a day."))
                 }
@@ -100,7 +100,7 @@ final class Notifier {
     private func almostUsed(_ status: AIStatus, _ limit: AILimit) {
         guard limit.remaining < 0.1, AIAlertLog.shouldSend("low", limit: limit.id, resetsAt: limit.resetsAt) else { return }
         let reset = limit.resetsAt.map { L(" \(Format.countdown(until: $0)) sonra sıfırlanır.", " Resets in \(Format.countdown(until: $0)).") } ?? ""
-        send(id: "low-\(limit.id)", title: L("\(status.provider.shortName) limiti bitmek üzere", "\(status.provider.shortName) limit almost used"),
+        send(id: "low-\(limit.id)", title: L("\(AILimitsStore.shared.title(status)) limiti bitmek üzere", "\(AILimitsStore.shared.title(status)) limit almost used"),
              body: L("\(limit.label): \(Format.percent(limit.remaining)) kaldı.", "\(limit.label): \(Format.percent(limit.remaining)) left.") + reset)
     }
 

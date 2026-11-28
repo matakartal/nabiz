@@ -550,6 +550,37 @@ final class StatusPanel {
 @MainActor
 enum Snapshot {
     static var shotDoc: ShotDocument?
+
+    private static func showAIDemo() {
+        var arguments = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
+        arguments["ai.claude"] = true
+        arguments["ai.codex"] = true
+        UserDefaults.standard.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
+        func limit(_ id: String, _ label: String, used: Double, hours: Double, period: Double, primary: Bool = false) -> AILimit {
+            AILimit(id: id, label: label, used: used, resetsAt: Date().addingTimeInterval(hours * 3600), primary: primary,
+                    period: period * 3600)
+        }
+        var personal = AIAccount(provider: .claude)
+        personal.email = "ata@example.com"
+        var work = AIAccount(provider: .claude, folder: NSHomeDirectory() + "/.claude-is")
+        work.identity = "demo-work"
+        work.email = "ata@work.example"
+        var codex = AIAccount(provider: .codex)
+        codex.email = "ata@example.com"
+        var first = AIStatus(account: personal)
+        first.plan = "Max 20x"
+        first.limits = [limit("a5", L("5 saat", "5-hour"), used: 0.22, hours: 2, period: 5),
+                        limit("aw", L("Haftalık", "Weekly"), used: 0.41, hours: 70, period: 168, primary: true)]
+        var second = AIStatus(account: work)
+        second.plan = "Pro"
+        second.limits = [limit("b5", L("5 saat", "5-hour"), used: 0.64, hours: 3, period: 5),
+                         limit("bw", L("Haftalık", "Weekly"), used: 0.18, hours: 120, period: 168, primary: true)]
+        var third = AIStatus(account: codex)
+        third.plan = "Plus"
+        third.limits = [limit("c5", L("5 saat", "5-hour"), used: 0.05, hours: 4, period: 5),
+                        limit("cw", L("Haftalık", "Weekly"), used: 0.3, hours: 90, period: 168, primary: true)]
+        AILimitsStore.shared.showDemo([first, second, third], nicknames: [work.id: "İş"])
+    }
     /// `--clear`: windows and panels drawn without their material or fill (for README pictures over a wallpaper).
     nonisolated(unsafe) static var clear = false
     static func render(to path: String, dark: Bool, settings: Bool) async -> Bool {
@@ -572,6 +603,8 @@ enum Snapshot {
         func value(after flag: String) -> String? {
             args.firstIndex(of: flag).flatMap { args.indices.contains($0 + 1) ? args[$0 + 1] : nil }
         }
+        // `--ai-demo`: made-up AI accounts (two Claude, one with a nickname, and Codex) instead of the real ones.
+        if args.contains("--ai-demo") { showAIDemo() }
         // `--page markets` opens that Settings page; it loads the market catalog first.
         let page = value(after: "--page").flatMap(SettingsPage.init(rawValue:))
         if page == .developer {

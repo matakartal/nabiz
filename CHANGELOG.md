@@ -6,6 +6,10 @@
   own (see TRADEMARK.md).
 - **Weather:** the menu bar temperature now has the sky's symbol next to it, and the panel can show a humidity and
   wind row (Settings → Weather).
+- **Two accounts of one AI:** a second Claude, ChatGPT or Gemini account gets its own block in the panel with its
+  nickname (or e-mail) next to the name. Add one in Settings → AI Limits → Accounts (give it a nickname, sign in in
+  the Terminal that opens), or Nabız finds it in `~/.claude-*`, `~/.codex-*` and `~/.gemini-*` folders. An account
+  signed in twice is shown once; each can be turned off, and an expired sign-in has a one-tap "Sign in…".
 
 ## 1.10.0
 

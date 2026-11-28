@@ -1505,6 +1505,9 @@ private struct AILimitsPage: View {
     @AppStorage("ai.codex") private var codex = false
     @AppStorage("ai.gemini") private var gemini = false
     @AppStorage(Prefs.aiRemaining) private var remaining = true
+    @State private var adding: AIProvider?
+    @State private var newNickname = ""
+    @State private var folderMessage = ""
     private let store = AILimitsStore.shared
 
     var body: some View {
@@ -1522,6 +1525,39 @@ private struct AILimitsPage: View {
             } footer: {
                 Footnote(L("Nabız, resmi CLI'lerin bu Mac'te zaten tuttuğu oturumu okur ve yalnızca o sağlayıcının kendi sunucusuna sorar. Oturum bilgisi saklanmaz, yenilenmez ve başka bir yere gönderilmez. macOS ilk okumada izin isteyebilir.",
                        "Nabız reads the sign-in the official CLIs already keep on this Mac and asks only that provider's own server. The sign-in is never stored, refreshed or sent anywhere else. macOS may ask for permission the first time."))
+            }
+            SettingsSection("aiLimits.accounts") {
+                ForEach(store.accounts) { AIAccountRow(account: $0) }
+                HStack(spacing: Theme.Spacing.m) {
+                    Menu(L("Hesap ekle", "Add an account")) {
+                        ForEach(AIProvider.allCases) { provider in
+                            Button(provider.name) {
+                                newNickname = ""
+                                adding = provider
+                            }
+                        }
+                    }
+                    .fixedSize()
+                    Button(L("Klasör ekle…", "Add a folder…")) { pickFolder() }
+                    if !folderMessage.isEmpty {
+                        Text(verbatim: folderMessage).font(Theme.small).foregroundStyle(Theme.textMuted)
+                    }
+                }
+            } header: {
+                Text(L("Hesaplar", "Accounts"))
+            } footer: {
+                Footnote(L("Aynı sağlayıcıdan ikinci bir hesap için Hesap ekle'yi seç, takma ad ver ve açılan Terminal'de o hesapla giriş yap; varsayılan oturumun olduğu gibi kalır. Nabız ~/.claude-*, ~/.codex-* ve ~/.gemini-* klasörlerindeki oturumları kendisi bulur, iki yerde açık aynı hesabı bir kez gösterir. Takma ad yoksa panelde e-posta görünür.",
+                           "For a second account of the same provider, choose Add an account, give it a nickname and sign in with that account in the Terminal that opens; your default sign-in stays as it is. Nabız finds the sign-ins in ~/.claude-*, ~/.codex-* and ~/.gemini-* folders by itself and shows an account signed in twice only once. Without a nickname the panel shows the e-mail."))
+            }
+            .alert(L("\(adding?.shortName ?? "") hesabı ekle", "Add a \(adding?.shortName ?? "") account"), isPresented: addingShown) {
+                TextField(L("Takma ad (ör. İş)", "Nickname (e.g. Work)"), text: $newNickname)
+                Button(L("Terminal'de giriş yap", "Sign in in Terminal")) {
+                    if let adding { store.addAccount(adding, nickname: newNickname) }
+                }
+                Button(L("Vazgeç", "Cancel"), role: .cancel) {}
+            } message: {
+                Text(L("Terminal açılır, giriş tarayıcıda yapılır. Bitince hesap burada ve panelde görünür.",
+                       "Terminal opens and you sign in in the browser. Then the account shows up here and in the panel."))
             }
             SettingsSection("aiLimits.display") {
                 Picker(L("Göster", "Show"), selection: $remaining) {
@@ -1549,6 +1585,30 @@ private struct AILimitsPage: View {
             }
         }
         .formStyle(.grouped)
+        // A sign-in finished in Terminal shows up as soon as you come back.
+        .onAppear { store.refreshIfNeeded() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            store.refreshIfNeeded()
+        }
+        .onChange(of: [claude, codex, gemini]) { store.refreshIfNeeded() }
+    }
+
+    private var addingShown: Binding<Bool> {
+        Binding(get: { adding != nil }, set: { if !$0 { adding = nil } })
+    }
+
+    private func pickFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.showsHiddenFiles = true
+        panel.directoryURL = URL(fileURLWithPath: NSHomeDirectory())
+        panel.message = L("CLI'nin klasörünü seç (CLAUDE_CONFIG_DIR, CODEX_HOME ya da GEMINI_CLI_HOME).",
+                          "Choose the CLI's folder (CLAUDE_CONFIG_DIR, CODEX_HOME or GEMINI_CLI_HOME).")
+        NSApp.activate()
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        folderMessage = store.addFolder(url.path).map { L("\($0.shortName) hesabı eklendi", "\($0.shortName) account added") }
+            ?? L("Bu klasörde oturum yok", "No sign-in in this folder")
     }
 
     private func binding(_ provider: AIProvider) -> Binding<Bool> {
@@ -1557,6 +1617,38 @@ private struct AILimitsPage: View {
         case .codex: $codex
         case .gemini: $gemini
         }
+    }
+}
+
+/// One account in Settings: who it is and where it lives, a nickname for the panel, and whether it is shown.
+private struct AIAccountRow: View {
+    let account: AIAccount
+    private let store = AILimitsStore.shared
+
+    var body: some View {
+        let status = store.statuses.first { $0.id == account.id }
+        LabeledContent {
+            HStack(spacing: Theme.Spacing.m) {
+                TextField(L("Takma ad", "Nickname"), text: nickname, prompt: Text(L("Takma ad", "Nickname")))
+                    .labelsHidden()
+                    .frame(width: 120)
+                Toggle(L("Göster", "Show"), isOn: shown).labelsHidden().toggleStyle(.switch)
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                Text(verbatim: [account.provider.name, status?.plan].compactMap { $0 }.joined(separator: " · "))
+                Text(verbatim: store.details(account, email: status?.email))
+                    .font(Theme.small).foregroundStyle(Theme.textMuted).lineLimit(1).truncationMode(.middle)
+            }
+        }
+    }
+
+    private var nickname: Binding<String> {
+        Binding(get: { store.nickname(account) }, set: { store.setNickname($0, for: account) })
+    }
+
+    private var shown: Binding<Bool> {
+        Binding(get: { store.isShown(account) }, set: { store.setShown($0, account) })
     }
 }
 

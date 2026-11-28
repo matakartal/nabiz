@@ -232,6 +232,8 @@ enum SettingsIndex {
         .init(.aiLimits, "aiLimits.providers", "Claude limitleri", "Claude limits", "anthropic abonelik subscription"),
         .init(.aiLimits, "aiLimits.providers", "Codex limitleri", "Codex limits", "openai chatgpt abonelik subscription"),
         .init(.aiLimits, "aiLimits.providers", "Gemini limitleri", "Gemini limits", "google abonelik subscription"),
+        .init(.aiLimits, "aiLimits.accounts", "Hesaplar ve takma adlar", "Accounts and nicknames",
+              "ikinci hesap second account nickname iş work kişisel personal ekle add klasör folder"),
         .init(.aiLimits, "aiLimits.display", "Kalanı ya da kullanılanı göster", "Show what's left or used", "yüzde percent"),
         .init(.aiLimits, "aiLimits.grok", "Grok", "Grok", "xai"),
         .init(.aiLimits, "aiLimits.refresh", "Limitleri şimdi yenile", "Refresh limits now", "güncelle update"),

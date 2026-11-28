@@ -5,7 +5,7 @@ import Security
 
 /// One usage window of an AI subscription: "5-hour 22%, resets in 2 h".
 struct AILimit: Identifiable, Sendable {
-    let id: String
+    var id: String
     let label: String
     /// 0...1
     let used: Double
@@ -75,27 +75,53 @@ enum AIProvider: String, CaseIterable, Identifiable, Sendable {
 }
 
 struct AIStatus: Identifiable, Sendable {
-    let provider: AIProvider
+    let account: AIAccount
     var plan: String?
     var limits: [AILimit] = []
     /// Shown instead of limits when they could not be read.
     var problem: String?
-    var id: String { provider.rawValue }
+    /// The problem is the sign-in itself (missing, expired, rejected): signing in again fixes it.
+    var needsSignIn = false
+    /// The e-mail, from the CLI's files or else from the provider.
+    var email: String?
+    /// Who the provider says this is; two folders signed in to the same account are shown once.
+    var identity: String?
+
+    init(account: AIAccount) {
+        self.account = account
+        email = account.email
+        identity = account.identity
+    }
+
+    var provider: AIProvider { account.provider }
+    var id: String { account.id }
 
     /// The limit to show when there is room for one: the main window, never a per-model one.
     var headline: AILimit? { limits.first(where: \.primary) ?? limits.first }
 }
 
-/// Reads subscription limits with the sign-ins the official CLIs already keep on this Mac.
+/// Reads subscription limits with the sign-ins the official CLIs already keep on this Mac, for every account found.
 /// Tokens never leave the Mac except to their own provider, are never stored by Nabız, and are never refreshed by it.
 @MainActor
 @Observable
 final class AILimitsStore {
     static let shared = AILimitsStore()
 
+    /// One per account shown, each provider's default account first.
     private(set) var statuses: [AIStatus] = []
+    /// Every account found for the providers that are on, hidden ones too (Settings lists them).
+    private(set) var accounts: [AIAccount] = []
     private(set) var loading = false
+    /// Nicknames by account id, and by "dir:<folder>" for an account added in Settings before it was signed in.
+    private(set) var nicknames = UserDefaults.standard.dictionary(forKey: Prefs.aiNicknames) as? [String: String] ?? [:]
+    /// Accounts the user turned off in Settings.
+    private(set) var hidden = Set(UserDefaults.standard.stringArray(forKey: Prefs.aiHiddenAccounts) ?? [])
     @ObservationIgnored private var fetchedAt: Date?
+    @ObservationIgnored private var fetchedFor: [String] = []
+    @ObservationIgnored private var looking = false
+    @ObservationIgnored private var again = false
+    /// Showing made-up accounts (`--snapshot … --ai-demo`): nothing is read.
+    @ObservationIgnored private var demo = false
 
     @ObservationIgnored private var history = PaceHistory()
 
@@ -112,62 +138,210 @@ final class AILimitsStore {
         return status
     }
 
-    /// Limits on pace to run out before they reset, with their provider.
-    var burning: [(provider: AIProvider, limit: AILimit)] {
+    /// Limits on pace to run out before they reset, with their account.
+    var burning: [(status: AIStatus, limit: AILimit)] {
         statuses.flatMap { status in
-            status.limits.filter { $0.pace?.status == .behind }.map { (status.provider, $0) }
+            status.limits.filter { $0.pace?.status == .behind }.map { (status, $0) }
         }
     }
 
     var enabled: [AIProvider] { AIProvider.allCases.filter { Prefs.bool($0.prefKey) } }
 
-    /// Fetches again when the last result is older than `maxAge` seconds (or the enabled providers changed).
+    /// True once the first reading is in (there may be nothing to show when every account is turned off).
+    var hasRead: Bool { fetchedAt != nil }
+
+    /// Folders the user added by hand, by provider.
+    var folders: [String: [String]] { UserDefaults.standard.dictionary(forKey: Prefs.aiFolders) as? [String: [String]] ?? [:] }
+
+    /// Looks for accounts, then fetches again when the last result is older than `maxAge` seconds or the accounts
+    /// changed (a new sign-in, a provider turned on or off).
     func refreshIfNeeded(force: Bool = false, maxAge: TimeInterval = 120) {
         let providers = enabled
-        guard !loading, !providers.isEmpty else {
-            if providers.isEmpty { statuses = [] }
+        guard !demo else { return }
+        guard !providers.isEmpty else {
+            statuses = []
+            accounts = []
+            fetchedFor = []
             return
         }
-        if !force, let fetchedAt, Date().timeIntervalSince(fetchedAt) < maxAge,
-           Set(statuses.map(\.provider)) == Set(providers) { return }
-        loading = true
-        Task {
-            var results: [AIStatus] = []
-            await withTaskGroup(of: AIStatus.self) { group in
-                for provider in providers {
-                    group.addTask { await AIFetch.status(for: provider) }
-                }
-                for await status in group { results.append(status) }
-            }
-            statuses = providers.compactMap { provider in results.first { $0.provider == provider } }.map(withPace)
-            fetchedAt = Date()
-            loading = false
+        guard !loading, !looking else {
+            if force { again = true }
+            return
         }
+        looking = true
+        let extra = folders
+        Task {
+            let found = await Task.detached(priority: .utility) { AIAccounts.discover(providers, extra: extra) }.value
+            looking = false
+            if found != accounts { accounts = found }
+            let wanted = found.filter { !hidden.contains($0.id) }
+            if !force, let fetchedAt, Date().timeIntervalSince(fetchedAt) < maxAge, wanted.map(\.id) == fetchedFor {
+                runAgainIfAsked()
+                return
+            }
+            await fetch(wanted)
+        }
+    }
+
+    private func fetch(_ wanted: [AIAccount]) async {
+        loading = true
+        var results: [AIStatus] = []
+        await withTaskGroup(of: AIStatus.self) { group in
+            for account in wanted {
+                group.addTask { await AIFetch.status(for: account) }
+            }
+            for await status in group { results.append(status) }
+        }
+        // The provider can tell that two folders are one account even when their files could not.
+        var seen = Set<String>()
+        statuses = wanted.compactMap { account in results.first { $0.id == account.id } }
+            .filter { status in status.identity.map { seen.insert("\(status.provider.rawValue):\($0)").inserted } ?? true }
+            .filter { !hidden.contains($0.id) }
+            .map(withPace)
+        fetchedFor = wanted.map(\.id)
+        fetchedAt = Date()
+        loading = false
+        runAgainIfAsked()
+    }
+
+    private func runAgainIfAsked() {
+        guard again else { return }
+        again = false
+        refreshIfNeeded(force: true)
+    }
+
+    // MARK: Accounts
+
+    /// The nickname as typed ("" when there is none).
+    func nickname(_ account: AIAccount) -> String {
+        nicknames[account.id] ?? account.folder.flatMap { nicknames["dir:" + $0] } ?? ""
+    }
+
+    func setNickname(_ name: String, for account: AIAccount) {
+        nicknames[account.id] = name.isEmpty ? nil : name
+        if let folder = account.folder { nicknames["dir:" + folder] = nil }
+        UserDefaults.standard.set(nicknames, forKey: Prefs.aiNicknames)
+    }
+
+    /// What tells an account apart in the panel: its nickname, or, when the provider has more than one account
+    /// showing, its team or e-mail (the folder when neither is known). nil for a provider's only account.
+    func label(_ status: AIStatus) -> String? {
+        let nick = nickname(status.account).trimmingCharacters(in: .whitespaces)
+        if !nick.isEmpty { return nick }
+        guard statuses.count(where: { $0.provider == status.provider }) > 1 else { return nil }
+        return status.account.team ?? status.email ?? status.account.folderName
+    }
+
+    /// "Claude · Work" for notifications and suggestions; just "Claude" for a provider's only account.
+    func title(_ status: AIStatus) -> String {
+        label(status).map { "\(status.provider.shortName) · \($0)" } ?? status.provider.shortName
+    }
+
+    /// E-mail, team and where the sign-in lives, for tooltips and Settings.
+    func details(_ account: AIAccount, email: String? = nil) -> String {
+        [email ?? account.email, account.team, account.folderName ?? L("varsayılan oturum", "default sign-in")]
+            .compactMap { $0 }.joined(separator: " · ")
+    }
+
+    func isShown(_ account: AIAccount) -> Bool { !hidden.contains(account.id) }
+
+    func setShown(_ shown: Bool, _ account: AIAccount) {
+        if shown { hidden.remove(account.id) } else { hidden.insert(account.id) }
+        UserDefaults.standard.set(hidden.sorted(), forKey: Prefs.aiHiddenAccounts)
+        statuses.removeAll { hidden.contains($0.id) }
+        fetchedFor.removeAll { hidden.contains($0) }
+        if shown { refreshIfNeeded(force: true) }
+    }
+
+    /// Opens Terminal with the provider's own sign-in for this account (its folder, if it has one).
+    func signIn(_ account: AIAccount) {
+        TerminalLauncher.open(NSHomeDirectory(), run: account.signInCommand,
+                              title: L("\(account.provider.shortName) girişi", "\(account.provider.shortName) sign-in"))
+    }
+
+    /// A second (third…) account: the CLI signs in with a folder of its own next to the default one
+    /// ("~/.claude-work"), so the default sign-in stays as it is. The account shows up once the sign-in is done.
+    func addAccount(_ provider: AIProvider, nickname: String) {
+        let name = nickname.trimmingCharacters(in: .whitespaces)
+        let slug = AIAccounts.slug(name)
+        let base = NSHomeDirectory() + "/" + provider.folderStem + "-" + (slug.isEmpty ? "2" : slug)
+        var folder = base
+        var number = 2
+        // A folder that already holds a sign-in belongs to another account; an empty one (a sign-in that was
+        // left halfway) is used again.
+        while AIAccounts.account(provider, folder: folder) != nil {
+            folder = base + "-\(number)"
+            number += 1
+        }
+        try? FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
+        if !name.isEmpty {
+            nicknames["dir:" + folder] = name
+            UserDefaults.standard.set(nicknames, forKey: Prefs.aiNicknames)
+        }
+        UserDefaults.standard.set(true, forKey: provider.prefKey)
+        signIn(AIAccount(provider: provider, folder: folder))
+    }
+
+    /// A CLI folder the user picked by hand. Returns its provider, or nil when no sign-in is there.
+    func addFolder(_ path: String) -> AIProvider? {
+        let path = URL(fileURLWithPath: path).standardizedFileURL.path
+        guard let provider = AIProvider.allCases.first(where: { AIAccounts.account($0, folder: path) != nil }) else { return nil }
+        var all = folders
+        if !(all[provider.rawValue] ?? []).contains(path) { all[provider.rawValue, default: []].append(path) }
+        UserDefaults.standard.set(all, forKey: Prefs.aiFolders)
+        UserDefaults.standard.set(true, forKey: provider.prefKey)
+        refreshIfNeeded(force: true)
+        return provider
+    }
+
+    /// Made-up accounts for `--snapshot` layout checks.
+    func showDemo(_ demo: [AIStatus], nicknames demoNicknames: [String: String]) {
+        self.demo = true
+        statuses = demo.map(withPace)
+        accounts = demo.map(\.account)
+        nicknames = demoNicknames
+        fetchedAt = Date()
     }
 }
 
 // MARK: - Fetching
 
 private enum AIFetch {
-    static func status(for provider: AIProvider) async -> AIStatus {
-        switch provider {
-        case .claude: await claude()
-        case .codex: await codex()
-        case .gemini: await gemini()
+    static func status(for account: AIAccount) async -> AIStatus {
+        var status = switch account.provider {
+        case .claude: await claude(account)
+        case .codex: await codex(account)
+        case .gemini: await gemini(account)
         }
+        // Every account keeps its own pace history; the default one keeps the ids it always had.
+        if !account.isDefault {
+            for index in status.limits.indices { status.limits[index].id = "\(account.id)|\(status.limits[index].id)" }
+        }
+        return status
+    }
+
+    /// Signing in again is the fix: the CLI's own place, or this account's folder.
+    private static func expired(_ status: inout AIStatus, tr: String, en: String) {
+        status.needsSignIn = true
+        status.problem = status.account.isDefault
+            ? L("Oturum süresi doldu, \(tr) bir kez aç", "Sign-in expired, open \(en) once")
+            : L("Oturum süresi doldu, bu hesapla yeniden giriş yap", "Sign-in expired, sign in with this account again")
     }
 
     // MARK: Claude
 
-    static func claude() async -> AIStatus {
-        var status = AIStatus(provider: .claude)
-        let credentials = claudeCredentials()
+    static func claude(_ account: AIAccount) async -> AIStatus {
+        var status = AIStatus(account: account)
+        let credentials = account.isDefault
+            ? claudeCredentials(service: "Claude Code-credentials", file: NSHomeDirectory() + "/.claude/.credentials.json")
+            : claudeCredentials(service: account.keychainService, file: account.file)
         guard let oauth = credentials.oauth, let token = oauth["accessToken"] as? String else {
             status.problem = credentials.error ?? L("Claude Code oturumu bulunamadı", "No Claude Code sign-in found")
+            status.needsSignIn = credentials.error == nil
             return status
         }
         if let expires = number(oauth["expiresAt"]), expires / 1000 < Date().timeIntervalSince1970 {
-            status.problem = L("Oturum süresi doldu, Claude Code'u bir kez aç", "Sign-in expired, open Claude Code once")
+            expired(&status, tr: "Claude Code'u", en: "Claude Code")
             return status
         }
         var request = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/usage")!, timeoutInterval: 10)
@@ -192,7 +366,7 @@ private enum AIFetch {
                                              resetsAt: date(limit["resets_at"]), primary: overall,
                                              period: group == "weekly" ? 7 * 86_400 : nil))
             }
-            status.plan = await claudePlan(token: token)
+            await claudeProfile(token: token, into: &status)
             return status
         }
 
@@ -205,18 +379,29 @@ private enum AIFetch {
                                          period: key == "five_hour" ? 5 * 3600 : key.hasPrefix("seven_day") ? 7 * 86_400 : nil))
         }
         if status.limits.isEmpty { status.problem = L("Limit bilgisi yok", "No limit data") }
-        status.plan = await claudePlan(token: token)
+        await claudeProfile(token: token, into: &status)
         return status
     }
 
-    /// The plan as Anthropic's server reports it now. The token's own "subscriptionType" can be out of date
-    /// (it is set when the CLI signs in), so it is never used; with no server answer the plan is simply not shown.
-    private static func claudePlan(token: String) async -> String? {
+    /// The plan as Anthropic's server reports it now, and who the account is. The token's own "subscriptionType"
+    /// can be out of date (it is set when the CLI signs in), so it is never used; with no server answer the plan is
+    /// simply not shown.
+    private static func claudeProfile(token: String, into status: inout AIStatus) async {
         var request = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/profile")!, timeoutInterval: 10)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
-        var ignored = AIStatus(provider: .claude)
-        guard let json = await load(request, into: &ignored) else { return nil }
+        var ignored = AIStatus(account: status.account)
+        guard let json = await load(request, into: &ignored) else { return }
+        let person = json["account"] as? [String: Any]
+        let organization = json["organization"] as? [String: Any]
+        if status.email == nil { status.email = person?["email_address"] as? String ?? person?["email"] as? String }
+        if status.identity == nil, let user = person?["uuid"] as? String {
+            status.identity = "\(user)/\(organization?["uuid"] as? String ?? "")"
+        }
+        status.plan = claudePlan(json)
+    }
+
+    private static func claudePlan(_ json: [String: Any]) -> String? {
         var words: [String] = []
         for scope in ["organization", "account"] {
             guard let dict = json[scope] as? [String: Any] else { continue }
@@ -239,9 +424,11 @@ private enum AIFetch {
     /// Claude Code keeps its sign-in in the login Keychain on macOS (and in ~/.claude/.credentials.json elsewhere).
     /// The Keychain read goes through the Security framework, so macOS shows its standard
     /// "Nabız wants to use your confidential information" prompt; choose Always Allow to keep it quiet.
-    private static func claudeCredentials() -> (oauth: [String: Any]?, error: String?) {
-        let service = "Claude Code-credentials"
+    private static func claudeCredentials(service: String?, file: String?) -> (oauth: [String: Any]?, error: String?) {
         var error: String?
+        guard let service else {
+            return (file.flatMap { oauth(from: FileManager.default.contents(atPath: $0)) }, nil)
+        }
         // There can be several items (old installs left one under account "unknown"). Try the newest first,
         // the one under this Mac user's name before any other.
         var listQuery: [String: Any] = [
@@ -279,9 +466,7 @@ private enum AIFetch {
                 error = L("Anahtar Zinciri: \(message)", "Keychain: \(message)")
             }
         }
-        if let oauth = oauth(from: FileManager.default.contents(atPath: NSHomeDirectory() + "/.claude/.credentials.json")) {
-            return (oauth, nil)
-        }
+        if let file, let oauth = oauth(from: FileManager.default.contents(atPath: file)) { return (oauth, nil) }
         return (nil, error)
     }
 
@@ -303,13 +488,14 @@ private enum AIFetch {
 
     // MARK: Codex / ChatGPT
 
-    static func codex() async -> AIStatus {
-        var status = AIStatus(provider: .codex)
-        guard let data = FileManager.default.contents(atPath: NSHomeDirectory() + "/.codex/auth.json"),
+    static func codex(_ account: AIAccount) async -> AIStatus {
+        var status = AIStatus(account: account)
+        guard let data = FileManager.default.contents(atPath: account.file ?? NSHomeDirectory() + "/.codex/auth.json"),
               let auth = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let tokens = auth["tokens"] as? [String: Any], let token = tokens["access_token"] as? String
         else {
             status.problem = L("Codex oturumu bulunamadı", "No Codex sign-in found")
+            status.needsSignIn = true
             return status
         }
         var request = URLRequest(url: URL(string: "https://chatgpt.com/backend-api/wham/usage")!, timeoutInterval: 10)
@@ -363,17 +549,18 @@ private enum AIFetch {
 
     // MARK: Gemini
 
-    static func gemini() async -> AIStatus {
-        var status = AIStatus(provider: .gemini)
-        guard let data = FileManager.default.contents(atPath: NSHomeDirectory() + "/.gemini/oauth_creds.json"),
+    static func gemini(_ account: AIAccount) async -> AIStatus {
+        var status = AIStatus(account: account)
+        guard let data = FileManager.default.contents(atPath: account.file ?? NSHomeDirectory() + "/.gemini/oauth_creds.json"),
               let creds = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let token = creds["access_token"] as? String
         else {
             status.problem = L("Gemini CLI oturumu bulunamadı", "No Gemini CLI sign-in found")
+            status.needsSignIn = true
             return status
         }
         if let expires = number(creds["expiry_date"]), expires / 1000 < Date().timeIntervalSince1970 {
-            status.problem = L("Oturum süresi doldu, Gemini CLI'yi bir kez aç", "Sign-in expired, open Gemini CLI once")
+            expired(&status, tr: "Gemini CLI'yi", en: "Gemini CLI")
             return status
         }
         let base = "https://cloudcode-pa.googleapis.com/v1internal:"
@@ -422,6 +609,7 @@ private enum AIFetch {
         }
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard code == 200 else {
+            status.needsSignIn = code == 401 || code == 403
             status.problem = code == 401 || code == 403
                 ? L("Oturum geçersiz, CLI'yi bir kez aç", "Sign-in rejected, open the CLI once")
                 : L("Okunamadı (HTTP \(code))", "Could not read (HTTP \(code))")
