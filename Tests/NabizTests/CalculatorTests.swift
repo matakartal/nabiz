@@ -151,3 +151,62 @@ struct ClockDateTests {
         #expect(DateMath.evaluate("12.5", now: now) == nil)
     }
 }
+
+@MainActor
+@Suite("Calculator precedence, dates and clocks")
+struct CalculatorFixTests {
+    init() {
+        Prefs.registerDefaults()
+        UserDefaults.standard.set("en", forKey: Prefs.language)
+    }
+
+    // 2026-06-01 12:00 UTC
+    private let now = Date(timeIntervalSince1970: 1_780_315_200)
+
+    @Test("Unary minus binds looser than a power", arguments: [
+        ("-2^2", "-4"), ("2^-2", "0.25"), ("(-2)^2", "4"), ("-2^2 + 10", "6"), ("3 * -2", "-6"), ("2^3^2", "512"),
+    ])
+    func precedence(input: String, expected: String) {
+        #expect(Calculator.evaluate(input)?.copy == expected)
+    }
+
+    @Test("Slashed dates follow the Mac's order and fall back when that order can't be a date")
+    func slashedDates() throws {
+        let saved = DateMath.monthFirst
+        defer { DateMath.monthFirst = saved }
+        DateMath.monthFirst = false
+        let flipped = try #require(DateMath.evaluate("12/25/2026", now: now)?.first)
+        #expect(flipped.text.contains("December 25, 2026"))
+        let dayFirst = try #require(DateMath.evaluate("05/06/2026", now: now)?.first)
+        #expect(dayFirst.text.contains("June 5, 2026"))
+        DateMath.monthFirst = true
+        let monthFirst = try #require(DateMath.evaluate("05/06/2026", now: now)?.first)
+        #expect(monthFirst.text.contains("May 6, 2026"))
+        let fallback = try #require(DateMath.evaluate("25/12/2026", now: now)?.first)
+        #expect(fallback.text.contains("December 25, 2026"))
+        // Dots are always day first.
+        let dotted = try #require(DateMath.evaluate("05.06.2026", now: now)?.first)
+        #expect(dotted.text.contains("June 5, 2026"))
+    }
+
+    @Test("Everyday words aren't clocks", arguments: ["christmas", "easter", "center", "wake", "troll", "what is easter"])
+    func plainWords(input: String) {
+        #expect(WorldClock.evaluate(input, now: now) == nil)
+    }
+
+    @Test("Ambiguous cities still answer when a time is asked for")
+    func cuedCities() {
+        #expect(WorldClock.evaluate("time in easter", now: now) != nil)
+        #expect(WorldClock.evaluate("saat darwin", now: now) != nil)
+        #expect(WorldClock.evaluate("15:00 istanbul to darwin", now: now) != nil)
+        #expect(WorldClock.evaluate("tokyo", now: now) != nil)
+        #expect(WorldClock.evaluate("paris", now: now) != nil)
+    }
+
+    @Test("Old rates name their day")
+    func rateDay() {
+        #expect(Calculator.rateDay("2026-05-29", now: now) != nil)
+        let today = now.formatted(.iso8601.year().month().day())
+        #expect(Calculator.rateDay(today, now: now) == nil)
+    }
+}

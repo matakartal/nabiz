@@ -172,7 +172,7 @@ struct LauncherView: View {
 
     var body: some View {
         // Reading these makes the list follow new rates, copies and file results while it is open.
-        let _ = (rates.table, clipboard.items.count, FileSearch.shared.results.count, FileSearch.shared.searching)
+        let _ = (rates.table, rates.failed, clipboard.items.count, FileSearch.shared.results.count, FileSearch.shared.searching)
         let sections = model.sections
         let items = sections.flatMap(\.items)
         let selectedID = items.isEmpty ? nil : items[min(model.selection, items.count - 1)].id
