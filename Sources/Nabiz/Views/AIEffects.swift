@@ -168,15 +168,10 @@ struct AIBrandMark: View {
                     .scaleEffect(time == nil ? 1 : 0.78 + 0.22 * (0.5 + 0.5 * sin(t * 5)))
             }
         case .grok:
-            // A ring cut by a slash, in Grok's black and white.
-            ZStack {
-                Circle().trim(from: 0.08, to: 0.62).stroke(brand.tint, style: StrokeStyle(lineWidth: size * 0.13, lineCap: .round))
-                    .rotationEffect(.degrees(-20))
-                Capsule().fill(brand.tint).frame(width: size * 0.13, height: size * 1.05).rotationEffect(.degrees(40))
-            }
-            .padding(size * 0.08)
-            .rotationEffect(.degrees(time == nil ? 0 : t * 90))
-            .scaleEffect(time == nil ? 1 : 0.9 + 0.1 * sin(t * 4))
+            // xAI's mark in Grok's black and white; it breathes while Grok writes.
+            XAIMark().fill(brand.tint)
+                .padding(size * 0.08)
+                .scaleEffect(time == nil ? 1 : 0.9 + 0.1 * sin(t * 4))
         case .gemini:
             Sparkle()
                 .fill(AngularGradient(colors: brand.colors + [brand.colors[0]], center: .center, angle: .degrees(t * 120)))
@@ -188,6 +183,28 @@ struct AIBrandMark: View {
                 .foregroundStyle(AngularGradient(colors: brand.colors + [brand.colors[0]], center: .center, angle: .degrees(t * 120)))
                 .scaleEffect(time == nil ? 1 : 0.94 + 0.06 * sin(t * 3))
         }
+    }
+}
+
+/// xAI's mark: a long stroke and a broken one crossing into a slanted "x", fitted to the frame and centred.
+struct XAIMark: Shape {
+    private static let polygons: [[CGPoint]] = [
+        [(557.09, 211.99), (565.4, 538.36), (631.96, 538.36), (640.28, 93.18)],
+        [(640.28, 56.91), (538.72, 56.91), (379.35, 284.53), (430.13, 357.05)],
+        [(201.61, 538.36), (303.17, 538.36), (353.96, 465.84), (303.17, 393.31)],
+        [(201.61, 211.99), (430.13, 538.36), (531.69, 538.36), (303.17, 211.99)],
+    ].map { $0.map { CGPoint(x: $0.0, y: $0.1) } }
+    private static let box = CGRect(x: 201.61, y: 56.91, width: 640.28 - 201.61, height: 538.36 - 56.91)
+
+    func path(in rect: CGRect) -> Path {
+        let scale = min(rect.width / Self.box.width, rect.height / Self.box.height)
+        let dx = rect.midX - Self.box.midX * scale, dy = rect.midY - Self.box.midY * scale
+        var path = Path()
+        for polygon in Self.polygons {
+            path.addLines(polygon.map { CGPoint(x: $0.x * scale + dx, y: $0.y * scale + dy) })
+            path.closeSubpath()
+        }
+        return path
     }
 }
 

@@ -62,6 +62,8 @@ enum Theme {
     static let radius: CGFloat = 10
     static let fieldRadius: CGFloat = 6
     static let dot: CGFloat = 6
+    /// Drawn brand marks (xAI) sit this far inside the 16 pt icon column, to match an SF Symbol's optical size.
+    static let xaiInset: CGFloat = 2
     /// Height of a usage bar: thin or thick, from Settings → Appearance.
     /// The pace tick on a limit bar.
     static let meterTick: CGFloat = 2

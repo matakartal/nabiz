@@ -499,6 +499,12 @@ enum AIFetch {
             status.identity = "\(user)/\(organization?["uuid"] as? String ?? "")"
         }
         status.plan = claudePlan(json)
+        status.limits.removeAll { hidesFiveHour(plan: status.plan, limitID: $0.id) }
+    }
+
+    /// Ultra has no 5-hour window; an account that still gets one from Anthropic doesn't show it.
+    static func hidesFiveHour(plan: String?, limitID: String) -> Bool {
+        plan == "Ultra" && (limitID == "claude.five_hour" || limitID.hasPrefix("claude.session"))
     }
 
     private static func claudePlan(_ json: [String: Any]) -> String? {

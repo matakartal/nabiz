@@ -51,6 +51,14 @@ struct AILimitsTests {
         #expect(again == "claude.weekly.weekly_model.claude-opus-4.2")
     }
 
+    @Test func ultraHidesTheFiveHourWindow() {
+        #expect(AIFetch.hidesFiveHour(plan: "Ultra", limitID: "claude.five_hour"))
+        #expect(AIFetch.hidesFiveHour(plan: "Ultra", limitID: "claude.session.session_all"))
+        #expect(!AIFetch.hidesFiveHour(plan: "Ultra", limitID: "claude.weekly.weekly_all"))
+        #expect(!AIFetch.hidesFiveHour(plan: "Max 20x", limitID: "claude.five_hour"))
+        #expect(!AIFetch.hidesFiveHour(plan: nil, limitID: "claude.five_hour"))
+    }
+
     @Test func theSessionLimitIsNotShownTwiceNextToFiveHour() {
         let reset = Date(timeIntervalSince1970: 1_800_000_000)
         #expect(AIFetch.isFiveHourRepeat(group: "session", model: nil, resetsAt: nil, fiveHourReset: reset))

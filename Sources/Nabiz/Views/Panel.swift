@@ -1072,12 +1072,8 @@ private struct AISection: View {
         for bundle in bundles {
             if let path = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundle)?.path { return .app(path) }
         }
-        let symbol = switch provider {
-        case .gemini: "sparkle"
-        case .grok: "xmark.square"
-        default: "bubble.left.and.text.bubble.right"
-        }
-        return .symbol(symbol)
+        if provider == .grok { return .xai }
+        return .symbol(provider == .gemini ? "sparkle" : "bubble.left.and.text.bubble.right")
     }
 }
 
@@ -1190,6 +1186,8 @@ enum RowIcon {
     case symbol(String)
     case app(String)
     case dot(Color)
+    /// xAI's mark, for Grok (Grok has no Mac app to read a logo from).
+    case xai
 }
 
 /// One row on the menu grid. Rows with an action (or `hoverable`) highlight under the pointer like a native menu item.
@@ -1259,6 +1257,8 @@ struct PanelRow<Trailing: View>: View {
             Image(nsImage: IconCache.icon(for: path)).resizable().interpolation(.high)
         case .dot(let color):
             Circle().fill(color).frame(width: Theme.dot, height: Theme.dot)
+        case .xai:
+            XAIMark().fill(Theme.text).padding(Theme.xaiInset)
         case .none:
             EmptyView()
         }
