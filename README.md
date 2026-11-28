@@ -218,6 +218,7 @@ Everything about your Mac is measured locally. Nabız has no analytics and no ac
 | --- | --- | --- |
 | Exchange rates | [frankfurter.dev](https://frankfurter.dev) (ECB daily rates) | When rates are shown |
 | Market prices | `api.hyperliquid.xyz` | When markets are shown or alerts are set |
+| Hyperliquid positions | `api.hyperliquid.xyz` — only the wallet address you enter, read-only | Only after you enter an address |
 | Weather | `open-meteo.com` — only the chosen city's coordinates | When the weather is shown |
 | Updates | GitHub releases | Periodically |
 | AI limits | Each provider's own usage endpoint, with the sign-in its CLI already keeps | Only for providers you turn on |

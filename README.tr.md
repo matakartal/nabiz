@@ -78,7 +78,7 @@ macOS 14 veya üstü gerekir; Apple Silicon ve Intel'de çalışır.
 ## Gizlilik
 
 Mac'inle ilgili her şey Mac'in içinde ölçülür; analitik ve hesap yoktur. İnternete yalnızca şunlar için çıkar:
-döviz kurları, Hyperliquid fiyatları, hava durumu (yalnızca şehrin koordinatları), güncelleme kontrolü, açtığın AI sağlayıcılarının kendi sunucuları ve senin
+döviz kurları, Hyperliquid fiyatları (adres girersen yalnızca o adresle pozisyonların), hava durumu (yalnızca şehrin koordinatları), güncelleme kontrolü, açtığın AI sağlayıcılarının kendi sunucuları ve senin
 istediğin işler (web araması, video indirme, hız testi). Apple'ın cihaz içi modeli Mac'ten hiç çıkmaz. Pano geçmişi
 ve AI sohbetleri diskte şifrelidir.
 

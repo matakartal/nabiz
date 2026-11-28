@@ -104,6 +104,12 @@ enum Prefs {
     static let barMarket = "barMarket"
     /// Which watched market the menu bar shows ("" = the first one).
     static let barMarketID = "barMarketID"
+    /// The panel's Hyperliquid positions section.
+    static let showPositions = "showPositions"
+    /// A public wallet address whose Hyperliquid positions the panel shows (read-only, "" = none).
+    static let hyperliquidAddress = "hyperliquidAddress"
+    /// A notification when a position comes near its liquidation price.
+    static let liquidationAlerts = "liquidationAlerts"
     static let baseCurrency = "baseCurrency"
     static let watchedCurrencies = "watchedCurrencies"
 
@@ -269,6 +275,7 @@ enum Prefs {
             barSymbol: "gauge.with.dots.needle.33percent", customAccent: "#1DB954", sectionOrder: "",
             aiAsk: true, aiEngine: "onDevice", aiHistory: true, aiHotkey: true, aiChatHotkey: true, aiClaudeSessions: true, aiNotify: true, aiSuggest: true, aiWebSearch: true, aiInstructions: "", showInDock: false, seenVersion: "",
         ])
+        defaults.register(defaults: [showPositions: true, "expanded.positions": true, hyperliquidAddress: "", liquidationAlerts: true])
         AdviceKind.registerDefaults()
     }
 
@@ -293,7 +300,7 @@ enum Prefs {
 
 /// The panel's foldable sections, in the order they appear.
 enum PanelSection: String, CaseIterable, Identifiable {
-    case system, advice, simulators, ports, projects, docker, displays, ai, calendar, weather, memory, cpu, markets, currency, tools
+    case system, advice, simulators, ports, projects, docker, displays, ai, calendar, weather, memory, cpu, markets, positions, currency, tools
 
     var id: String { rawValue }
 
@@ -312,6 +319,7 @@ enum PanelSection: String, CaseIterable, Identifiable {
         case .memory: L("En çok bellek", "Top memory")
         case .cpu: L("En çok işlemci", "Top CPU")
         case .markets: L("Piyasalar", "Markets")
+        case .positions: L("Pozisyonlar", "Positions")
         case .currency: L("Döviz", "Exchange rates")
         case .tools: L("Araçlar", "Tools")
         }
@@ -332,6 +340,7 @@ enum PanelSection: String, CaseIterable, Identifiable {
         case .memory: Prefs.showApps
         case .cpu: Prefs.showCPUApps
         case .markets: Prefs.showMarkets
+        case .positions: Prefs.showPositions
         case .currency: Prefs.showCurrency
         case .tools: Prefs.showTools
         }
@@ -352,6 +361,7 @@ enum PanelSection: String, CaseIterable, Identifiable {
         case .memory: "memorychip"
         case .cpu: "cpu"
         case .markets: "chart.line.uptrend.xyaxis"
+        case .positions: "chart.bar.doc.horizontal"
         case .currency: "dollarsign.circle"
         case .tools: "wrench.and.screwdriver"
         }

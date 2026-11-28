@@ -1183,6 +1183,8 @@ private struct MarketsPage: View {
 
             PriceAlertsSection(watched: watchedIDs)
 
+            HyperliquidAccountSection()
+
             SettingsSection("markets.catalog") {
                 HStack(spacing: Theme.Spacing.s) {
                     Image(systemName: "magnifyingglass").foregroundStyle(Theme.textMuted)
@@ -2004,6 +2006,46 @@ struct PageHeader: View {
         }
         .padding(.bottom, Theme.Spacing.s)
         .textCase(nil)
+    }
+}
+
+/// A public wallet address whose Hyperliquid positions the panel shows, and the liquidation warning. Read-only:
+/// only the address goes to Hyperliquid, never a key.
+private struct HyperliquidAccountSection: View {
+    @AppStorage(Prefs.hyperliquidAddress) private var address = ""
+    @AppStorage(Prefs.liquidationAlerts) private var alerts = true
+
+    private var valid: Bool { HyperliquidAddress.isValid(address) }
+
+    var body: some View {
+        SettingsSection("markets.account") {
+            // Only the address is monospaced, not its label.
+            LabeledContent(L("Cüzdan adresi", "Wallet address")) {
+                TextField(L("Cüzdan adresi", "Wallet address"), text: $address, prompt: Text(verbatim: "0x…"))
+                    .labelsHidden()
+                    .font(Theme.code)
+                    .multilineTextAlignment(.trailing)
+                    .autocorrectionDisabled()
+            }
+            if !address.trimmingCharacters(in: .whitespaces).isEmpty && !valid {
+                Text(L("0x ile başlayan, 42 karakterlik bir adres gir.", "Enter a 42-character address that starts with 0x."))
+                    .font(Theme.small).foregroundStyle(Theme.textMuted)
+            }
+            Toggle(L("Likidasyona yaklaşınca bildir", "Notify near liquidation"), isOn: $alerts)
+                .disabled(!valid)
+        } header: {
+            Text(L("Hyperliquid hesabı", "Hyperliquid account"))
+        } footer: {
+            Footnote(L("Yalnızca okunur: Hyperliquid'in herkese açık API'sine sadece bu adres gider. Anahtar ya da imza gerekmez, Nabız işlem yapamaz. Pozisyonlar panel açıkken 10 saniyede bir okunur; bildirim açıkken arka planda dakikada bir. Bildirim, fiyat likidasyona %10 yaklaşınca bir kez, %3 yaklaşınca bir kez daha gelir.",
+                       "Read-only: only this address is sent to Hyperliquid's public API. No key or signing needed, and Nabız can't trade. Positions are read every 10 seconds while the panel is open, and every minute in the background while notifications are on. You're notified once when the price comes within 10% of liquidation and once more within 3%."))
+        }
+        .onChange(of: address) {
+            PositionStore.shared.refresh(maxAge: 0)
+            if valid && alerts { Notifier.shared.requestPermission(keepSetting: true) }
+        }
+        .onChange(of: alerts) {
+            if valid && alerts { Notifier.shared.requestPermission(keepSetting: true) }
+        }
     }
 }
 
