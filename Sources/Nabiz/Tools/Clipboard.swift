@@ -10,6 +10,9 @@ struct ClipItem: Codable, Identifiable, Equatable, Sendable {
     var id = UUID()
     var kind: Kind
     var text: String?
+    /// The same text with its formatting (from Mail, Pages, a web page), pasted unless plain text is asked for.
+    var rtf: Data?
+    var html: Data?
     var files: [String]?
     /// Only read from histories saved before 1.8; images now live in their own encrypted files.
     var image: Data?
@@ -89,6 +92,7 @@ enum ClipVault {
 final class ClipboardHistory {
     static let shared = ClipboardHistory()
     static let maxImageBytes = 3 << 20
+    static let maxRichBytes = 512 << 10
 
     private(set) var items: [ClipItem] = []
     @ObservationIgnored private var changeCount = NSPasteboard.general.changeCount
@@ -182,7 +186,12 @@ final class ClipboardHistory {
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
             let kind: ClipItem.Kind = trimmed.range(of: #"^#(?:[0-9a-fA-F]{3}){1,2}$"#, options: .regularExpression) != nil ? .color
                 : (URL(string: trimmed)?.scheme.map { ["http", "https"].contains($0) } ?? false) && !trimmed.contains(" ") ? .link : .text
-            insert(ClipItem(kind: kind, text: text, date: now, app: app))
+            // Formatting is kept only for prose, and only while it stays small.
+            let rich: (NSPasteboard.PasteboardType) -> Data? = { type in
+                guard kind == .text, let data = pasteboard.data(forType: type), data.count <= Self.maxRichBytes else { return nil }
+                return data
+            }
+            insert(ClipItem(kind: kind, text: text, rtf: rich(.rtf), html: rich(.html), date: now, app: app))
             return
         }
         // Pictures: converting a big TIFF to PNG takes a moment, so it happens off the main thread.
@@ -215,6 +224,8 @@ final class ClipboardHistory {
             var existing = items.remove(at: index)
             existing.date = item.date
             existing.app = item.app
+            existing.rtf = item.rtf
+            existing.html = item.html
             items.insert(existing, at: 0)
         } else {
             items.insert(item, at: 0)
@@ -281,8 +292,22 @@ final class ClipboardHistory {
 
     // MARK: Actions
 
-    /// Puts the item back on the pasteboard (and moves it to the top).
-    func copy(_ item: ClipItem) {
+    /// Text Nabız puts on the clipboard itself (a result, a script's output, something to paste): not kept in the
+    /// history, since the user didn't copy it.
+    func writeOwn(_ text: String) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+        markOwn()
+    }
+
+    /// What is on the pasteboard now was written by Nabız.
+    func markOwn() {
+        ownChange = NSPasteboard.general.changeCount
+    }
+
+    /// Puts the item back on the pasteboard (and moves it to the top); with its formatting unless `plain`.
+    func copy(_ item: ClipItem, plain: Bool = false) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         switch item.kind {
@@ -292,6 +317,10 @@ final class ClipboardHistory {
             if let image = imageData(item) { pasteboard.setData(image, forType: .png) }
         case .text, .link, .color:
             pasteboard.setString(item.text ?? "", forType: .string)
+            if !plain {
+                if let rtf = item.rtf { pasteboard.setData(rtf, forType: .rtf) }
+                if let html = item.html { pasteboard.setData(html, forType: .html) }
+            }
         }
         ownChange = pasteboard.changeCount
         changeCount = pasteboard.changeCount
@@ -348,13 +377,53 @@ enum Paster {
         // Give the launcher a moment to leave so the keystroke reaches the app that had the cursor.
         Task {
             try? await Task.sleep(for: .milliseconds(120))
-            let source = CGEventSource(stateID: .combinedSessionState)
-            let down = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: true)
-            let up = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: false)
-            down?.flags = .maskCommand
-            up?.flags = .maskCommand
-            down?.post(tap: .cghidEventTap)
-            up?.post(tap: .cghidEventTap)
+            key(0x09, flags: .maskCommand)
         }
+    }
+
+    /// Pastes text where the cursor is without it becoming the user's clipboard: what was copied before comes back
+    /// once the paste has landed (unless something new was copied meanwhile). `cursorBack` moves the cursor that many
+    /// characters left afterwards, for a snippet's {cursor}. Needs `canPaste`.
+    static func paste(_ text: String, cursorBack: Int = 0, delay: Duration = .milliseconds(120)) {
+        let pasteboard = NSPasteboard.general
+        let saved = snapshot(pasteboard)
+        ClipboardHistory.shared.writeOwn(text)
+        let written = pasteboard.changeCount
+        Task {
+            try? await Task.sleep(for: delay)
+            key(0x09, flags: .maskCommand)
+            if cursorBack > 0 {
+                try? await Task.sleep(for: .milliseconds(60))
+                for _ in 0..<min(cursorBack, 2000) { key(0x7B) }
+            }
+            // The app reads the pasteboard when it handles ⌘V; give it time before putting the old one back.
+            try? await Task.sleep(for: .milliseconds(600))
+            guard pasteboard.changeCount == written else { return }
+            pasteboard.clearContents()
+            if !saved.isEmpty { pasteboard.writeObjects(saved) }
+            ClipboardHistory.shared.markOwn()
+        }
+    }
+
+    /// A copy of everything on the pasteboard, every type of every item.
+    private static func snapshot(_ pasteboard: NSPasteboard) -> [NSPasteboardItem] {
+        (pasteboard.pasteboardItems ?? []).map { item in
+            let copy = NSPasteboardItem()
+            for type in item.types {
+                if let data = item.data(forType: type) { copy.setData(data, forType: type) }
+            }
+            return copy
+        }
+    }
+
+    /// One key press, sent to the app in front.
+    static func key(_ code: CGKeyCode, flags: CGEventFlags = []) {
+        let source = CGEventSource(stateID: .combinedSessionState)
+        let down = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: true)
+        let up = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: false)
+        down?.flags = flags
+        up?.flags = flags
+        down?.post(tap: .cghidEventTap)
+        up?.post(tap: .cghidEventTap)
     }
 }

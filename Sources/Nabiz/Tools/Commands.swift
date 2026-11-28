@@ -29,6 +29,9 @@ struct Quicklink: Codable, Identifiable, Equatable, Sendable {
     var name: String
     var url: String
 
+    /// The address has a place for a search ("{query}"); without one the link just opens.
+    var takesQuery: Bool { url.contains("{query}") }
+
     func url(for query: String) -> URL? {
         let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
         return URL(string: url.replacingOccurrences(of: "{query}", with: encoded))
@@ -54,6 +57,12 @@ final class LauncherStore {
         Quicklink(keyword: "çevir", name: L("Çeviri", "Translate"), url: "https://translate.google.com/?sl=auto&tl=tr&text={query}"),
         Quicklink(keyword: "harita", name: L("Haritalar", "Maps"), url: "maps://?q={query}"),
     ]
+
+    /// Searches the web when nothing else matches: the quicklink picked in Settings, else the first that can search.
+    var webSearch: Quicklink? {
+        let keyword = Prefs.string(Prefs.launcherSearch)
+        return quicklinks.first { $0.keyword == keyword && $0.takesQuery } ?? quicklinks.first(where: \.takesQuery)
+    }
 
     init() {
         let defaults = UserDefaults.standard

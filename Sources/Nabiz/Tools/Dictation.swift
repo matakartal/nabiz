@@ -80,9 +80,13 @@ final class Dictation {
             engine = nil
             hideHUD()
             guard paste, !result.isEmpty else { return }
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(result, forType: .string)
-            if Paster.canPaste { Paster.paste() } else { Monitor.panelActions.flash(L("Kopyalandı; yapıştırabilirsin", "Copied; paste it anywhere")) }
+            // Typed where the cursor is; the clipboard comes back as it was.
+            if Paster.canPaste {
+                Paster.paste(result, delay: .zero)
+            } else {
+                ClipboardHistory.shared.writeOwn(result)
+                Monitor.panelActions.flash(L("Kopyalandı; yapıştırabilirsin", "Copied; paste it anywhere"))
+            }
         }
     }
 

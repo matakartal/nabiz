@@ -90,6 +90,27 @@ final class Extensions {
         let path: String
         let title: String
         let icon: String?
+        /// Up to three values asked for in the launcher before it runs, passed as $1 $2 $3.
+        var arguments: [ScriptArgument] = []
+    }
+
+    /// `# @raycast.argument1 { "type": "text", "placeholder": "Query", "optional": true }`.
+    struct ScriptArgument: Equatable, Decodable {
+        var placeholder: String?
+        var optional: Bool?
+    }
+
+    /// The script or shortcut running now (one at a time), for the launcher's busy line.
+    private(set) var running: String?
+    @ObservationIgnored private var job: Job?
+    /// A forgotten loop or a script waiting for input stops on its own.
+    static let timeout: Duration = .seconds(60)
+
+    /// A running process and why it ended early; touched from the main thread and the one reading its output.
+    private final class Job: @unchecked Sendable {
+        let process = Process()
+        var cancelled = false
+        var timedOut = false
     }
 
     private(set) var shortcuts: [String] = []
@@ -114,60 +135,125 @@ final class Extensions {
         }
     }
 
-    /// Scripts in the folder; "# @nabiz.title" / "# @raycast.title" and ".icon" lines give them a name and an emoji.
+    /// Scripts in the folder; "# @nabiz.title" / "# @raycast.title" and ".icon" lines give them a name and an emoji,
+    /// ".argument1" to ".argument3" the values they ask for.
     private static func scanScripts() -> [Script] {
         let folder = scriptsFolder
         let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
         return names.filter { !$0.hasPrefix(".") }.sorted().compactMap { name in
             let path = folder.appendingPathComponent(name).path
             guard let head = try? String(contentsOfFile: path, encoding: .utf8).prefix(2000) else { return nil }
-            var title = (name as NSString).deletingPathExtension.replacingOccurrences(of: "-", with: " ")
-            var icon: String?
-            for line in head.split(separator: "\n") {
-                let text = line.trimmingCharacters(in: .whitespaces)
-                for tag in ["@nabiz.title", "@raycast.title"] where text.contains(tag) {
-                    title = text.components(separatedBy: tag).last?.trimmingCharacters(in: .whitespaces) ?? title
-                }
-                for tag in ["@nabiz.icon", "@raycast.icon"] where text.contains(tag) {
-                    icon = text.components(separatedBy: tag).last?.trimmingCharacters(in: .whitespaces)
-                }
-            }
-            return Script(path: path, title: title, icon: icon?.count == 1 ? icon : nil)
+            let fallback = (name as NSString).deletingPathExtension.replacingOccurrences(of: "-", with: " ")
+            return parse(String(head), path: path, fallback: fallback)
         }
     }
 
-    func runShortcut(_ name: String) {
-        Monitor.panelActions.flash(L("Kestirme: \(name)", "Shortcut: \(name)"))
-        Task { _ = await Toolbox.run("/usr/bin/shortcuts", ["run", name]) }
+    /// Reads a script's header comments.
+    static func parse(_ head: String, path: String, fallback: String) -> Script {
+        var title = fallback
+        var icon: String?
+        var arguments: [Int: ScriptArgument] = [:]
+        for line in head.split(separator: "\n") {
+            let text = line.trimmingCharacters(in: .whitespaces)
+            for tag in ["@nabiz.title", "@raycast.title"] where text.contains(tag) {
+                title = text.components(separatedBy: tag).last?.trimmingCharacters(in: .whitespaces) ?? title
+            }
+            for tag in ["@nabiz.icon", "@raycast.icon"] where text.contains(tag) {
+                icon = text.components(separatedBy: tag).last?.trimmingCharacters(in: .whitespaces)
+            }
+            for number in 1...3 {
+                for tag in ["@nabiz.argument\(number)", "@raycast.argument\(number)"] where text.contains(tag) {
+                    let json = text.components(separatedBy: tag).last?.trimmingCharacters(in: .whitespaces) ?? ""
+                    arguments[number] = (try? JSONDecoder().decode(ScriptArgument.self, from: Data(json.utf8))) ?? ScriptArgument()
+                }
+            }
+        }
+        return Script(path: path, title: title, icon: icon?.count == 1 ? icon : nil,
+                      arguments: arguments.keys.sorted().compactMap { arguments[$0] })
     }
 
-    /// Runs a script with your login shell's PATH; whatever it prints is copied and shown.
-    func run(_ script: Script) {
+    /// Runs a shortcut; what it outputs is copied and shown, and a failure says why.
+    func runShortcut(_ name: String) {
+        Monitor.panelActions.flash(L("Kestirme: \(name)", "Shortcut: \(name)"))
+        execute(title: name, executable: "/usr/bin/shortcuts", arguments: ["run", name], directory: nil, timeout: nil) { status, output in
+            if status != 0 {
+                let reason = output.split(separator: "\n").first.map { ": " + String($0.prefix(60)) } ?? ""
+                Monitor.panelActions.flash(L("Kestirme çalışmadı", "Shortcut failed") + reason)
+            } else if output.isEmpty {
+                Monitor.panelActions.flash(L("\(name) çalıştı", "\(name) ran"))
+            } else {
+                ClipboardHistory.shared.writeOwn(output)
+                Monitor.panelActions.flash(L("Kopyalandı: ", "Copied: ") + String(output.split(separator: "\n").first?.prefix(50) ?? ""))
+            }
+        }
+    }
+
+    /// Runs a script with your login shell's PATH, its arguments as $1…; whatever it prints is copied and shown.
+    /// The values reach the script as separate arguments, never inside a shell line.
+    func run(_ script: Script, arguments: [String] = [], finished: @escaping @MainActor () -> Void = {}) {
         let path = script.path
-        Task {
-            let result = await Task.detached(priority: .userInitiated) { () -> (Int32, String) in
-                let process = Process()
-                process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-                process.arguments = ["-lc", "exec \"$0\"", path]
-                if !FileManager.default.isExecutableFile(atPath: path) { process.arguments = ["-l", path] }
-                process.currentDirectoryURL = URL(fileURLWithPath: path).deletingLastPathComponent()
-                let pipe = Pipe()
-                process.standardOutput = pipe
-                process.standardError = pipe
-                guard (try? process.run()) != nil else { return (-1, "") }
-                let data = pipe.fileHandleForReading.readDataToEndOfFile().prefix(65_536)
-                process.waitUntilExit()
-                return (process.terminationStatus, String(decoding: data, as: UTF8.self))
-            }.value
-            let output = result.1.trimmingCharacters(in: .whitespacesAndNewlines)
-            if result.0 != 0 {
+        let executable = FileManager.default.isExecutableFile(atPath: path)
+        let shellArguments = executable ? ["-lc", "exec \"$0\" \"$@\"", path] + arguments : ["-l", path] + arguments
+        execute(title: script.title, executable: "/bin/zsh", arguments: shellArguments,
+                directory: URL(fileURLWithPath: path).deletingLastPathComponent(), timeout: Self.timeout) { status, output in
+            finished()
+            if status != 0 {
                 Monitor.panelActions.flash(L("Betik hata verdi", "Script failed") + (output.isEmpty ? "" : ": " + String(output.prefix(50))))
             } else if output.isEmpty {
                 Monitor.panelActions.flash(L("\(script.title) çalıştı", "\(script.title) ran"))
             } else {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(output, forType: .string)
+                ClipboardHistory.shared.writeOwn(output)
                 Monitor.panelActions.flash(String(output.split(separator: "\n").first?.prefix(60) ?? ""))
+            }
+        }
+    }
+
+    /// Stops what is running (Esc in the launcher).
+    func cancelRunning() {
+        guard let job else { return }
+        job.cancelled = true
+        job.process.terminate()
+    }
+
+    /// One process at a time, its output read off the main thread; stopped by `cancelRunning` or after `timeout`.
+    private func execute(title: String, executable: String, arguments: [String], directory: URL?, timeout: Duration?,
+                         done: @escaping @MainActor (Int32, String) -> Void) {
+        guard job == nil else {
+            Monitor.panelActions.flash(L("Önce \(running ?? "") bitsin", "Wait for \(running ?? "") to finish"))
+            return
+        }
+        let job = Job()
+        job.process.executableURL = URL(fileURLWithPath: executable)
+        job.process.arguments = arguments
+        job.process.currentDirectoryURL = directory
+        self.job = job
+        running = title
+        if let timeout {
+            Task { [weak self] in
+                try? await Task.sleep(for: timeout)
+                guard let self, self.job === job else { return }
+                job.timedOut = true
+                job.process.terminate()
+            }
+        }
+        Task {
+            let result = await Task.detached(priority: .userInitiated) { () -> (Int32, String) in
+                let pipe = Pipe()
+                job.process.standardOutput = pipe
+                job.process.standardError = pipe
+                guard (try? job.process.run()) != nil else { return (-1, "") }
+                let data = pipe.fileHandleForReading.readDataToEndOfFile().prefix(65_536)
+                job.process.waitUntilExit()
+                return (job.process.terminationStatus, String(decoding: data, as: UTF8.self))
+            }.value
+            self.job = nil
+            running = nil
+            if job.cancelled {
+                Monitor.panelActions.flash(L("\(title) durduruldu", "Stopped \(title)"))
+            } else if job.timedOut {
+                Monitor.panelActions.flash(L("\(title) 60 sn içinde bitmedi, durduruldu", "\(title) took over 60 s and was stopped"))
+            } else {
+                done(result.0, result.1.trimmingCharacters(in: .whitespacesAndNewlines))
             }
         }
     }

@@ -73,6 +73,10 @@ final class LauncherPanel {
         }
         // These run inside the launcher (an AI answer, a pasted link).
         if itemID == "cmd:download" || itemID.hasPrefix("aicmd:") { show(.all) }
+        // A search link or a script with values asks for them in the field.
+        let asks = itemID.hasPrefix("link:") && LauncherStore.shared.quicklinks.contains { "link:\($0.keyword)" == itemID && $0.takesQuery }
+            || itemID.hasPrefix("script:") && Extensions.shared.scripts.contains { "script:\($0.path)" == itemID && !$0.arguments.isEmpty }
+        if asks { show(.all) }
         item.primary()
     }
 
@@ -101,6 +105,11 @@ final class LauncherPanel {
         let shift = flags.contains(.shift)
         if command && key == "k" {
             model.togglePalette()
+            return true
+        }
+        // Esc stops a script or shortcut that is still running.
+        if keyCode == 53, Extensions.shared.running != nil {
+            Extensions.shared.cancelRunning()
             return true
         }
         if model.paletteOpen {
@@ -136,6 +145,10 @@ final class LauncherPanel {
         case 125: model.move(1)
         case 126: model.move(-1)
         case 36, 76: command ? model.runSecondary() : model.runPrimary()
+        case 48: return model.tab()
+        case 51 where !command && model.argument != nil && model.text.isEmpty: model.leaveArgument(keepKeyword: true)
+        case 53 where model.argument != nil:
+            if model.text.isEmpty { model.leaveArgument() } else { model.text = "" }
         case 53:
             if (model.mode == .clipboard && model.cameFromLauncher || model.mode == .ai) && model.text.isEmpty {
                 model.reset(mode: .all)
@@ -222,6 +235,15 @@ struct LauncherView: View {
                 }
             }
             .frame(width: Theme.launcherIcon)
+            if let argument = model.argument {
+                // The quicklink or script the text goes to; Backspace on an empty field takes it away.
+                Text(verbatim: argument.title)
+                    .font(Theme.bodyStrong).foregroundStyle(Theme.text)
+                    .padding(.horizontal, Theme.Spacing.s)
+                    .padding(.vertical, Theme.Spacing.xs)
+                    .background(Theme.track, in: Capsule())
+                    .fixedSize()
+            }
             TextField(placeholder, text: $model.text)
                 .textFieldStyle(.plain)
                 .font(Theme.input)
@@ -236,7 +258,8 @@ struct LauncherView: View {
     }
 
     private var placeholder: String {
-        switch model.mode {
+        if let argument = model.argument { return argument.placeholder }
+        return switch model.mode {
         case .clipboard: L("Panoda ara", "Search the clipboard")
         case .ai:
             if model.ai != nil { L("Devamını sor…", "Ask a follow-up…") } else if let aiEngine { L("\(aiEngine.shortName)'a sor…", "Ask \(aiEngine.shortName)…") } else { L("AI'a sor…", "Ask AI…") }
@@ -333,25 +356,48 @@ struct LauncherView: View {
 
     private func footer(_ item: LauncherItem?) -> some View {
         HStack(spacing: Theme.Spacing.l) {
-            if model.mode == .clipboard && Prefs.bool(Prefs.autoPaste) && !Paster.isTrusted {
-                Button(L("Yapıştırmak için izin ver", "Allow pasting")) { Paster.requestTrust() }
-                    .buttonStyle(TextButtonStyle(font: Theme.small, color: Theme.accent))
+            if let running = Extensions.shared.running {
+                HStack(spacing: Theme.Spacing.s) {
+                    ProgressView().controlSize(.mini)
+                    Text(L("\(running) çalışıyor…", "Running \(running)…")).foregroundStyle(Theme.textMuted).lineLimit(1)
+                }
+                Spacer()
+                KeyHint(keys: "esc", title: L("Durdur", "Stop"), strong: true)
             } else {
-                Text(model.mode == .clipboard ? L("↑↓ seç · esc geri", "↑↓ to pick · esc back")
-                                              : (Prefs.bool(Prefs.aiAsk) ? L("= hesap · > komut · / dosya · : emoji · ? AI", "= maths · > commands · / files · : emoji · ? AI")
-                                                                         : L("= hesap · > komut · / dosya · : emoji", "= maths · > commands · / files · : emoji")))
-                    .foregroundStyle(Theme.textMuted)
-            }
-            Spacer()
-            if let item {
-                KeyHint(keys: "↩", title: item.primaryTitle, strong: true)
-                Rectangle().fill(Theme.hairline).frame(width: 1, height: Theme.Spacing.l)
-                KeyHint(keys: "⌘K", title: L("Eylemler", "Actions"), strong: model.paletteOpen)
+                footerContent(item)
             }
         }
         .font(Theme.small)
         .padding(.horizontal, Theme.Spacing.l)
         .frame(height: Theme.launcherFooter)
+    }
+
+    @ViewBuilder private func footerContent(_ item: LauncherItem?) -> some View {
+        if model.mode == .clipboard && Prefs.bool(Prefs.autoPaste) && !Paster.isTrusted {
+            Button(L("Yapıştırmak için izin ver", "Allow pasting")) { Paster.requestTrust() }
+                .buttonStyle(TextButtonStyle(font: Theme.small, color: Theme.accent))
+        } else {
+            Text(hint).foregroundStyle(Theme.textMuted).lineLimit(1)
+        }
+        Spacer()
+        if let item {
+            if model.mode == .clipboard, item.clip?.kind == .text || item.clip?.kind == .link, Paster.canPaste {
+                KeyHint(keys: "⇧↩", title: L("Düz metin", "Plain text"))
+            }
+            KeyHint(keys: "↩", title: item.primaryTitle, strong: true)
+            Rectangle().fill(Theme.hairline).frame(width: 1, height: Theme.Spacing.l)
+            KeyHint(keys: "⌘K", title: L("Eylemler", "Actions"), strong: model.paletteOpen)
+        }
+    }
+
+    private var hint: String {
+        if let argument = model.argument {
+            if case .script = argument.target, !argument.isLast { return L("⇥ sonraki · esc geri", "⇥ next · esc back") }
+            return L("⌫ geri · esc temizle", "⌫ back · esc clear")
+        }
+        if model.mode == .clipboard { return L("⇥ tür · ⌘1–9 yapıştır · esc geri", "⇥ type · ⌘1–9 paste · esc back") }
+        return Prefs.bool(Prefs.aiAsk) ? L("= hesap · > komut · / dosya · : emoji · ? AI", "= maths · > commands · / files · : emoji · ? AI")
+            : L("= hesap · > komut · / dosya · : emoji", "= maths · > commands · / files · : emoji")
     }
 }
 

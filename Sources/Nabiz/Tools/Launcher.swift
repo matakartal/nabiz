@@ -51,6 +51,13 @@ final class LauncherModel {
                 text = String(text.dropFirst()).trimmingCharacters(in: .whitespaces)
                 return
             }
+            // "gh" then Space: GitHub takes the field and what follows is the search.
+            if mode == .all, argument == nil,
+               let link = Self.quicklink(forSpaceAfter: text, in: LauncherStore.shared.quicklinks, translating: Prefs.bool(Prefs.aiAsk)) {
+                argument = LauncherArgument(target: .quicklink(link))
+                text = ""
+                return
+            }
             FileSearch.shared.search(fileTerm)
         }
     }
@@ -58,6 +65,7 @@ final class LauncherModel {
     /// What to look for in files: everything after "/", or a normal search of three letters or more.
     private var fileTerm: String {
         let query = text.trimmingCharacters(in: .whitespaces)
+        guard argument == nil else { return "" }
         if query.hasPrefix("/") { return String(query.dropFirst()) }
         guard Prefs.bool(Prefs.launcherFiles), mode == .all, query.count >= 3,
               let first = query.first, !"=>:?".contains(first), Downloader.videoURL(query) == nil else { return "" }
@@ -95,6 +103,8 @@ final class LauncherModel {
     var aiReturnText = ""
     /// A follow-up typed while the answer is still being written; it is sent when that answer ends.
     var queuedFollowUp: String?
+    /// A quicklink or script waiting for its query or values (Tab, or Space after a keyword).
+    var argument: LauncherArgument?
     /// Text selected in the app in front when the launcher opened.
     var selectedText: String?
     /// The clipboard list was opened from the launcher, so Escape goes back to it instead of closing.
@@ -115,6 +125,7 @@ final class LauncherModel {
     func reset(mode: Mode, text: String = "") {
         lastPointer = NSEvent.mouseLocation
         paletteOpen = false
+        argument = nil
         self.mode = mode
         self.text = text
         clearSelection()
@@ -125,7 +136,7 @@ final class LauncherModel {
     var sections: [LauncherSection] {
         switch mode {
         case .clipboard: clipboardSections()
-        case .all: allSections().map { section in
+        case .all: (argument.map(argumentSections) ?? allSections()).map { section in
             var section = section
             section.items = section.items.map(withBinding)
             return section
@@ -258,12 +269,16 @@ final class LauncherModel {
         if Paster.canPaste { Paster.paste() } else { Monitor.panelActions.flash(L("Kopyalandı", "Copied")) }
     }
 
-    /// Puts text on the clipboard and pastes it where the cursor was, or only copies it without permission.
-    func paste(text: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
+    /// Pastes text where the cursor was and gives the user's clipboard back afterwards; without permission it is
+    /// only copied. Either way it stays out of the clipboard history.
+    func paste(text: String, cursorBack: Int = 0) {
         close()
-        if Paster.canPaste { Paster.paste() } else { Monitor.panelActions.flash(L("Kopyalandı", "Copied")) }
+        if Paster.canPaste {
+            Paster.paste(text, cursorBack: cursorBack)
+        } else {
+            ClipboardHistory.shared.writeOwn(text)
+            Monitor.panelActions.flash(L("Kopyalandı", "Copied"))
+        }
     }
 
     func togglePinSelected() {
@@ -482,7 +497,7 @@ final class LauncherModel {
         }
         // Nothing else fits: search the web for it.
         // Not when a quicklink search ("gh nabiz") is already there: both rows would share the id "search".
-        if !secret, let web = LauncherStore.shared.quicklinks.first, !sections.contains(where: { $0.id == "search" }) {
+        if !secret, let web = LauncherStore.shared.webSearch, !sections.contains(where: { $0.id == "search" }) {
             sections.append(LauncherSection(id: "web", title: L("Web", "Web"), items: [searchItem(web, query)]))
         }
         if let aliased {
@@ -491,13 +506,19 @@ final class LauncherModel {
         return sections.filter { !$0.items.isEmpty }
     }
 
-    private func searchItem(_ link: Quicklink, _ query: String) -> LauncherItem {
+    func searchItem(_ link: Quicklink, _ query: String) -> LauncherItem {
         let title = query.isEmpty ? link.name : L("\(link.name) ile ara: \(query)", "Search \(link.name) for \(query)")
+        // A search link with nothing to search yet asks for it in the field instead of opening an empty search.
+        let asks = query.isEmpty && link.takesQuery
         return LauncherItem(id: query.isEmpty ? "link:\(link.keyword)" : "search", icon: .symbol(query.isEmpty ? "link" : "magnifyingglass"),
                             title: title, subtitle: query.isEmpty ? link.keyword : nil,
                             accessory: query.isEmpty ? L("Bağlantı", "Quicklink") : link.keyword,
-                            primaryTitle: L("Aç", "Open"),
+                            primaryTitle: asks ? L("Ara…", "Search…") : L("Aç", "Open"),
                             primary: { [weak self] in
+                                if asks {
+                                    self?.enterArgument(.quicklink(link))
+                                    return
+                                }
                                 self?.close()
                                 if let url = link.url(for: query) { NSWorkspace.shared.open(url) }
                             },
@@ -963,10 +984,10 @@ final class LauncherModel {
         // These already exist as commands above (or open the launcher itself).
         for script in Extensions.shared.scripts {
             items.append(LauncherItem(id: "script:\(script.path)", icon: script.icon.map { .emoji($0) } ?? .symbol("terminal"),
-                                      title: script.title, accessory: L("Betik", "Script"), primaryTitle: L("Çalıştır", "Run"),
+                                      title: script.title, accessory: L("Betik", "Script"),
+                                      primaryTitle: script.arguments.isEmpty ? L("Çalıştır", "Run") : L("Çalıştır…", "Run…"),
                                       primary: { [weak self] in
-                                          self?.close()
-                                          Extensions.shared.run(script)
+                                          if script.arguments.isEmpty { self?.runScript(script) } else { self?.enterArgument(.script(script)) }
                                       }))
         }
         for name in Extensions.shared.shortcuts {
@@ -1396,11 +1417,13 @@ extension LauncherModel {
         if item.id.hasPrefix("link:") || item.id == "search" {
             let words = text.trimmingCharacters(in: .whitespaces).split(separator: " ", maxSplits: 1).map(String.init)
             let links = LauncherStore.shared.quicklinks
-            let pair: (Quicklink, String)? = item.id.hasPrefix("link:")
+            let typed = text.trimmingCharacters(in: .whitespaces)
+            var pair: (Quicklink, String)? = item.id.hasPrefix("link:")
                 ? links.first { "link:\($0.keyword)" == item.id }.map { ($0, "") }
                 : words.count == 2 ? links.first { $0.keyword.lowercased() == words[0].lowercased() }.map { ($0, words[1]) }
-                    ?? links.first.map { ($0, text.trimmingCharacters(in: .whitespaces)) }
-                : links.first.map { ($0, text.trimmingCharacters(in: .whitespaces)) }
+                    ?? LauncherStore.shared.webSearch.map { ($0, typed) }
+                : LauncherStore.shared.webSearch.map { ($0, typed) }
+            if let argument, case .quicklink(let link) = argument.target { pair = (link, typed) }
             if let (link, query) = pair, let url = link.url(for: query) {
                 list.append(LauncherAction(id: "copyLink", title: L("Bağlantıyı kopyala", "Copy link"), symbol: "link", group: main) {
                     copyText(url.absoluteString, L("Kopyalandı", "Copied"))

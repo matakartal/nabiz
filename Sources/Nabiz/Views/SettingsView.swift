@@ -2379,6 +2379,7 @@ private struct LauncherPage: View {
     @AppStorage(Prefs.hotkey) private var hotkey = true
     @AppStorage(Prefs.launcherApps) private var apps = true
     @AppStorage(Prefs.launcherClipboard) private var clips = true
+    @AppStorage(Prefs.launcherSearch) private var searchEngine = "g"
     private let store = LauncherStore.shared
 
     var body: some View {
@@ -2392,6 +2393,14 @@ private struct LauncherPage: View {
             } footer: {
                 Footnote(L("Yaz: uygulama adı, komut (kilitle, uyut, sol yarı…), hesap (12*4, 100 usd, 5 km mi), \"25 dk\" zamanlayıcı ya da \"g kelime\" ile web araması. ↑↓ seç, ↩ çalıştır, ⌘↩ ikinci işlem, esc kapat.",
                            "Type an app name, a command (lock, sleep, left half…), maths (12*4, 100 usd, 5 km mi), \"25 min\" for a timer or \"g words\" to search the web. ↑↓ to pick, ↩ to run, ⌘↩ for the second action, esc to close."))
+            }
+            SettingsSection("launcher.search") {
+                Picker(L("Varsayılan arama motoru", "Default search engine"), selection: $searchEngine) {
+                    ForEach(store.quicklinks.filter(\.takesQuery)) { link in Text(verbatim: link.name).tag(link.keyword) }
+                }
+            } footer: {
+                Footnote(L("Başka sonuç olmayınca yazdığın bununla aranır. Kısaltmadan sonra Boşluk ya da ⇥ (\"gh\" ⇥) o bağlantıda arar.",
+                           "What you type is searched here when nothing else matches. Space or ⇥ after a keyword (\"gh\" ⇥) searches that link instead."))
             }
             SettingsSection("launcher.quicklinks") {
                 ForEach(store.quicklinks) { QuicklinkRow(link: $0) }
@@ -2408,8 +2417,8 @@ private struct LauncherPage: View {
             } header: {
                 Text(L("Hızlı bağlantılar", "Quicklinks"))
             } footer: {
-                Footnote(L("Adreste {query} yazan yere, kısaltmadan sonra yazdığın gelir: \"gh nabiz\" → GitHub'da nabiz araması. İlk bağlantı, başka sonuç olmayınca web araması için kullanılır.",
-                           "{query} in the address is replaced by what you type after the keyword: \"gh nabiz\" searches GitHub for nabiz. The first link is used for web search when nothing else matches."))
+                Footnote(L("Adreste {query} yazan yere, kısaltmadan sonra yazdığın gelir: \"gh nabiz\" → GitHub'da nabiz araması.",
+                           "{query} in the address is replaced by what you type after the keyword: \"gh nabiz\" searches GitHub for nabiz."))
             }
             BindingsSection()
             SettingsSection("launcher.aiCommands") {
