@@ -451,10 +451,12 @@ final class RecRecorder {
 }
 
 enum RecError: LocalizedError {
-    case noDisplay, tooSmall, noCamera, busy
+    case noDisplay, tooSmall, noCamera, busy, noMicrophoneAccess
 
     var errorDescription: String? {
         switch self {
+        case .noMicrophoneAccess: L("Nabız'ın mikrofon izni yok. Gizlilik ve Güvenlik → Mikrofon'da Nabız'ı aç ya da mikrofonu kapatıp kaydet.",
+                                    "Nabız isn't allowed to use the microphone. Turn Nabız on in Privacy & Security → Microphone, or record with the microphone off.")
         case .noDisplay: L("Ekran bulunamadı", "Couldn't find the display")
         case .tooSmall: L("Alan çok küçük", "The area is too small")
         case .noCamera: L("Kamera bulunamadı", "No camera found")

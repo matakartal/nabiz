@@ -10,8 +10,8 @@ enum Backup {
     static let fileExtension = "nabizbackup"
     private static let lastKey = "lastAutoBackup"
     /// Not worth carrying to another Mac, or private to this one.
-    private static let skipped: Set<String> = ["rateCache", "aiAlertLog", "launcherRecents", lastKey, "currentNote", "NSWindow Frame",
-                                               "bluetoothAsked", "crashReports"]
+    private static let skipped: Set<String> = ["rateCache", "aiAlertLog", "launcherRecents", lastKey, "lastAutoBackupFailure", "currentNote",
+                                               "NSWindow Frame", "bluetoothAsked", "crashReports"]
 
     static var lastAutoBackup: Date? { UserDefaults.standard.object(forKey: lastKey) as? Date }
 
@@ -36,33 +36,54 @@ enum Backup {
         "Nabiz-\(Date().formatted(.iso8601.year().month().day())).\(fileExtension)"
     }
 
-    /// Asks where, then saves.
-    static func saveAs() {
+    /// Asks where, then saves; says whether a backup was written.
+    @discardableResult
+    static func saveAs() -> Bool {
         let panel = NSSavePanel()
         panel.nameFieldStringValue = fileName
         panel.allowedContentTypes = [UTType(filenameExtension: fileExtension) ?? .data]
         NSApp.activate()
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard panel.runModal() == .OK, let url = panel.url else { return false }
         guard let data = data(), (try? data.write(to: url, options: .atomic)) != nil else {
             Monitor.panelActions.flash(L("Yedek yazılamadı", "Couldn't write the backup"))
-            return
+            return false
         }
         Monitor.panelActions.flash(L("Yedeklendi", "Backed up"))
+        return true
     }
 
-    /// Once a day into iCloud Drive, keeping the last ten.
+    /// Why the last daily backup didn't get written, until one does.
+    static var lastFailure: String? { UserDefaults.standard.string(forKey: failureKey) }
+    private static let failureKey = "lastAutoBackupFailure"
+    /// Asked every second: a failing backup is tried again hourly, not every tick.
+    private static var attemptedAt: Date?
+
+    /// Once a day into iCloud Drive, keeping the last ten. The date only moves on once the file is written.
     static func autoBackupIfNeeded() {
         guard Prefs.bool(Prefs.autoBackup) else { return }
         if let last = lastAutoBackup, Date().timeIntervalSince(last) < 20 * 3600 { return }
-        UserDefaults.standard.set(Date(), forKey: lastKey)
-        guard let folder = iCloudFolder, let data = data() else { return }
-        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        try? data.write(to: folder.appendingPathComponent(fileName), options: .atomic)
-        let old = ((try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? [])
-            .filter { $0.pathExtension == fileExtension }
-            .sorted { $0.lastPathComponent > $1.lastPathComponent }
-            .dropFirst(10)
-        old.forEach { try? FileManager.default.removeItem(at: $0) }
+        if let attemptedAt, Date().timeIntervalSince(attemptedAt) < 3600 { return }
+        attemptedAt = Date()
+        do {
+            guard let folder = iCloudFolder else { throw BackupError(L("iCloud Drive kapalı", "iCloud Drive is off")) }
+            guard let data = data() else { throw BackupError(L("ayarlar okunamadı", "couldn't read the settings")) }
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try data.write(to: folder.appendingPathComponent(fileName), options: .atomic)
+            UserDefaults.standard.set(Date(), forKey: lastKey)
+            UserDefaults.standard.removeObject(forKey: failureKey)
+            let old = ((try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? [])
+                .filter { $0.pathExtension == fileExtension }
+                .sorted { $0.lastPathComponent > $1.lastPathComponent }
+                .dropFirst(10)
+            old.forEach { try? FileManager.default.removeItem(at: $0) }
+        } catch {
+            UserDefaults.standard.set((error as? BackupError)?.text ?? error.localizedDescription, forKey: failureKey)
+        }
+    }
+
+    private struct BackupError: Error {
+        let text: String
+        init(_ text: String) { self.text = text }
     }
 
     /// Asks for a file, says what will change, loads it and restarts Nabız so everything reads it.
@@ -92,7 +113,8 @@ enum Backup {
         relaunch()
     }
 
-    private static func relaunch() {
+    /// Opens Nabız again a moment after it quits, so everything reads the new settings.
+    static func relaunch() {
         let path = Bundle.main.bundlePath
         guard path.hasSuffix(".app") else { return }
         let process = Process()
@@ -107,5 +129,50 @@ enum Backup {
         alert.messageText = title
         alert.informativeText = text
         alert.runModal()
+    }
+}
+
+/// "Reset all settings": says exactly what goes, offers a backup first, and keeps what would only make Nabız
+/// greet you or load again (the welcome, the What's New card, cached rates).
+@MainActor
+enum SettingsReset {
+    /// Kept through a reset.
+    static let kept = ["rateCache", Prefs.onboarded, Prefs.seenVersion, "appMover.declinedVersion", "crashReported"]
+
+    static func confirm() {
+        let alert = NSAlert()
+        alert.messageText = L("Tüm ayarlar sıfırlansın mı?", "Reset all settings?")
+        alert.informativeText = L("""
+            Her ayar ilk hâline döner ve şunlar silinir: parçacıklar, hızlı bağlantılar, AI komutların, pencere yerleşimleri, \
+            görevler, fiyat alarmları, başlatıcıdaki kısayolların, takma adların ve favorilerin, hesap makinesi geçmişi. \
+            Notlar, pano geçmişi ve ekran kayıtları kalır. Nabız sonra yeniden açılır.
+            """, """
+            Every setting goes back to how it started, and these are deleted: snippets, quicklinks, your AI commands, window \
+            layouts, schedules, price alerts, your launcher shortcuts, aliases and favourites, and the calculator history. \
+            Notes, the clipboard history and screen recordings stay. Nabız then restarts.
+            """)
+        alert.addButton(withTitle: L("Sıfırla", "Reset"))
+        alert.addButton(withTitle: L("Önce yedekle…", "Back up first…"))
+        alert.addButton(withTitle: L("Vazgeç", "Cancel"))
+        alert.buttons.first?.hasDestructiveAction = true
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            run()
+        case .alertSecondButtonReturn:
+            // Asked again once the backup is written, so the reset is still a choice made with the backup in hand.
+            if Backup.saveAs() { confirm() }
+        default:
+            return
+        }
+    }
+
+    private static func run() {
+        guard let domain = Bundle.main.bundleIdentifier else { return }
+        let saved = kept.compactMap { key in UserDefaults.standard.object(forKey: key).map { (key, $0) } }
+        UserDefaults.standard.removePersistentDomain(forName: domain)
+        for (key, value) in saved { UserDefaults.standard.set(value, forKey: key) }
+        UserDefaults.standard.synchronize()
+        // The stores still hold the old lists in memory and would write them back; starting fresh avoids that.
+        Backup.relaunch()
     }
 }

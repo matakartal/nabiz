@@ -166,7 +166,9 @@ enum SettingsIndex {
         .init(.screenshot, "screenshot.keys", "Ekran görüntüsünden sonra", "After a screenshot", "önizleme preview düzenleyici editor"),
         .init(.screenshot, "screenshot.record", "Ekran kaydı", "Screen recording", "video kayıt record screen studio mp4 gif zoom"),
         .init(.screenshot, "screenshot.record", "Son kaydı aç", "Open the last recording", "video kayıt düzenle edit"),
+        .init(.screenshot, "screenshot.library", "Geçmiş kayıtlar", "Past recordings", "video kayıt sil delete boyut size disk eski old"),
         // Backup & upkeep
+        .init(.maintenance, "maintenance.recordings", "Ekran kayıtlarının boyutu", "Screen recordings size", "video kayıt disk alan space temizlik clean"),
         .init(.maintenance, "maintenance.backup", "Yedekle", "Back up", "backup dışa aktar export dosya"),
         .init(.maintenance, "maintenance.backup", "Yedekten yükle", "Load a backup", "restore geri yükle içe aktar import"),
         .init(.maintenance, "maintenance.backup", "Her gün iCloud'a yedekle", "Daily iCloud backup", "icloud drive otomatik auto"),
@@ -257,6 +259,7 @@ enum SettingsIndex {
         .init(.launcher, "launcher.main", "Başlatıcıda pano öğeleri", "Clipboard items in the launcher", "pano clipboard"),
         .init(.launcher, "launcher.quicklinks", "Hızlı bağlantılar", "Quicklinks", "web arama google github url kısaltma keyword"),
         .init(.launcher, "launcher.bindings", "Kendi kısayolların ve takma adların", "Your shortcuts and aliases", "alias hotkey"),
+        .init(.launcher, "launcher.aiCommands", "Başlatıcıda AI komutları", "AI commands in the launcher", "istem prompt özetle çevir summarise translate"),
         // Extensions
         .init(.developer, "developer.projects", "Panelde projeleri göster", "Show projects in the panel", "git repo dal branch push commit"),
         .init(.developer, "developer.projects", "Projeyi aç", "Open projects in", "editör editor cursor vs code zed"),

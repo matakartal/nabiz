@@ -644,8 +644,73 @@ private struct ScreenshotPage: View {
                 Footnote(L("Kısayola bas: tüm ekran, pencere ya da alan ve ses seç, kayda başla. Bitirmek için menü çubuğundaki kırmızı noktaya ya da kısayola yeniden bas. Düzenleyici tıkladığın yerlere kendiliğinden yakınlaşır, imleci pürüzsüz ve büyük çizer; arka plan, kırpma ve MP4/GIF dışa aktarma orada.",
                            "Press the shortcut, pick the whole screen, a window or an area and the sound, and record. To stop, click the red dot in the menu bar or press the shortcut again. The editor zooms in where you clicked and draws the pointer smooth and large; background, trimming and MP4/GIF export are there."))
             }
+            RecordingsSection()
         }
         .formStyle(.grouped)
+    }
+}
+
+/// Past recordings: open one in the editor, show its file, or delete it; and clear out old ones in one go.
+private struct RecordingsSection: View {
+    private let library = RecLibrary.shared
+
+    var body: some View {
+        SettingsSection("screenshot.library") {
+            ForEach(library.entries.prefix(50)) { RecordingRow(entry: $0) }
+            if library.loaded && library.entries.isEmpty {
+                Text(L("Henüz kayıt yok.", "No recordings yet.")).foregroundStyle(Theme.textMuted)
+            }
+            if !library.entries.isEmpty {
+                let old = RecLibrary.older(than: 30, in: library.entries)
+                LabeledContent(L("Toplam \(library.entries.count) kayıt", "\(library.entries.count) recordings in all")) {
+                    HStack(spacing: Theme.Spacing.m) {
+                        Text(verbatim: Format.bytes(library.total)).monospacedDigit().foregroundStyle(Theme.textMuted)
+                        Button(L("30 günden eskileri sil…", "Delete recordings older than 30 days…"), role: .destructive) {
+                            library.deleteOlder(than: 30)
+                        }
+                        .disabled(old.isEmpty)
+                        .help(old.isEmpty ? L("30 günden eski kayıt yok", "No recordings older than 30 days")
+                                          : L("\(old.count) kayıt, \(Format.bytes(old.reduce(0) { $0 + $1.bytes }))",
+                                              "\(old.count) recordings, \(Format.bytes(old.reduce(0) { $0 + $1.bytes }))"))
+                    }
+                }
+            }
+        } header: {
+            Text(L("Geçmiş kayıtlar", "Past recordings"))
+        } footer: {
+            Footnote(L("Silinen kayıtlar Çöp Sepeti'ne gider. Dışa aktardığın videolar kalır.",
+                       "Deleted recordings go to the Trash. Videos you exported stay."))
+        }
+        .onAppear { library.refresh() }
+    }
+}
+
+private struct RecordingRow: View {
+    let entry: RecLibrary.Entry
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: Theme.Spacing.s) {
+            Text(verbatim: entry.created.formatted(date: .abbreviated, time: .shortened)).lineLimit(1)
+            Text(verbatim: RecFormat.duration(entry.duration) + " · " + Format.bytes(entry.bytes))
+                .font(Theme.small).monospacedDigit().foregroundStyle(Theme.textMuted).lineLimit(1)
+            Spacer(minLength: Theme.Spacing.s)
+            HStack(spacing: Theme.Spacing.m) {
+                Button(L("Düzenleyicide aç", "Open in editor")) {
+                    if let meta = RecStore.load(entry.id) { RecEditor.show(meta) }
+                }
+                Button(L("Göster", "Reveal")) { NSWorkspace.shared.activateFileViewerSelecting([RecStore.video(for: entry.id)]) }
+                Button(L("Sil", "Delete"), role: .destructive) { RecLibrary.shared.delete(entry) }
+                    .foregroundStyle(Theme.danger)
+            }
+            .buttonStyle(.borderless)
+            .font(Theme.small)
+            .opacity(hovering ? 1 : 0)
+            .allowsHitTesting(hovering)
+        }
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .accessibilityElement(children: .contain)
     }
 }
 
@@ -685,6 +750,10 @@ private struct MaintenancePage: View {
                             NSWorkspace.shared.open(folder)
                         }
                     }
+                    if let failure = Backup.lastFailure {
+                        Text(L("Son yedek alınamadı: \(failure)", "Last backup failed: \(failure)"))
+                            .font(Theme.small).foregroundStyle(Theme.warning.mark)
+                    }
                 }
             } header: {
                 Text(L("Yedek", "Backup"))
@@ -692,28 +761,26 @@ private struct MaintenancePage: View {
                 Footnote(L("Tek dosyada ayarlar, parçacıklar, bağlantılar, kendi kısayolların, pencere yerleşimleri, AI komutları, görevler ve notlar. Başka bir Mac'te \"Yedekten yükle\" ile aynı Nabız'a kavuşursun. Pano geçmişi ve oturum bilgileri hiç yedeklenmez. iCloud Drive'da son 10 yedek tutulur.",
                            "One file with settings, snippets, quicklinks, your shortcuts, window layouts, AI commands, schedules and notes. On another Mac, \"Load a backup\" gives you the same Nabız. The clipboard history and sign-ins are never included. iCloud Drive keeps the last 10."))
             }
+            SettingsSection("maintenance.recordings") {
+                LabeledContent(L("Ekran kayıtları", "Screen recordings")) {
+                    HStack(spacing: Theme.Spacing.m) {
+                        Text(verbatim: library.loaded ? Format.bytes(library.total) : "…").monospacedDigit().foregroundStyle(Theme.textMuted)
+                        Button(L("Kayıtlar…", "Recordings…")) { SettingsWindow.show(.screenshot, anchor: "screenshot.library") }
+                    }
+                }
+            } footer: {
+                Footnote(L("Düzenleyicinin sakladığı kayıtlar. Dışa aktardığın videolar burada sayılmaz.",
+                           "Recordings the editor keeps. Videos you exported aren't counted here."))
+            }
             SettingsSection("maintenance.reset") {
-                Button(L("Tüm ayarları sıfırla…", "Reset all settings…"), role: .destructive) { resetAll() }
+                Button(L("Tüm ayarları sıfırla…", "Reset all settings…"), role: .destructive) { SettingsReset.confirm() }
             }
         }
         .formStyle(.grouped)
+        .onAppear { library.refresh() }
     }
 
-    /// Back to the defaults; the cached rates and the welcome stay so nothing has to load or show again.
-    private func resetAll() {
-        let alert = NSAlert()
-        alert.messageText = L("Tüm ayarlar sıfırlansın mı?", "Reset all settings?")
-        alert.informativeText = L("Menü çubuğu, panel, piyasalar, döviz ve AI seçimleri ilk hâline döner.",
-                                  "Menu bar, panel, markets, currency and AI choices go back to how they started.")
-        alert.addButton(withTitle: L("Sıfırla", "Reset"))
-        alert.addButton(withTitle: L("Vazgeç", "Cancel"))
-        alert.buttons.first?.hasDestructiveAction = true
-        guard alert.runModal() == .alertFirstButtonReturn, let domain = Bundle.main.bundleIdentifier else { return }
-        let keep = ["rateCache", Prefs.onboarded]
-        let saved = keep.compactMap { key in UserDefaults.standard.object(forKey: key).map { (key, $0) } }
-        UserDefaults.standard.removePersistentDomain(forName: domain)
-        for (key, value) in saved { UserDefaults.standard.set(value, forKey: key) }
-    }
+    private var library: RecLibrary { RecLibrary.shared }
 }
 
 private struct MenuBarPage: View {
@@ -1834,6 +1901,9 @@ private struct CalendarPage: View {
 }
 
 private struct AboutPage: View {
+    /// Read once; cleared after reporting so the button goes away.
+    @State private var lastCrash = CrashReporter.latest
+
     var body: some View {
         VStack(spacing: Theme.Spacing.m) {
             Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 64, height: 64)
@@ -1849,10 +1919,11 @@ private struct AboutPage: View {
                 .font(Theme.small).foregroundStyle(Theme.textMuted).multilineTextAlignment(.center)
             HStack(spacing: Theme.Spacing.l) {
                 Button(L("Neler yapabilir?", "What can it do?")) { HelpWindow.show() }
-                if let crash = CrashReporter.latest {
+                if let crash = lastCrash {
                     Button(L("Son çökmeyi bildir (\(crash.date.formatted(date: .abbreviated, time: .omitted)))",
                              "Report the last crash (\(crash.date.formatted(date: .abbreviated, time: .omitted)))")) {
-                        if let url = CrashReporter.reportURL(crash.url) { NSWorkspace.shared.open(url) }
+                        CrashReporter.report(crash.url)
+                        lastCrash = nil
                     }
                 }
             }
@@ -2101,14 +2172,31 @@ private struct UpdateRow: View {
 
     var body: some View {
         if let release = updater.available {
-            Button(updater.installing ? L("Güncelleniyor…", "Updating…") : L("\(release.version) sürümüne güncelle", "Update to \(release.version)")) {
-                updater.install()
+            Button(updater.installing ? L("Güncelleniyor…", "Updating…") : L("\(release.version) sürümüne güncelle…", "Update to \(release.version)…")) {
+                updater.offer()
             }
             .buttonStyle(.borderedProminent)
             .tint(Theme.accent)
             .disabled(updater.installing)
         } else {
-            Button(L("Güncellemeleri denetle", "Check for updates")) { updater.check(force: true) }
+            Button(updater.status == .checking ? L("Denetleniyor…", "Checking…") : L("Güncellemeleri denetle", "Check for updates")) {
+                updater.check(force: true)
+            }
+            .disabled(updater.status == .checking)
+        }
+        switch updater.status {
+        case .upToDate:
+            Text(L("Güncelsin (\(Updater.current))", "You're up to date (\(Updater.current))"))
+                .font(Theme.small).foregroundStyle(Palette.green.mark)
+        case .failed(let reason):
+            Text(L("Denetlenemedi: \(reason)", "Couldn't check: \(reason)"))
+                .font(Theme.small).foregroundStyle(Theme.warning.mark)
+        default:
+            EmptyView()
+        }
+        if let checked = updater.checkedAt {
+            Text(verbatim: L("Son denetim: ", "Last checked ") + checked.formatted(.relative(presentation: .named).locale(Format.locale)))
+                .font(Theme.small).foregroundStyle(Theme.textMuted)
         }
         if let error = updater.lastError {
             Text(verbatim: error).font(Theme.small).foregroundStyle(Theme.warning.mark)

@@ -1,6 +1,7 @@
 // Nabız — © 2026 Mehmet Ata Kartal. Licensed under GPL-3.0-or-later; see LICENSE.
 import AppKit
 import AVFoundation
+import ScreenCaptureKit
 import SwiftUI
 
 /// Starting and stopping a recording: a bar at the bottom of the screen (like macOS's ⌘⇧5) to pick the whole
@@ -107,6 +108,12 @@ enum RecControl {
                 options.camera = false
                 Monitor.panelActions.flash(L("Kamera izni yok", "No camera access"))
             }
+            // Without the permission the microphone would fail the whole recording; ask first, explain if refused.
+            if options.microphone {
+                let status = AVCaptureDevice.authorizationStatus(for: .audio)
+                let allowed = status == .notDetermined ? await AVCaptureDevice.requestAccess(for: .audio) : status == .authorized
+                guard allowed else { explain(RecError.noMicrophoneAccess); return }
+            }
             count(on: screen, rect: rect, window: window)
         }
     }
@@ -117,7 +124,24 @@ enum RecControl {
         let area = rect ?? CGRect(origin: .zero, size: screen.frame.size)
         // The area in global (bottom-left) coordinates.
         let global = NSRect(x: screen.frame.minX + area.minX, y: screen.frame.maxY - area.maxY, width: area.width, height: area.height)
+        Task {
+            await countDown(over: global, from: 3, step: .milliseconds(800))
+            do {
+                try await RecRecorder.shared.start(screen: screen, rect: rect, window: window, sound: options.sound,
+                                                  microphone: options.microphone, camera: options.camera)
+                showRecording(global: global, whole: rect == nil)
+            } catch {
+                ShotLog.write("recording failed: \(error)")
+                explain(error)
+            }
+        }
+    }
+
+    /// A big number counting down over `global` (bottom-left coordinates), one per `step`; gone when it returns.
+    /// Recordings count 3-2-1; the timed screenshot counts from 5.
+    static func countDown(over global: NSRect, from start: Int, step: Duration) async {
         let state = RecCountdownState()
+        state.number = start
         let panel = NSPanel(contentRect: global, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.level = .screenSaver
         panel.backgroundColor = .clear
@@ -128,21 +152,41 @@ enum RecControl {
         panel.setFrame(global, display: true)
         panel.orderFrontRegardless()
         countdown = panel
-        Task {
-            for n in [3, 2, 1] {
-                state.number = n
-                try? await Task.sleep(for: .milliseconds(800))
-            }
-            countdown?.orderOut(nil)
-            countdown = nil
-            do {
-                try await RecRecorder.shared.start(screen: screen, rect: rect, window: window, sound: options.sound,
-                                                  microphone: options.microphone, camera: options.camera)
-                showRecording(global: global, whole: rect == nil)
-            } catch {
-                Monitor.panelActions.flash(L("Kayıt başlamadı", "Recording didn't start"))
-                ShotLog.write("recording failed: \(error)")
-            }
+        for n in stride(from: start, through: 1, by: -1) {
+            state.number = n
+            try? await Task.sleep(for: step)
+        }
+        panel.orderOut(nil)
+        if countdown === panel { countdown = nil }
+    }
+
+    /// Why a recording didn't start, in words; and the privacy page to open when a permission is missing.
+    static func failure(_ error: Error, screenAllowed: Bool, microphoneWanted: Bool, microphoneAllowed: Bool) -> (text: String, pane: String?) {
+        let declined = (error as NSError).domain == SCStreamErrorDomain && (error as NSError).code == SCStreamError.userDeclined.rawValue
+        if !screenAllowed || declined {
+            return (L("Nabız'ın ekran kaydı izni yok. Gizlilik ve Güvenlik → Ekran Kaydı'nda Nabız'ı aç.",
+                      "Nabız isn't allowed to record the screen. Turn Nabız on in Privacy & Security → Screen Recording."), "Privacy_ScreenCapture")
+        }
+        if microphoneWanted, !microphoneAllowed || (error as? RecError) == .noMicrophoneAccess {
+            return (RecError.noMicrophoneAccess.errorDescription ?? "", "Privacy_Microphone")
+        }
+        return ((error as? LocalizedError)?.errorDescription ?? error.localizedDescription, nil)
+    }
+
+    private static func explain(_ error: Error) {
+        let wanted = options.microphone
+        let reason = failure(error, screenAllowed: ScreenAccess.granted, microphoneWanted: wanted,
+                             microphoneAllowed: AVCaptureDevice.authorizationStatus(for: .audio) == .authorized)
+        let alert = NSAlert()
+        alert.messageText = L("Kayıt başlamadı", "Recording didn't start")
+        alert.informativeText = reason.text
+        if reason.pane != nil { alert.addButton(withTitle: L("Gizlilik ayarlarını aç", "Open Privacy Settings")) }
+        alert.addButton(withTitle: L("Tamam", "OK"))
+        NSApp.activate()
+        let response = alert.runModal()
+        if let pane = reason.pane, response == .alertFirstButtonReturn,
+           let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)") {
+            NSWorkspace.shared.open(url)
         }
     }
 

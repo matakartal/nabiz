@@ -52,14 +52,23 @@ enum ShotExport {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.png, .jpeg, .heic, .tiff]
         panel.directoryURL = Capture.folder
-        panel.nameFieldStringValue = Capture.newFile().deletingPathExtension().lastPathComponent + ".png"
+        // The type the system saves screenshots in (png unless changed with `defaults write com.apple.screencapture type`).
+        panel.nameFieldStringValue = Capture.newFile().deletingPathExtension().lastPathComponent + "." + (fileType == "jpeg" ? "jpg" : fileType)
         panel.canCreateDirectories = true
         panel.beginSheetModal(for: window) { response in
             MainActor.assumeIsolated {
-                guard response == .OK, let url = panel.url, let image = ShotRenderer.export(doc),
-                      let data = ShotRenderer.encode(image, type: url.pathExtension.lowercased(), scale: doc.scale),
-                      (try? data.write(to: url, options: .atomic)) != nil else { return }
-                done(url)
+                guard response == .OK, let url = panel.url else { return }
+                do {
+                    guard let image = ShotRenderer.export(doc),
+                          let data = ShotRenderer.encode(image, type: url.pathExtension.lowercased(), scale: doc.scale) else {
+                        throw CocoaError(.fileWriteUnknown)
+                    }
+                    try data.write(to: url, options: .atomic)
+                    done(url)
+                } catch {
+                    ShotLog.write("save as failed: \(error)")
+                    Monitor.panelActions.flash(L("Kaydedilemedi", "Couldn't save"))
+                }
             }
         }
     }
