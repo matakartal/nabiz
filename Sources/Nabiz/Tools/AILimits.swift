@@ -445,11 +445,16 @@ enum AIFetch {
                                              resetsAt: date(five["resets_at"]), period: 5 * 3600))
             }
             var ids = Set(status.limits.map(\.id))
+            let fiveHourReset = status.limits.first?.resetsAt
             for limit in limits {
                 guard let percent = number(limit["percent"]) else { continue }
                 let scope = (limit["scope"] as? [String: Any])?["model"] as? [String: Any]
                 let model = scope?["display_name"] as? String
                 let group = limit["group"] as? String ?? ""
+                // The list repeats the 5-hour window as a "session" limit; it is already shown as "5-hour".
+                if isFiveHourRepeat(group: group, model: model, resetsAt: date(limit["resets_at"]), fiveHourReset: fiveHourReset) {
+                    continue
+                }
                 let kind = limit["kind"] as? String ?? ""
                 let label = model ?? (group == "weekly" ? windowLabel("seven_day") : group.replacingOccurrences(of: "_", with: " ").capitalized)
                 let overall = model == nil && kind.hasSuffix("_all") && group == "weekly"
@@ -584,6 +589,14 @@ enum AIFetch {
         }
         taken.insert(id)
         return id
+    }
+
+    /// A limit without a model, outside the weekly group, that resets with the 5-hour window is that window again.
+    static func isFiveHourRepeat(group: String, model: String?, resetsAt: Date?, fiveHourReset: Date?) -> Bool {
+        guard model == nil, group != "weekly", let fiveHourReset else { return false }
+        if group == "session" { return true }
+        guard let resetsAt else { return false }
+        return abs(resetsAt.timeIntervalSince(fiveHourReset)) < 120
     }
 
     private static func windowLabel(_ key: String) -> String {

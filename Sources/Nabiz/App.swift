@@ -196,7 +196,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Scheduler.shared.check()
             Updater.shared.check()
             // Market prices: every 4 s when shown (panel or menu bar), every 30 s for price alerts alone.
-            if (monitor.panelVisible && Prefs.bool(Prefs.showMarkets)) || Prefs.bool(Prefs.barMarket) {
+            let meter = monitor.panelVisible && MarketStore.shared.meterID != nil
+            if meter { MarketStore.shared.refreshDay() }
+            if (monitor.panelVisible && Prefs.bool(Prefs.showMarkets)) || meter || Prefs.bool(Prefs.barMarket) {
                 MarketStore.shared.refreshWatched(maxAge: 4)
             } else if !PriceAlerts.shared.markets.isEmpty {
                 MarketStore.shared.refreshWatched(maxAge: 30)
@@ -600,6 +602,7 @@ enum Snapshot {
         let monitor = Monitor(autostart: false)
         RateStore.shared.refreshIfNeeded()
         MarketStore.shared.refreshWatched(maxAge: 0)
+        MarketStore.shared.refreshDay()
         WeatherStore.shared.refreshIfNeeded()
         ProjectStore.shared.refresh(force: true)
         DockerStore.shared.refresh()

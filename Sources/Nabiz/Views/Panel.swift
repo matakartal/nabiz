@@ -1596,6 +1596,8 @@ private func openSettings(_ pane: String) {
 /// CPU, RAM and GPU with the last two minutes each, on the same grid as the rows.
 struct MetersView: View {
     let monitor: Monitor
+    @AppStorage(Prefs.meterMarketID) private var meterMarketID = "BTC"
+    private var meterID: String? { meterMarketID.isEmpty ? nil : meterMarketID }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.s) {
@@ -1610,7 +1612,7 @@ struct MetersView: View {
                     }
                     .help(L("Önerileri göster", "Show suggestions"))
             }
-            HStack(spacing: Theme.Spacing.m) {
+            HStack(spacing: meterID == nil ? Theme.Spacing.m : Theme.Spacing.s) {
                 if let system = monitor.system {
                     Meter(label: "CPU", value: system.cpu, history: monitor.history.cpu,
                           fill: system.cpu > 0.85 ? Theme.warning.fill : Theme.accent,
@@ -1620,6 +1622,9 @@ struct MetersView: View {
                     Meter(label: "GPU", value: system.gpu ?? 0, history: monitor.history.gpu,
                           fill: (system.gpu ?? 0) > 0.85 ? Theme.warning.fill : Theme.accent,
                           detail: system.gpu == nil ? "—" : L("Grafik", "Graphics"))
+                    if let id = meterID, let market = MarketStore.shared.markets[id] {
+                        MarketMeter(market: market, closes: MarketStore.shared.dayCloses[id] ?? [])
+                    }
                 } else {
                     Text(L("Ölçülüyor…", "Measuring…")).font(Theme.small).foregroundStyle(Theme.textMuted)
                 }
@@ -1665,16 +1670,56 @@ private struct Meter: View {
     }
 }
 
+/// A market as the fourth meter: its price, the last day as a line and the 24-hour move.
+private struct MarketMeter: View {
+    let market: Market
+    let closes: [Double]
+
+    var body: some View {
+        let change = market.change ?? 0
+        let tone = change >= 0 ? Palette.green.mark : Theme.warning.mark
+        let line = closes.isEmpty ? [] : closes + [market.price]
+        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+            HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.xs) {
+                // The name keeps its width; the move shrinks a little if the column is tight.
+                Text(verbatim: market.name).font(Theme.small).foregroundStyle(Theme.textMuted).lineLimit(1).fixedSize()
+                Spacer(minLength: 0)
+                Text(verbatim: Self.move(change)).font(Theme.bodyStrong).monospacedDigit()
+                    .foregroundStyle(tone).lineLimit(1).minimumScaleFactor(0.7)
+            }
+            Sparkline(values: Self.scaled(line), fill: change >= 0 ? Palette.green.mark : Theme.warning.fill, length: line.count)
+            Text(verbatim: Format.price(market.price)).font(Theme.small).monospacedDigit()
+                .foregroundStyle(Theme.textMuted).lineLimit(1).minimumScaleFactor(0.8)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .help(L("\(market.name): son 24 saat", "\(market.name): the last 24 hours"))
+    }
+
+    /// "+1,2%" / "-0,4%": the 24-hour move, one decimal, always signed.
+    static func move(_ fraction: Double) -> String {
+        let value = Format.number(abs(fraction) * 100, maxDigits: 1, minDigits: 1)
+        return (fraction < 0 ? "-" : "+") + (Prefs.isTurkish ? "%" + value : value + "%")
+    }
+
+    /// Lowest price at a tenth of the height, highest at nine tenths, so the line never touches the edges.
+    static func scaled(_ values: [Double]) -> [Double] {
+        guard let low = values.min(), let high = values.max(), high > low else { return values.map { _ in 0.5 } }
+        return values.map { 0.1 + 0.8 * ($0 - low) / (high - low) }
+    }
+}
+
 /// The last two minutes as a filled line, 0...1 bottom to top.
 private struct Sparkline: View {
     let values: [Double]
     let fill: Color
+    /// How many points fill the width; fewer values start further right.
+    var length = History.length
 
     var body: some View {
         Canvas { context, size in
             context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Theme.track))
             guard values.count > 1 else { return }
-            let step = size.width / CGFloat(History.length - 1)
+            let step = size.width / CGFloat(max(length, 2) - 1)
             let start = size.width - step * CGFloat(values.count - 1)
             func point(_ index: Int) -> CGPoint {
                 CGPoint(x: start + step * CGFloat(index), y: size.height * (1 - CGFloat(min(max(values[index], 0), 1))))

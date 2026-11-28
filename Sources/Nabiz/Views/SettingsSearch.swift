@@ -310,6 +310,7 @@ enum SettingsIndex {
         .init(.calendar, "calendar.calendars", "Gösterilen takvimler", "Calendars shown", "gizle hide"),
         // Markets
         .init(.markets, "markets.panel", "Paneldeki piyasalar", "Markets in the panel", "btc eth kripto hisse"),
+        .init(.markets, "markets.meter", "Üstteki grafik", "Chart at the top", "grafik chart btc meter cpu ram gpu dördüncü fourth"),
         .init(.markets, "markets.alerts", "Fiyat alarmları", "Price alerts", "alarm alert hedef target bildirim"),
         .init(.markets, "markets.catalog", "Piyasa ekle", "Add a market", "hyperliquid btc tsla gold altın hisse stock"),
         // Currency

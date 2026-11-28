@@ -49,6 +49,11 @@ final class MarketStore {
     @ObservationIgnored var onPrices: (() -> Void)?
 
     var watchedIDs: [String] { Prefs.string(Prefs.watchedMarkets).split(separator: ",").map(String.init) }
+    /// The market shown as the fourth meter, or nil when that meter is off.
+    var meterID: String? { Prefs.string(Prefs.meterMarketID).isEmpty ? nil : Prefs.string(Prefs.meterMarketID) }
+    /// The last 24 hours of closing prices (15-minute candles), oldest first, per market.
+    private(set) var dayCloses: [String: [Double]] = [:]
+    @ObservationIgnored private var dayAt: [String: Date] = [:]
     var watched: [Market] { watchedIDs.compactMap { markets[$0] } }
 
     func dexTitle(_ dex: String) -> String {
@@ -57,7 +62,7 @@ final class MarketStore {
 
     /// Prices of the watched markets, at most every `maxAge` seconds.
     func refreshWatched(maxAge: TimeInterval = 10) {
-        let ids = Set(watchedIDs).union(PriceAlerts.shared.markets)
+        let ids = Set(watchedIDs).union(PriceAlerts.shared.markets).union(meterID.map { [$0] } ?? [])
         guard !fetching, !ids.isEmpty else { return }
         if let pricesAt, Date().timeIntervalSince(pricesAt) < maxAge { return }
         let needed = Set(ids.map { $0.contains(":") ? String($0.split(separator: ":")[0]) : "" })
@@ -79,6 +84,16 @@ final class MarketStore {
         if let cryptoAt, Date().timeIntervalSince(cryptoAt) < 60 { return }
         cryptoAt = Date()
         Task { _ = await load(dexes: [""]) }
+    }
+
+    /// The meter's 24-hour line, at most every 5 minutes (the live price extends it in between).
+    func refreshDay() {
+        guard let id = meterID else { return }
+        if let at = dayAt[id], Date().timeIntervalSince(at) < 300 { return }
+        dayAt[id] = Date()
+        Task {
+            if let closes = await Self.fetchDay(coin: id) { dayCloses[id] = closes } else { dayAt[id] = nil }
+        }
     }
 
     /// Tries again right away (the "Try again" row).
@@ -153,6 +168,15 @@ final class MarketStore {
             return Market(id: name, dex: dex, price: price, prevDayPrice: number(context["prevDayPx"]),
                           volume: number(context["dayNtlVlm"]) ?? 0)
         }
+    }
+
+    /// `[{"t": …, "c": "60104.0", …}]`, 15-minute candles over the last day.
+    private static func fetchDay(coin: String) async -> [Double]? {
+        let now = Int(Date().timeIntervalSince1970 * 1000)
+        let request: [String: Any] = ["coin": coin, "interval": "15m", "startTime": now - 86_400_000, "endTime": now]
+        guard let candles = await post(["type": "candleSnapshot", "req": request]) as? [[String: Any]] else { return nil }
+        let closes = candles.compactMap { number($0["c"]) }
+        return closes.count > 1 ? closes : nil
     }
 
     private static func number(_ value: Any?) -> Double? {

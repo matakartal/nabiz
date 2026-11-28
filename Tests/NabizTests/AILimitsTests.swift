@@ -51,6 +51,15 @@ struct AILimitsTests {
         #expect(again == "claude.weekly.weekly_model.claude-opus-4.2")
     }
 
+    @Test func theSessionLimitIsNotShownTwiceNextToFiveHour() {
+        let reset = Date(timeIntervalSince1970: 1_800_000_000)
+        #expect(AIFetch.isFiveHourRepeat(group: "session", model: nil, resetsAt: nil, fiveHourReset: reset))
+        #expect(AIFetch.isFiveHourRepeat(group: "other", model: nil, resetsAt: reset.addingTimeInterval(1), fiveHourReset: reset))
+        #expect(!AIFetch.isFiveHourRepeat(group: "session", model: nil, resetsAt: reset, fiveHourReset: nil))
+        #expect(!AIFetch.isFiveHourRepeat(group: "weekly", model: nil, resetsAt: reset, fiveHourReset: reset))
+        #expect(!AIFetch.isFiveHourRepeat(group: "session", model: "Fable", resetsAt: reset, fiveHourReset: reset))
+    }
+
     @Test func burningFastNeedsEnoughOfTheWindowAndHalfTheLimitGone() {
         let now = Date()
         let week: TimeInterval = 7 * 86_400

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.12.0
+
+- **A market next to CPU, RAM and GPU:** the panel's header has a fourth meter with BTC's last 24 hours — the move,
+  the line and the price. Pick another market or turn it off in Settings → Markets → Chart at the top.
+- **AI limits:** Claude's 5-hour window no longer shows twice (as "5-hour" and "Session").
+
 ## 1.11.0
 
 - **Open source:** Nabız is now free software under the GPL v3. The name and icon stay with the author; forks use their
