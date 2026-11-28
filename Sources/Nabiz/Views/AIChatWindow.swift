@@ -70,6 +70,11 @@ final class AIChatState {
     var selection: UUID? {
         didSet {
             guard selection != oldValue else { return }
+            if !navigating {
+                if let oldValue { back.removeAll { $0 == oldValue }; back.append(oldValue) }
+                if back.count > 50 { back.removeFirst() }
+                forward.removeAll()
+            }
             // Leaving a chat mid-edit puts its messages back; each chat keeps its own half-written message.
             cancelEdit()
             finding = false
@@ -82,6 +87,37 @@ final class AIChatState {
             if let selection { AINotifications.clear(selection) }
         }
     }
+    /// The chats you opened before (back, ⌘[) and the ones you came back from (forward, ⌘]), like a browser.
+    private(set) var back: [UUID] = []
+    private(set) var forward: [UUID] = []
+    @ObservationIgnored private var navigating = false
+    var canGoBack: Bool { back.contains { AIChatStore.shared.conversation($0) != nil } }
+    var canGoForward: Bool { forward.contains { AIChatStore.shared.conversation($0) != nil } }
+
+    func goBack() {
+        while let id = back.popLast() {
+            guard let chat = AIChatStore.shared.conversation(id) else { continue }
+            if let selection { forward.append(selection) }
+            travel(to: chat)
+            return
+        }
+    }
+
+    func goForward() {
+        while let id = forward.popLast() {
+            guard let chat = AIChatStore.shared.conversation(id) else { continue }
+            if let selection { back.append(selection) }
+            travel(to: chat)
+            return
+        }
+    }
+
+    private func travel(to chat: AIConversation) {
+        navigating = true
+        select(chat)
+        navigating = false
+    }
+
     /// Messages written while an answer was still coming, sent one by one as each answer finishes.
     var queued: [UUID: [Queued]] = [:]
     @ObservationIgnored private var finished: NSObjectProtocol?
@@ -490,7 +526,10 @@ struct AIChatView: View {
             AIChatDetail(state: state)
         } sidebarBar: {
             BarButton(symbol: "sidebar.left", help: L("Kenar çubuğu (⌃⌘S)", "Sidebar (⌃⌘S)")) { toggleSidebar() }
-            BarButton(symbol: "square.and.pencil", help: L("Yeni sohbet (⌘N)", "New chat (⌘N)")) { state.newChat() }
+            BarButton(symbol: "chevron.left", help: L("Geri (⌘[)", "Back (⌘[)")) { state.goBack() }
+                .disabled(!state.canGoBack).opacity(state.canGoBack ? 1 : 0.35)
+            BarButton(symbol: "chevron.right", help: L("İleri (⌘])", "Forward (⌘])")) { state.goForward() }
+                .disabled(!state.canGoForward).opacity(state.canGoForward ? 1 : 0.35)
         } detailBar: {
             AIChatTitleBar(state: state)
         }
@@ -508,6 +547,8 @@ struct AIChatView: View {
                 Button("") { state.copyLastAnswer() }.keyboardShortcut("c", modifiers: [.command, .shift])
                 Button("") { state.toggleSide() }.keyboardShortcut("s", modifiers: [.command, .option])
                 Button("") { state.focusSearch += 1 }.keyboardShortcut("k", modifiers: .command)
+                Button("") { state.goBack() }.keyboardShortcut("[", modifiers: .command)
+                Button("") { state.goForward() }.keyboardShortcut("]", modifiers: .command)
                 Button("") { state.quoteSelection() }.keyboardShortcut("'", modifiers: [.command, .shift])
                 ForEach(1..<10) { number in
                     Button("") { state.jump(to: number) }.keyboardShortcut(KeyEquivalent(Character("\(number)")), modifiers: .command)
@@ -652,14 +693,22 @@ private struct AIChatSidebar: View {
     @Bindable var state: AIChatState
     @AppStorage("aiGroupBy") private var grouping = AIChatGrouping.date.rawValue
     @AppStorage("aiCollapsed") private var collapsed = ""
+    /// While searching, only this AI's chats.
+    @State private var engineFilter: AIEngine?
     private let store = AIChatStore.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            SidebarSearchField(text: $state.query, focusTrigger: state.focusSearch) {}
+            SidebarSearchField(text: $state.query, onMove: move, focusTrigger: state.focusSearch) {
+                if let hit = visibleHits.first(where: { $0.chat.id == state.selection }) ?? visibleHits.first { state.select(hit.chat) }
+            }
                 .padding(.horizontal, Theme.sidebarInset)
                 .padding(.top, Theme.Spacing.s)
                 .padding(.bottom, Theme.Spacing.xs)
+            NewChatRow(active: state.selection == nil && !searching) { state.query = ""; state.newChat() }
+                .padding(.horizontal, Theme.sidebarInset)
+                .padding(.bottom, Theme.Spacing.xs)
+            if searching { engineChips }
             if state.showArchive {
                 Button { withAnimation(.easeOut(duration: 0.2)) { state.showArchive = false } } label: {
                     HStack(spacing: Theme.Spacing.xs) {
@@ -677,13 +726,63 @@ private struct AIChatSidebar: View {
             list
             footer
         }
+        .onChange(of: searching) { _, on in if !on { engineFilter = nil } }
     }
 
     private var searching: Bool { !state.query.trimmingCharacters(in: .whitespaces).isEmpty }
 
-    private func matches(_ chat: AIConversation) -> Bool {
-        let query = state.query.trimmingCharacters(in: .whitespaces)
-        return query.isEmpty || Fuzzy.contains(query, chat.title) || chat.messages.contains { Fuzzy.contains(query, $0.text) }
+    private var words: [String] { AIChatSearch.words(state.query) }
+
+    /// Every match, in the archive too (or only there while it's open), best first.
+    private var hits: [AIChatSearch.Hit] {
+        AIChatSearch.run(state.query, in: state.showArchive ? store.archivedChats : store.active + store.archivedChats,
+                         folders: store.folders)
+    }
+
+    private var visibleHits: [AIChatSearch.Hit] {
+        guard let engineFilter else { return hits }
+        return hits.filter { $0.chat.engine == engineFilter }
+    }
+
+    /// ↑↓ in the search field walk the results without leaving it.
+    private func move(_ by: Int) {
+        let list = visibleHits
+        guard !list.isEmpty else { return }
+        let index = list.firstIndex { $0.chat.id == state.selection }.map { $0 + by } ?? (by > 0 ? 0 : list.count - 1)
+        state.selection = list[min(max(index, 0), list.count - 1)].chat.id
+    }
+
+    /// Narrow the results to one AI, shown when they come from more than one.
+    @ViewBuilder private var engineChips: some View {
+        let engines = AIEngine.order.filter { engine in hits.contains { $0.chat.engine == engine } }
+        if engines.count > 1 {
+            ScrollView(.horizontal) {
+                HStack(spacing: Theme.Spacing.xs) {
+                    chip(nil, L("Tümü", "All"))
+                    ForEach(engines) { chip($0, $0.title) }
+                }
+                .padding(.horizontal, Theme.sidebarInset)
+            }
+            .scrollIndicators(.never)
+            .padding(.bottom, Theme.Spacing.xs)
+        }
+    }
+
+    private func chip(_ engine: AIEngine?, _ title: String) -> some View {
+        let on = engineFilter == engine
+        return Button { withAnimation(.easeOut(duration: 0.15)) { engineFilter = engine } } label: {
+            HStack(spacing: 4) {
+                if let engine { AIBrandMark(engine: engine, size: 10) }
+                Text(verbatim: title)
+            }
+            .font(Theme.small)
+            .foregroundStyle(on ? Theme.text : Theme.textMuted)
+            .padding(.horizontal, Theme.Spacing.s).frame(height: 22)
+            .background(on ? Theme.hover : .clear, in: Capsule())
+            .overlay { Capsule().strokeBorder(Theme.hairline, lineWidth: on ? 0 : 1) }
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
     }
 
     private func expanded(_ key: String) -> Binding<Bool> {
@@ -695,9 +794,11 @@ private struct AIChatSidebar: View {
     }
 
     @ViewBuilder private var list: some View {
-        let pool = (state.showArchive ? store.archivedChats : store.active).filter(matches)
+        let found = searching ? visibleHits : []
+        let pool = searching ? found.map(\.chat) : (state.showArchive ? store.archivedChats : store.active)
         if pool.isEmpty && (searching || state.showArchive || store.folders.isEmpty) {
-            Text(searching ? L("Sonuç yok", "No results")
+            Text(searching ? L("“\(state.query.trimmingCharacters(in: .whitespaces))” için sonuç yok. Başlıklarda, klasör adlarında ve mesajlarda aranır.",
+                               "No results for “\(state.query.trimmingCharacters(in: .whitespaces))”. Titles, folder names and messages are searched.")
                  : state.showArchive ? L("Arşiv boş.", "The archive is empty.")
                  : L("Sohbetlerin burada görünür.", "Your chats show up here."))
                 .font(Theme.small).foregroundStyle(Theme.textMuted)
@@ -706,12 +807,14 @@ private struct AIChatSidebar: View {
             Spacer()
         } else {
             List(selection: $state.selection) {
-                if searching || state.showArchive {
+                if searching {
                     Section {
-                        ForEach(pool) { row($0) }
+                        ForEach(found, id: \.chat.id) { row($0.chat, hit: $0) }
                     } header: {
-                        if searching { header(L("\(pool.count) sonuç", "\(pool.count) results")) }
+                        header(L("\(found.count) sonuç", "\(found.count) results"))
                     }
+                } else if state.showArchive {
+                    Section { ForEach(pool) { row($0) } }
                 } else {
                     let pinned = pool.filter(\.pinned)
                     if !pinned.isEmpty {
@@ -770,8 +873,8 @@ private struct AIChatSidebar: View {
         Text(verbatim: title).font(Theme.smallStrong).foregroundStyle(Theme.textMuted)
     }
 
-    private func row(_ chat: AIConversation) -> some View {
-        AIChatRow(conversation: chat, state: state, snippet: searching ? chat.snippet(for: state.query) : nil)
+    private func row(_ chat: AIConversation, hit: AIChatSearch.Hit? = nil) -> some View {
+        AIChatRow(conversation: chat, state: state, words: hit == nil ? [] : words, hit: hit)
             .tag(chat.id)
             .draggable(chat.id.uuidString)
             .contextMenu { AIChatActions(conversation: chat, state: state) }
@@ -862,7 +965,7 @@ private struct AIFolderGroup: View {
             } isTargeted: { targeted = $0 }
         if expanded {
             ForEach(chats) { chat in
-                AIChatRow(conversation: chat, state: state, snippet: nil)
+                AIChatRow(conversation: chat, state: state)
                     .padding(.leading, SidebarGrid.indent)
                     .tag(chat.id)
                     .draggable(chat.id.uuidString)
@@ -937,6 +1040,118 @@ private struct AIFolderGroup: View {
         guard state.renamingFolder == folder.id else { return }
         store.renameFolder(folder.id, name)
         state.renamingFolder = nil
+    }
+}
+
+/// "New chat" under the search, as in the AI apps: a pencil in the icon column, the words in the text column, ⌘N on
+/// hover; lit while the new chat is the one open.
+private struct NewChatRow: View {
+    let active: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: SidebarGrid.gap) {
+                Image(systemName: "square.and.pencil")
+                    .font(.system(size: 13))
+                    .frame(width: SidebarGrid.icon, height: SidebarGrid.icon)
+                Text(L("Yeni sohbet", "New chat")).font(Theme.body)
+                Spacer(minLength: 0)
+                Text(verbatim: "⌘N").font(Theme.small).foregroundStyle(Theme.textMuted).opacity(hovering ? 1 : 0)
+            }
+            .foregroundStyle(Theme.text)
+            .padding(.horizontal, Theme.Spacing.s)
+            .frame(height: SidebarGrid.row + 2)
+            .background(hovering || active ? Theme.hover : .clear,
+                        in: RoundedRectangle(cornerRadius: Theme.fieldRadius, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(L("Yeni sohbet (⌘N)", "New chat (⌘N)"))
+        .onHover { hovering = $0 }
+    }
+}
+
+/// Chat search: every word has to turn up in the title, the folder's name or a message (no accents, ı = i). Chats
+/// whose title holds the words come first, then the newest; each hit carries the best few words around a match.
+@MainActor
+enum AIChatSearch {
+    struct Hit {
+        let chat: AIConversation
+        let snippet: String?
+        /// How many messages matched.
+        let count: Int
+        let inFolder: String?
+    }
+
+    static func words(_ query: String) -> [String] { SettingsIndex.words(query) }
+
+    static func run(_ query: String, in chats: [AIConversation], folders: [AIFolder]) -> [Hit] {
+        let words = words(query)
+        guard !words.isEmpty else { return [] }
+        var scored: [(hit: Hit, score: Int)] = []
+        for chat in chats {
+            let title = SettingsIndex.fold(chat.title)
+            let folderName = chat.folder.flatMap { id in folders.first { $0.id == id }?.name }
+            let folder = folderName.map(SettingsIndex.fold) ?? ""
+            let texts = chat.messages.map { SettingsIndex.fold($0.text) }
+            guard words.allSatisfy({ word in title.contains(word) || folder.contains(word) || texts.contains { $0.contains(word) } })
+            else { continue }
+            func found(_ text: String) -> Int { words.filter { text.contains($0) }.count }
+            let matched = texts.indices.filter { found(texts[$0]) > 0 }
+            // The newest message holding the most of the words.
+            let best = matched.max { found(texts[$0]) == found(texts[$1]) ? $0 < $1 : found(texts[$0]) < found(texts[$1]) }
+            var score = found(title) * 100 + (title.hasPrefix(words[0]) ? 50 : 0) + (folder.isEmpty ? 0 : found(folder) * 40)
+            if chat.archived { score -= 10 }
+            let hit = Hit(chat: chat, snippet: best.map { snippet(chat.messages[$0].text, texts[$0], words) },
+                          count: matched.count, inFolder: found(folder) > 0 ? folderName : nil)
+            scored.append((hit, score))
+        }
+        return scored.sorted { $0.score == $1.score ? $0.hit.chat.updated > $1.hit.chat.updated : $0.score > $1.score }.map(\.hit)
+    }
+
+    /// A few words before the first match and more after it, on one line.
+    static func snippet(_ text: String, _ folded: String, _ words: [String]) -> String {
+        let original = Array(text)
+        var at = 0
+        if folded.count == original.count,
+           let range = words.compactMap({ folded.range(of: $0) }).min(by: { $0.lowerBound < $1.lowerBound }) {
+            at = folded.distance(from: folded.startIndex, to: range.lowerBound)
+        }
+        let start = max(0, at - 30), end = min(original.count, at + 90)
+        let piece = String(original[start..<end]).replacingOccurrences(of: "\n", with: " ")
+        return (start > 0 ? "…" : "") + piece + (end < original.count ? "…" : "")
+    }
+
+    /// Every place the words turn up, set in the strong font and full colour.
+    static func highlighted(_ text: String, _ words: [String], strong: Font) -> AttributedString {
+        var result = AttributedString(text)
+        let folded = SettingsIndex.fold(text)
+        guard !words.isEmpty, folded.count == text.count else { return result }
+        for word in words where !word.isEmpty {
+            var from = folded.startIndex
+            while let range = folded.range(of: word, range: from..<folded.endIndex) {
+                let offset = folded.distance(from: folded.startIndex, to: range.lowerBound)
+                let length = folded.distance(from: range.lowerBound, to: range.upperBound)
+                let lower = result.index(result.startIndex, offsetByCharacters: offset)
+                let upper = result.index(lower, offsetByCharacters: length)
+                result[lower..<upper].font = strong
+                result[lower..<upper].foregroundColor = Theme.text
+                from = range.upperBound
+            }
+        }
+        return result
+    }
+
+    /// "3 messages · Work · Archived · 2 days ago"
+    static func detail(_ hit: Hit) -> String {
+        var parts: [String] = []
+        if hit.count > 0 { parts.append(L("\(hit.count) mesaj", hit.count == 1 ? "1 message" : "\(hit.count) messages")) }
+        if let folder = hit.inFolder { parts.append(folder) }
+        if hit.chat.archived { parts.append(L("Arşivde", "Archived")) }
+        parts.append(hit.chat.updated.formatted(.relative(presentation: .named).locale(Format.locale)))
+        return parts.joined(separator: " · ")
     }
 }
 
@@ -1024,7 +1239,9 @@ private struct AIChatActions: View {
 private struct AIChatRow: View {
     let conversation: AIConversation
     @Bindable var state: AIChatState
-    let snippet: String?
+    /// The search words to mark, and where the search hit this chat.
+    var words: [String] = []
+    var hit: AIChatSearch.Hit?
     @State private var hovering = false
     @State private var name = ""
     @FocusState private var editing: Bool
@@ -1040,11 +1257,17 @@ private struct AIChatRow: View {
                         .framed()
                         .onAppear { name = conversation.title }
                 } else {
-                    Text(verbatim: conversation.title).lineLimit(1).font(conversation.unread ? Theme.bodyStrong : Theme.body)
+                    Text(AIChatSearch.highlighted(conversation.title, words, strong: Theme.bodyStrong))
+                        .lineLimit(1).font(conversation.unread ? Theme.bodyStrong : Theme.body)
                         .foregroundStyle(conversation.archived ? Theme.textMuted : Theme.text)
                 }
-                if let snippet {
-                    Text(verbatim: snippet).font(.system(size: 10.5)).foregroundStyle(Theme.textMuted).lineLimit(2)
+                if let hit {
+                    if let snippet = hit.snippet {
+                        Text(AIChatSearch.highlighted(snippet, words, strong: .system(size: 10.5, weight: .semibold)))
+                            .font(.system(size: 10.5)).foregroundStyle(Theme.textMuted).lineLimit(2)
+                    }
+                    Text(verbatim: AIChatSearch.detail(hit))
+                        .font(.system(size: 10)).foregroundStyle(Theme.textMuted.opacity(0.8)).lineLimit(1)
                 }
             }
             Spacer(minLength: 0)

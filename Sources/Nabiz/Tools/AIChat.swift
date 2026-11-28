@@ -217,20 +217,6 @@ final class AIConversation: Identifiable {
         return String(text.replacingOccurrences(of: "\n", with: " ").prefix(160))
     }
 
-    /// Where a search hit this chat: a few words around the match, or nil when only the title matched.
-    func snippet(for query: String) -> String? {
-        let query = query.trimmingCharacters(in: .whitespaces)
-        guard !query.isEmpty else { return nil }
-        for message in messages.reversed() {
-            guard let range = message.text.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) else { continue }
-            let start = message.text.index(range.lowerBound, offsetBy: -30, limitedBy: message.text.startIndex) ?? message.text.startIndex
-            let end = message.text.index(range.upperBound, offsetBy: 60, limitedBy: message.text.endIndex) ?? message.text.endIndex
-            let piece = message.text[start..<end].replacingOccurrences(of: "\n", with: " ")
-            return (start > message.text.startIndex ? "…" : "") + piece + (end < message.text.endIndex ? "…" : "")
-        }
-        return nil
-    }
-
     /// Your last message, for ↑ in an empty message box.
     var lastQuestion: AIMessage? { messages.last { $0.role == .user } }
 
