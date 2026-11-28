@@ -42,6 +42,25 @@ struct LifecycleTests {
         #expect(RecLibrary.older(than: 30, in: entries, now: now).count == 2)
     }
 
+    @Test func gifSizeGrowsWithRateAndWidth() {
+        let small = RecExport.GIFOptions(fps: 10, width: 640), big = RecExport.GIFOptions(fps: 24, width: 1280)
+        #expect(small.estimate(seconds: 10, aspect: 16.0 / 9) < big.estimate(seconds: 10, aspect: 16.0 / 9))
+        #expect(big.estimate(seconds: 60, aspect: 16.0 / 9) > RecExport.GIFOptions.large)
+        #expect(small.estimate(seconds: 3, aspect: 16.0 / 9) < RecExport.GIFOptions.large)
+        // A tall video fits the same box narrower, so it comes out smaller.
+        #expect(small.estimate(seconds: 10, aspect: 9.0 / 16) < small.estimate(seconds: 10, aspect: 16.0 / 9))
+    }
+
+    @Test func recordingFailureNamesTheMissingPermission() {
+        let screen = RecControl.failure(RecError.tooSmall, screenAllowed: false, microphoneWanted: false, microphoneAllowed: true)
+        #expect(screen.pane == "Privacy_ScreenCapture")
+        let mic = RecControl.failure(RecError.noMicrophoneAccess, screenAllowed: true, microphoneWanted: true, microphoneAllowed: false)
+        #expect(mic.pane == "Privacy_Microphone")
+        let other = RecControl.failure(RecError.tooSmall, screenAllowed: true, microphoneWanted: true, microphoneAllowed: true)
+        #expect(other.pane == nil)
+        #expect(other.text == RecError.tooSmall.errorDescription)
+    }
+
     @Test func resetKeepsTheWelcomeAndWhatsNewSeen() {
         #expect(SettingsReset.kept.contains(Prefs.seenVersion))
         #expect(SettingsReset.kept.contains(Prefs.onboarded))

@@ -160,6 +160,11 @@ final class RecEditorModel {
     /// Captions being recognised.
     var transcribing = false
     var exportProgress: Double?
+    @ObservationIgnored private var exportTask: Task<Void, Never>?
+    /// The GIF's frame rate and width, as picked in the export menu.
+    var gifOptions = RecExport.GIFOptions.saved {
+        didSet { gifOptions.save() }
+    }
     var toast: String?
     var thumbnails: [CGImage] = []
     /// Loudness along the recording, 0…1, for the timeline's waveform.
@@ -554,11 +559,22 @@ final class RecEditorModel {
         player.pause()
         playing = false
         exportProgress = 0
-        let meta = meta, edit = edit
-        Task {
-            let url = await RecExport.run(meta, edit: edit, kind: kind) { value in self.exportProgress = value }
+        let meta = meta, edit = edit, gif = gifOptions
+        exportTask = Task {
+            let url: URL
+            do {
+                url = try await RecExport.export(meta, edit: edit, kind: kind, gif: gif) { value in self.exportProgress = value }
+            } catch RecExport.Failure.cancelled {
+                exportProgress = nil
+                show(L("Dışa aktarma durduruldu", "Export cancelled"))
+                return
+            } catch {
+                exportProgress = nil
+                ShotLog.write("export failed: \(error)")
+                show(L("Dışa aktarılamadı: ", "Export failed: ") + ((error as? LocalizedError)?.errorDescription ?? error.localizedDescription))
+                return
+            }
             exportProgress = nil
-            guard let url else { show(L("Dışa aktarılamadı", "Export failed")); return }
             if copy {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.writeObjects([url as NSURL])
@@ -568,6 +584,17 @@ final class RecEditorModel {
                 NSWorkspace.shared.activateFileViewerSelecting([url])
             }
         }
+    }
+
+    /// Stops the export; the half-written file is removed.
+    func cancelExport() {
+        exportTask?.cancel()
+    }
+
+    /// The GIF's rough size with the picked options, for the export menu.
+    var gifEstimate: UInt64 {
+        let output = plan.output
+        return gifOptions.estimate(seconds: playedLength, aspect: Double(output.width / max(output.height, 1)))
     }
 
     func show(_ text: String) {

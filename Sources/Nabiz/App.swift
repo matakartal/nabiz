@@ -94,6 +94,13 @@ enum Entry {
                         print("\(kind.rawValue): \(url == nil ? "FAILED" : "\(size / 1024) KB")")
                     }
                 }
+                // A cancelled export stops and leaves no file behind.
+                let cancelled = folder.appendingPathComponent("cancelled.mp4")
+                let job = Task { try await RecExport.export(meta, edit: edit, kind: .original, to: cancelled) { _ in } }
+                try? await Task.sleep(for: .milliseconds(300))
+                job.cancel()
+                let outcome = await job.result
+                print("cancel: \(outcome), file left: \(FileManager.default.fileExists(atPath: cancelled.path))")
                 if args.contains("--keep") { print("kept: \(RecStore.video(for: meta.id).path)") } else { RecStore.delete(meta.id) }
                 exit(0)
             }

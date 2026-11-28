@@ -51,6 +51,23 @@ struct RecEditorView: View {
         .background(panelStyle == "opaque" ? Theme.track : Theme.track.opacity(0.6))
     }
 
+    /// GIF with its frame rate and width, the size it will roughly be, and a nudge to MP4 when it gets big.
+    @ViewBuilder private var gifMenu: some View {
+        let estimate = model.gifEstimate
+        Picker(L("GIF kare hızı", "GIF frame rate"), selection: $model.gifOptions.fps) {
+            ForEach(RecExport.GIFOptions.rates, id: \.self) { Text(verbatim: "\($0) fps").tag($0) }
+        }
+        Picker(L("GIF genişliği", "GIF width"), selection: $model.gifOptions.width) {
+            ForEach(RecExport.GIFOptions.widths, id: \.self) { Text(verbatim: "\($0) px").tag($0) }
+        }
+        Button(L("GIF olarak dışa aktar (yaklaşık \(Format.bytes(estimate)))", "Export GIF (about \(Format.bytes(estimate)))")) {
+            model.export(.gif)
+        }
+        if estimate > RecExport.GIFOptions.large {
+            Text(L("Büyük bir GIF olur; MP4 çok daha küçük", "That's a large GIF; an MP4 is far smaller"))
+        }
+    }
+
     private var topBar: some View {
         HStack(spacing: Theme.Spacing.s) {
             Color.clear.frame(width: WindowChrome.trafficLights)
@@ -70,7 +87,11 @@ struct RecEditorView: View {
             if let progress = model.exportProgress {
                 HStack(spacing: Theme.Spacing.s) {
                     ProgressView(value: progress).progressViewStyle(.linear).frame(width: 110).controlSize(.small)
-                    Text(verbatim: "%\(Int(progress * 100))").font(Theme.small).monospacedDigit().foregroundStyle(Theme.textMuted)
+                    Text(verbatim: L("%\(Int(progress * 100))", "\(Int(progress * 100))%")).font(Theme.small).monospacedDigit().foregroundStyle(Theme.textMuted)
+                    Button(L("Durdur", "Cancel")) { model.cancelExport() }
+                        .buttonStyle(.borderless)
+                        .font(Theme.small)
+                        .help(L("Dışa aktarmayı durdur, yarım dosyayı sil", "Stop the export and delete the partial file"))
                 }
                 .transition(.opacity)
             }
@@ -83,9 +104,11 @@ struct RecEditorView: View {
             .help(L("1080p MP4 olarak panoya kopyala (Slack, Mail, Mesajlar'a yapıştır)", "Copy as a 1080p MP4 (paste into Slack, Mail, Messages)"))
             .disabled(model.exportProgress != nil)
             Menu {
-                ForEach(RecExport.Kind.allCases) { kind in
+                ForEach(RecExport.Kind.allCases.filter { $0 != .gif }) { kind in
                     Button(kind.title) { model.export(kind) }
                 }
+                Divider()
+                gifMenu
             } label: {
                 HStack(spacing: 5) {
                     Text(L("Dışa aktar", "Export")).font(Theme.bodyStrong)
