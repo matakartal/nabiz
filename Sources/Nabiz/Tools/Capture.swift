@@ -4,8 +4,8 @@ import CoreImage.CIFilterBuiltins
 import ScreenCaptureKit
 import Vision
 
-/// Screenshots through macOS's own `screencapture` and Screenshot app: the same selection, window picking, sound,
-/// save location and file type the system uses (Screenshot app → Options), just one tap or keyword away.
+/// Screenshots through ScreenCaptureKit with Nabız's own frozen-screen picker, saved where and in the file type
+/// the system saves screenshots (Screenshot app → Options), plus a shortcut to macOS's own Screenshot app.
 enum CaptureMode: String, CaseIterable, Identifiable {
     case area, window, screen, areaFile, screenFile, timed, toolbar, text
 
@@ -94,47 +94,9 @@ enum Capture {
                                                configuration: NSWorkspace.OpenConfiguration())
             return
         }
-        // Nabız's own frozen-screen picker when macOS lets it read the screen; the system's otherwise.
-        // The permission check can say no even when Settings shows Nabız switched on, so try the capture itself
-        // and only ask when it really fails.
-        if mode != .toolbar {
-            // No permission yet: Nabız's own guide instead of macOS's prompt stacked on top of an alert.
-            guard ScreenAccess.granted else { ScreenAccess.ask(for: mode); return }
-            runFrozen(mode, actions: actions)
-            return
-        }
-        // Without Screen Recording permission macOS shows nothing at all, so say so and open the right page.
-        if mode != .toolbar {
-            askForScreenAccess(actions: actions)
-            return
-        }
-        if mode == .text {
-            readScreen(actions: actions)
-            return
-        }
-        // Clipboard captures go through a file of our own so the thumbnail and the editor get the image too.
-        let saves = [.areaFile, .screenFile, .timed].contains(mode)
-        let file = saves ? newFile() : ShotExport.cacheFolder.appendingPathComponent("capture-\(UUID().uuidString).png")
-        try? FileManager.default.createDirectory(at: ShotExport.cacheFolder, withIntermediateDirectories: true)
-        let arguments: [String] = switch mode {
-        case .area: ["-i", "-t", "png", file.path]
-        case .window: ["-i", "-W", "-t", "png", file.path]
-        case .screen: ["-m", "-t", "png", file.path]
-        case .areaFile: ["-i", "-t", type, file.path]
-        case .screenFile: ["-m", "-t", type, file.path]
-        case .timed: ["-m", "-T", "5", "-t", type, file.path]
-        default: []
-        }
-        Task {
-            // Let the panel leave the screen before the selection starts.
-            try? await Task.sleep(for: .milliseconds(250))
-            _ = await Toolbox.run("/usr/sbin/screencapture", arguments)
-            guard FileManager.default.fileExists(atPath: file.path),
-                  let image = NSImage(contentsOf: file), let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
-            let scale = image.size.width > 0 ? max(1, (CGFloat(cg.width) / image.size.width).rounded()) : 1
-            if !saves { try? FileManager.default.removeItem(at: file) }
-            deliver(cg, scale: scale, savedTo: saves ? file : nil, actions: actions)
-        }
+        // No permission yet: Nabız's own guide instead of macOS's prompt stacked on top of an alert.
+        guard ScreenAccess.granted else { ScreenAccess.ask(for: mode); return }
+        runFrozen(mode, actions: actions)
     }
 
     /// The capture failed even though macOS said yes: show the guide (with its reset).
@@ -146,22 +108,27 @@ enum Capture {
     private static func runFrozen(_ mode: CaptureMode, actions: PanelActions) {
         Task {
             // Let the panel and the launcher leave the screen first.
-            try? await Task.sleep(for: .milliseconds(mode == .timed ? 5000 : 200))
+            try? await Task.sleep(for: .milliseconds(200))
+            if mode == .timed {
+                // The same big countdown as a recording, over the screen that will be taken; gone before the shot.
+                let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main ?? NSScreen.screens[0]
+                await RecControl.countDown(over: screen.frame, from: 5, step: .seconds(1))
+                try? await Task.sleep(for: .milliseconds(150))
+            }
             switch mode {
             case .area, .window, .areaFile, .text:
                 ShotSelector.begin(windowMode: mode == .window, denied: { askForScreenAccess(actions: actions) }) { result in
                     guard let result else { return }
                     if mode == .text { read(result.image, actions: actions); return }
                     shutter()
-                    deliver(result.image, scale: result.scale, savedTo: mode == .areaFile ? write(result.image, scale: result.scale) : nil, actions: actions)
+                    save(result.image, scale: result.scale, toFile: mode == .areaFile, actions: actions)
                 }
             default:
                 let shots = await ShotSelector.freeze()
                 if shots.isEmpty { askForScreenAccess(actions: actions); return }
                 guard let shot = shots.first(where: { $0.screen.frame.contains(NSEvent.mouseLocation) }) ?? shots.first else { return }
                 shutter()
-                let saves = mode != .screen
-                deliver(shot.image, scale: shot.scale, savedTo: saves ? write(shot.image, scale: shot.scale) : nil, actions: actions)
+                save(shot.image, scale: shot.scale, toFile: mode != .screen, actions: actions)
             }
         }
     }
@@ -174,11 +141,27 @@ enum Capture {
         NSSound(contentsOfFile: path, byReference: true)?.play()
     }
 
+    /// Into the screenshots folder when asked, then on to the thumbnail or editor. A file that can't be written
+    /// is said out loud; the shot is copied instead so it isn't lost.
+    private static func save(_ image: CGImage, scale: CGFloat, toFile: Bool, actions: PanelActions) {
+        guard toFile else { deliver(image, scale: scale, savedTo: nil, actions: actions); return }
+        do {
+            deliver(image, scale: scale, savedTo: try write(image, scale: scale), actions: actions)
+        } catch {
+            ShotLog.write("save failed: \(error)")
+            deliver(image, scale: scale, savedTo: nil, actions: actions)
+            actions.flash(L("Kaydedilemedi, panoya kopyalandı", "Couldn't save, copied instead"))
+        }
+    }
+
     /// Saved into the screenshots folder in the system's file type.
-    private static func write(_ image: CGImage, scale: CGFloat) -> URL? {
+    private static func write(_ image: CGImage, scale: CGFloat) throws -> URL {
         let type = ShotExport.fileType == "jpeg" ? "jpg" : ShotExport.fileType
         let url = newFile().deletingPathExtension().appendingPathExtension(type)
-        guard let data = ShotRenderer.encode(image, type: type, scale: scale), (try? data.write(to: url)) != nil else { return nil }
+        guard let data = ShotRenderer.encode(image, type: type, scale: scale) else {
+            throw CocoaError(.fileWriteUnknown, userInfo: [NSLocalizedDescriptionKey: "couldn't encode \(type)"])
+        }
+        try data.write(to: url)
         return url
     }
 
@@ -209,26 +192,6 @@ enum Capture {
             actions.flash(file != nil ? L("Kaydedildi: \(folder.lastPathComponent)", "Saved to \(folder.lastPathComponent)") : L("Kopyalandı", "Copied"))
         default:
             ShotOverlay.show(capture)
-        }
-    }
-
-    /// Select an area; a QR or barcode in it is copied, otherwise its text (Turkish and English, Apple's Vision).
-    static func readScreen(actions: PanelActions = Monitor.panelActions) {
-        let file = FileManager.default.temporaryDirectory.appendingPathComponent("nabiz-read-\(UUID().uuidString).png")
-        Task {
-            try? await Task.sleep(for: .milliseconds(250))
-            _ = await Toolbox.run("/usr/sbin/screencapture", ["-i", "-x", file.path])
-            defer { try? FileManager.default.removeItem(at: file) }
-            guard FileManager.default.fileExists(atPath: file.path) else { return }
-            let path = file.path
-            let found = await Task.detached(priority: .userInitiated) { Recognizer.read(path) }.value
-            guard let found, !found.text.isEmpty else {
-                actions.flash(L("Metin bulunamadı", "No text found"))
-                return
-            }
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(found.text, forType: .string)
-            actions.flash(found.isCode ? L("QR kopyalandı", "QR copied") : L("Metin kopyalandı", "Text copied"))
         }
     }
 
