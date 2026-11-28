@@ -244,7 +244,7 @@ final class Toolbox {
         case .timer: return CountdownTimer.shared.remainingText
         case .pomodoro:
             let pomodoro = Pomodoro.shared
-            if let left = pomodoro.remainingText { return (pomodoro.isRunning ? "" : "⏸ ") + left }
+            if let left = pomodoro.remainingText { return (pomodoro.isRunning || pomodoro.waitingToStart ? "" : "⏸ ") + left }
             return pomodoro.today.count > 0 ? "\(pomodoro.today.count)" : nil
         case .sleepTimer:
             return SleepTimer.shared.at.map { $0.formatted(date: .omitted, time: .shortened) }

@@ -218,8 +218,18 @@ enum Prefs {
     /// The app version whose "New" note in the panel was seen or closed.
     static let seenVersion = "seenVersion"
 
+    /// The Mac's own currency, so a new user abroad doesn't start in lira; US dollars when the region has none.
+    static let defaultBaseCurrency = Locale.current.currency?.identifier ?? "USD"
+
     static func registerDefaults() {
-        UserDefaults.standard.register(defaults: [
+        let defaults = UserDefaults.standard
+        // Before this default followed the Mac's region it was lira. Someone who already used Nabız without picking
+        // a currency keeps lira; only new users start from their region. Read before registering, so a stored value
+        // is told apart from the default.
+        if defaults.object(forKey: baseCurrency) == nil, defaults.object(forKey: onboarded) != nil {
+            defaults.set("TRY", forKey: baseCurrency)
+        }
+        defaults.register(defaults: [
             language: "system", refreshSeconds: 5, hotkey: true, panelHotkey: true, notifications: false, onboarded: false,
             barIcon: false, barLabels: true, barCPU: true, barRAM: true, barGPU: false, barNetwork: false,
             barStyle: "stacked", aiRemaining: true, barMarket: false, barMarketID: "",
@@ -234,7 +244,7 @@ enum Prefs {
             menuBarHider: false, menuBarHiderDelay: 10, showApps: true, showCurrency: true, showWeather: true, barWeather: false, weatherUnit: "system", weatherDetails: false, "expanded.weather": false, showTools: true, showAI: true,
             "ai.claude": false, "ai.codex": false, "ai.gemini": false, "ai.grok": false,
             memoryAppCount: 5, cpuAppCount: 3,
-            baseCurrency: "TRY", watchedCurrencies: "USD,EUR,GBP", aiBarAccount: AIFeatured.tightest,
+            baseCurrency: defaultBaseCurrency, watchedCurrencies: "USD,EUR,GBP", aiBarAccount: AIFeatured.tightest,
             clipboardHotkey: true, clipboardEnabled: true, clipboardSave: true, clipboardLimit: 200, clipboardDays: 30,
             clipboardExcluded: "", autoPaste: true, launcherApps: true, launcherClipboard: true, launcherShortcuts: true, launcherFiles: true, windowHotkeys: false,
             noteOnTop: true, noteHotkey: true, notesApp: "nabiz",

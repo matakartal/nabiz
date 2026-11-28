@@ -40,7 +40,8 @@ enum MenuBarText {
         }
         // So do a Pomodoro block and a timed focus session.
         let pomodoro = Pomodoro.shared
-        if let left = pomodoro.remainingText {
+        // A block that is lined up but never started isn't counting down, so it isn't shown as a paused timer.
+        if let left = pomodoro.remainingText, !pomodoro.waitingToStart {
             let label = pomodoro.phase == .work ? L("Odak", "Focus") : L("Mola", "Break")
             parts.insert(MenuBarPart(item: .timer, label: label, value: (pomodoro.isRunning ? "" : "⏸ ") + left), at: 0)
         } else if FocusMode.shared.isOn {
@@ -138,7 +139,8 @@ enum MenuBarText {
             guard let code = Prefs.watched.first(where: { $0 != base }) else { return nil }
             return make(code, rate(code, base).map { Format.number($0, maxDigits: 2, minDigits: 2) })
         case .weather:
-            guard let weather else { return nil }
+            // A report from hours ago is not the temperature now: leave it out until a fresh one arrives.
+            guard let weather, !weather.isStale() else { return nil }
             var part = make(L("Hava", "Temp"), Format.degrees(weather.temperature))
             part?.symbol = WeatherCode.symbol(weather.code, day: weather.isDay)
             return part

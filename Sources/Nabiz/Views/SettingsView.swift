@@ -1292,7 +1292,7 @@ private struct WeatherPage: View {
 }
 
 private struct CurrencyPage: View {
-    @AppStorage(Prefs.baseCurrency) private var base = "TRY"
+    @AppStorage(Prefs.baseCurrency) private var base = Prefs.defaultBaseCurrency
     @AppStorage(Prefs.watchedCurrencies) private var watched = "USD,EUR,GBP"
     private let rates = RateStore.shared
 

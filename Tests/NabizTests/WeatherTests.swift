@@ -37,6 +37,17 @@ struct WeatherTests {
         #expect(report.hours.map(\.rain) == [10, 20, 70])
     }
 
+    @Test func anOldReportSaysSoAndLeavesTheMenuBar() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        func report(hoursOld: Double) -> WeatherStore.Report {
+            WeatherStore.Report(place: place, fetched: now.addingTimeInterval(-hoursOld * 3600), temperature: 11, feelsLike: 10,
+                                code: 61, isDay: true, days: [], hours: [], fahrenheit: false)
+        }
+        #expect(!report(hoursOld: 1).isOld(now: now))
+        #expect(report(hoursOld: 3).isOld(now: now) && !report(hoursOld: 3).isStale(now: now))
+        #expect(report(hoursOld: 7).isStale(now: now))
+    }
+
     @Test func namesDaysByTheCitysClock() throws {
         // 2026-11-28 00:30 in Auckland (+13) is still the 27th in UTC.
         let json: [String: Any] = ["current": ["temperature_2m": 20, "weather_code": 0, "is_day": 1], "utc_offset_seconds": 46_800]

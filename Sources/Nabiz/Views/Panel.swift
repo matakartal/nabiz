@@ -81,7 +81,7 @@ struct PanelContent: View {
     @AppStorage(Prefs.showAI) private var showAI = true
     @AppStorage(Prefs.memoryAppCount) private var memoryCount = 5
     @AppStorage(Prefs.cpuAppCount) private var cpuCount = 3
-    @AppStorage(Prefs.baseCurrency) private var base = "TRY"
+    @AppStorage(Prefs.baseCurrency) private var base = Prefs.defaultBaseCurrency
     @AppStorage(Prefs.watchedCurrencies) private var watched = "USD,EUR,GBP"
     @AppStorage(Prefs.sectionOrder) private var order = ""
     @AppStorage(Prefs.calendarEnabled) private var calendarOn = false
@@ -170,8 +170,17 @@ struct PanelContent: View {
             }
         case .weather:
             if showWeather, let report = WeatherStore.shared.report {
-                CollapsibleSection(.weather, summary: "\(Format.degrees(report.temperature)) · \(WeatherCode.title(report.code))") {
+                let summary = "\(Format.degrees(report.temperature)) · \(WeatherCode.title(report.code))"
+                CollapsibleSection(.weather, summary: report.isOld() ? "\(summary) · \(Format.ago(report.fetched))" : summary) {
                     WeatherSection(report: report)
+                }
+            } else if showWeather, WeatherStore.place == nil {
+                // The time zone named no city (or the guess hasn't found one yet): ask for one.
+                CollapsibleSection(.weather, summary: "") {
+                    PanelRow(icon: .symbol("mappin.and.ellipse"), title: L("Şehir seç…", "Pick a city…"), action: {
+                        actions.close()
+                        SettingsWindow.show(.weather)
+                    }) { _ in EmptyView() }
                 }
             }
         case .memory:
@@ -188,8 +197,9 @@ struct PanelContent: View {
             }
         case .markets:
             if showMarkets {
-                CollapsibleSection(.markets, summary: Summary.market()) {
-                    MarketsSection(ids: watchedMarkets.split(separator: ",").map(String.init), actions: actions)
+                let ids = watchedMarkets.split(separator: ",").map(String.init)
+                CollapsibleSection(.markets, summary: Summary.market(ids)) {
+                    MarketsSection(ids: ids, actions: actions)
                 }
             }
         case .currency:
@@ -581,9 +591,12 @@ private struct WeatherSection: View {
     var body: some View {
         let open = { WeatherStore.openWeatherApp() }
         let feels = L("hissedilen \(Format.degrees(report.feelsLike))", "feels like \(Format.degrees(report.feelsLike))")
+        // An old report says how old it is, and its temperature goes muted: it is not the weather now.
+        let old = report.isOld()
         PanelRow(icon: .symbol(WeatherCode.symbol(report.code, day: report.isDay)), title: report.place.name,
-                 subtitle: "\(WeatherCode.title(report.code)) · \(feels)", action: open) { _ in
-            Value(Format.degrees(report.temperature), color: Theme.text)
+                 subtitle: old ? "\(Format.ago(report.fetched)) · \(WeatherCode.title(report.code))" : "\(WeatherCode.title(report.code)) · \(feels)",
+                 action: open) { _ in
+            Value(Format.degrees(report.temperature), color: old ? Theme.textMuted : Theme.text)
         }
         .help(details)
         if showDetails, let line = report.humidityAndWind {
@@ -686,6 +699,11 @@ private struct MarketsSection: View {
                         }
                     }
                     .help(L("\(store.dexTitle(market.dex)) · Hyperliquid'de aç", "\(store.dexTitle(market.dex)) · open on Hyperliquid"))
+                } else {
+                    // A watched id Hyperliquid sent nothing for (renamed, delisted, mistyped): say so, don't hide it.
+                    PanelRow(icon: .none, title: id, titleColor: Theme.textMuted) { _ in Value(L("veri yok", "no data")) }
+                        .help(L("Hyperliquid bu piyasa için fiyat göndermedi. Ayarlar → Piyasalar'dan değiştirebilirsin.",
+                                "Hyperliquid sent no price for this market. You can change it in Settings → Markets."))
                 }
             }
         }
@@ -820,7 +838,7 @@ private struct ToolsSection: View {
                 if !pomodoro.isActive {
                     Chip(L("Başlat \(pomodoro.minutes(.work)) dk", "Start \(pomodoro.minutes(.work))m")) { pomodoro.start(); chips = nil }
                 } else {
-                    Chip(pomodoro.isRunning ? L("Duraklat", "Pause") : L("Devam", "Resume")) { pomodoro.toggle(); chips = nil }
+                    Chip(pomodoro.toggleTitle) { pomodoro.toggle(); chips = nil }
                     Chip(L("Atla", "Skip")) { pomodoro.skip(); chips = nil }
                     Chip(L("Bitir", "Stop")) { pomodoro.stop(); chips = nil }
                 }
@@ -1432,8 +1450,9 @@ enum Summary {
             : "\(name) \(top.shortText)"
     }
 
-    static func market() -> String {
-        guard let market = MarketStore.shared.watched.first else { return "" }
+    /// The first of the panel's own ids that has a price, so the header and the rows never disagree.
+    static func market(_ ids: [String]) -> String {
+        guard let market = ids.lazy.compactMap({ MarketStore.shared.markets[$0] }).first else { return "" }
         return "\(market.name) \(Format.price(market.price))"
     }
 
