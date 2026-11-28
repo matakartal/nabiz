@@ -21,6 +21,32 @@ struct LifecycleTests {
         #expect(AppMover.place(of: "/Users/someone/Developer/nabiz/.build/debug/Nabiz", home: home) == nil)
     }
 
+    @Test func crashLinkStaysShortEnoughForGitHub() {
+        let short = CrashReporter.reportURL("EXC_BAD_ACCESS at 0x0")
+        #expect(short.trimmed == false)
+        #expect(short.url?.absoluteString.contains("EXC_BAD_ACCESS") == true)
+        // A long report full of characters that grow when encoded.
+        let long = String(repeating: "frame #12 {\"ş\": [1, 2]} <ğ> ", count: 2000)
+        let made = CrashReporter.reportURL(long)
+        #expect(made.trimmed)
+        let length = made.url?.absoluteString.utf8.count ?? .max
+        #expect(length <= CrashReporter.urlLimit)
+        #expect(length > CrashReporter.urlLimit - 200)
+    }
+
+    @Test func findsRecordingsOlderThanThirtyDays() {
+        let now = Date()
+        let entries = [1, 29, 31, 400].map { days in
+            RecLibrary.Entry(id: UUID(), created: now.addingTimeInterval(-Double(days) * 86_400), duration: 5, bytes: 100)
+        }
+        #expect(RecLibrary.older(than: 30, in: entries, now: now).count == 2)
+    }
+
+    @Test func resetKeepsTheWelcomeAndWhatsNewSeen() {
+        #expect(SettingsReset.kept.contains(Prefs.seenVersion))
+        #expect(SettingsReset.kept.contains(Prefs.onboarded))
+    }
+
     /// The script, with `hdiutil` and `open` swapped for stand-ins: a mount that fails, and an app that isn't
     /// signed, both reopen the old app and leave the reason behind.
     @Test(arguments: ["mount", "signature"])

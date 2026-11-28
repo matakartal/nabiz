@@ -36,6 +36,26 @@ struct SettingsSearchTests {
         #expect(SettingsIndex.search("   ").isEmpty)
     }
 
+    /// DESIGN.md §8: every `SettingsSection("…")` in the source has at least one search entry pointing at it.
+    @Test func everySectionCanBeFound() throws {
+        let sources = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/Nabiz")
+        let pattern = try Regex(#"SettingsSection\("([A-Za-z0-9.]+)""#)
+        var sections = Set<String>()
+        let walker = FileManager.default.enumerator(at: sources, includingPropertiesForKeys: nil)
+        while let file = walker?.nextObject() as? URL {
+            guard file.pathExtension == "swift", let text = try? String(contentsOf: file, encoding: .utf8) else { continue }
+            for match in text.matches(of: pattern) {
+                if let id = match.output[1].substring { sections.insert(String(id)) }
+            }
+        }
+        #expect(sections.count > 50)
+        let anchors = Set(SettingsIndex.entries.map(\.anchor))
+        #expect(sections.subtracting(anchors).sorted() == [])
+        // And no entry points at a section that doesn't exist.
+        #expect(anchors.subtracting(sections).sorted() == [])
+    }
+
     @Test func everyPageIsInTheSidebarOnce() {
         let listed = SettingsGroup.allCases.flatMap(\.pages)
         #expect(Set(listed) == Set(SettingsPage.allCases))

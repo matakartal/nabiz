@@ -35,24 +35,61 @@ final class CrashReporter: NSObject, MXMetricManagerSubscriber, @unchecked Senda
         }
     }
 
-    /// The newest report, if any.
+    /// The newest report not yet sent, if any.
     static var latest: (url: URL, date: Date)? {
         let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
-        return files.compactMap { url -> (URL, Date)? in
+        let newest = files.compactMap { url -> (URL, Date)? in
             guard let date = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate else { return nil }
             return (url, date)
         }.max { $0.1 < $1.1 }
+        guard let newest, newest.0.lastPathComponent != UserDefaults.standard.string(forKey: reportedKey) else { return nil }
+        return newest
     }
 
-    /// A new GitHub issue, filled in with the report, for the person to look over and send.
-    static func reportURL(_ file: URL) -> URL? {
-        let report = (try? String(contentsOf: file, encoding: .utf8)) ?? ""
+    private static let reportedKey = "crashReported"
+    /// GitHub turns away issue links much longer than 8 KB; this leaves room to spare.
+    static let urlLimit = 7_000
+
+    /// Opens a new GitHub issue filled in with the report, for the person to look over and send. A report too long
+    /// for the link is shortened there and copied in full to the clipboard. The button then goes away.
+    @MainActor
+    static func report(_ file: URL) {
+        let text = (try? String(contentsOf: file, encoding: .utf8)) ?? ""
+        let made = reportURL(text)
+        guard let url = made.url else { return }
+        if made.trimmed {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+            let alert = NSAlert()
+            alert.messageText = L("Raporun tamamı kopyalandı", "Full report copied")
+            alert.informativeText = L("Rapor bağlantıya sığmadığı için kısaltıldı. Açılan sayfada kısaltılmış kısmın yerine yapıştır (⌘V).",
+                                      "The report was too long for the link, so it was shortened. Paste it into the issue (⌘V) in place of the shortened part.")
+            alert.runModal()
+        }
+        NSWorkspace.shared.open(url)
+        UserDefaults.standard.set(file.lastPathComponent, forKey: reportedKey)
+    }
+
+    /// The issue's address, with as much of the report as fits under `limit` bytes once encoded.
+    static func reportURL(_ report: String, limit: Int = urlLimit) -> (url: URL?, trimmed: Bool) {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
-        var components = URLComponents(string: "https://github.com/matakartal/nabiz/issues/new")
-        components?.queryItems = [
-            URLQueryItem(name: "title", value: "Crash in \(version)"),
-            URLQueryItem(name: "body", value: "macOS \(ProcessInfo.processInfo.operatingSystemVersionString)\n\n```\n\(report.prefix(5000))\n```"),
-        ]
-        return components?.url
+        func make(_ part: Substring, trimmed: Bool) -> URL? {
+            var components = URLComponents(string: "https://github.com/matakartal/nabiz/issues/new")
+            let note = trimmed ? "\n\n(Shortened. The full report was copied to the clipboard; paste it here.)" : ""
+            components?.queryItems = [
+                URLQueryItem(name: "title", value: "Crash in \(version)"),
+                URLQueryItem(name: "body", value: "macOS \(ProcessInfo.processInfo.operatingSystemVersionString)\n\n```\n\(part)\n```\(note)"),
+            ]
+            return components?.url
+        }
+        func fits(_ url: URL?) -> Bool { (url?.absoluteString.utf8.count ?? .max) <= limit }
+        if let url = make(report[...], trimmed: false), fits(url) { return (url, false) }
+        // The longest start of the report that still fits, found by halving.
+        var low = 0, high = report.count
+        while low < high {
+            let middle = (low + high + 1) / 2
+            if fits(make(report.prefix(middle), trimmed: true)) { low = middle } else { high = middle - 1 }
+        }
+        return (make(report.prefix(low), trimmed: true), true)
     }
 }
