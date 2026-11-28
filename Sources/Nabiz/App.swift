@@ -407,7 +407,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(keyed(item(Dictation.shared.isListening ? L("Dikteyi bitir", "Stop Dictation") : L("Dikte et", "Dictate")) { Dictation.shared.toggle() },
                            .dictation, on: Prefs.bool(Prefs.dictationHotkey)))
         let pomodoro = Pomodoro.shared
-        menu.addItem(item(pomodoro.isActive ? (pomodoro.isRunning ? L("Pomodoro'yu duraklat", "Pause Pomodoro") : L("Pomodoro'ya devam et", "Resume Pomodoro"))
+        menu.addItem(item(pomodoro.isActive ? (pomodoro.isRunning ? L("Pomodoro'yu duraklat", "Pause Pomodoro")
+                                                                  : pomodoro.waitingToStart ? pomodoro.toggleTitle : L("Pomodoro'ya devam et", "Resume Pomodoro"))
                                             : L("Pomodoro başlat", "Start Pomodoro")) { pomodoro.toggle() })
         menu.addItem(item(FocusMode.shared.isOn ? L("Odak modunu kapat", "Turn Focus Mode Off") : L("Odak modu", "Focus Mode")) { FocusMode.shared.toggle() })
         menu.addItem(item(L("Geçmiş", "History")) { HistoryWindow.show() })

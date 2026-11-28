@@ -11,6 +11,38 @@
   the Terminal that opens), or Nabız finds it in `~/.claude-*`, `~/.codex-*` and `~/.gemini-*` folders. An account
   signed in twice is shown once; each can be turned off, and an expired sign-in has a one-tap "Sign in…".
 
+- **AI limits hold steady:** a failed read keeps the last good limits (with their age; the error is in the tooltip),
+  the menu bar follows the account with the least left (or the one you pick in Settings), a new "limit has reset"
+  notification, "Try again" on a problem row, and "burning fast" waits for enough of the window to tell.
+- **Panel:** time to full charge, the network link and local IP (tap for Network settings), disk read/write speed,
+  no more GB/s spikes when a network appears; old weather says how old it is and "Pick a city…" shows when there is
+  none; markets without data stay as a muted row; Pomodoro offers "Start break" for a lined-up block; new users start
+  with their region's currency.
+- **Launcher:** Return always runs the highlighted row; Tab or Space after a quicklink keyword asks for the search, and
+  there is a default search engine; pastes give your clipboard back and stay out of its history; clipboard history
+  keeps formatting (⇧↩ pastes plain), filters by kind and pastes with ⌘1–9; it learns what you pick, keeps 20 recents
+  and finds System Settings pages; "not süt al" / "note buy milk" saves a note; scripts take arguments, stop after
+  60 s or with Esc; Shortcuts say when they fail.
+- **Snippets in any app** (off by default, needs Accessibility): type the prefix (";") and a keyword; `{cursor}` sets
+  where the cursor lands. Password fields are skipped.
+- **Calculator and dates:** -2^2 is -4, 12/25/2026 reads month first, words like "easter" no longer show a clock,
+  money answers say when rates are offline or old.
+- **AI chat:** your own instructions (Settings → AI) and per-folder ones; "Write again" keeps earlier answers as
+  ‹ 1/3 › versions; follow-ups still see recent images; up to 1,000 chats, pinned and foldered ones never removed;
+  answers stop only after a long silence; the window follows the text size and typeface settings.
+- **Safer AI:** a CLI is never run without its safety flags — an older one is asked to update instead.
+- **MCP:** new `screenshot`, `window_list`, `place_window`, `dev_server_logs` and `clipboard_read`; frames come back as
+  pictures; scripts, Shortcuts, sleep and lock need their own switch (off by default); AI apps hear at once when tools
+  change, slow tools don't block others, and every tool says whether it only reads.
+- **Updates:** installed only when signed by the Nabız team, the old app reopens if anything fails; "Check for updates"
+  answers, with release notes and "Skip this version"; Nabız offers to move itself to Applications.
+- **Welcome:** a permissions step (Screen Recording, Accessibility, Calendar, Microphone); closing it counts as seen.
+- **Recordings:** a list of past recordings with sizes and clean-up of old ones; cancellable export; GIF frame rate and
+  width with a size estimate; failures say why. The timed screenshot counts down on screen.
+- **Settings and upkeep:** reset lists what it wipes and offers a backup first; failed backups and save errors are
+  shown; crash reports fit GitHub's link limit; developer clean-up reports failures and real freed space; desktop
+  icons come back if Nabız quit during focus mode.
+
 ## 1.10.0
 
 - **Weather** (Settings → Weather): your city's weather in the panel — now with how it feels, rain on the way, the

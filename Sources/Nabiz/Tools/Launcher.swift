@@ -959,7 +959,8 @@ final class LauncherModel {
         let pomodoro = Pomodoro.shared
         if pomodoro.isActive {
             items.append(command("pomodoro-toggle", pomodoro.isRunning ? "pause.circle" : "play.circle",
-                                 pomodoro.isRunning ? L("Pomodoro'yu duraklat", "Pause the Pomodoro") : L("Pomodoro'ya devam et", "Resume the Pomodoro"),
+                                 pomodoro.isRunning ? L("Pomodoro'yu duraklat", "Pause the Pomodoro")
+                                     : pomodoro.waitingToStart ? pomodoro.toggleTitle : L("Pomodoro'ya devam et", "Resume the Pomodoro"),
                                  accessory: pomodoro.remainingText) { pomodoro.toggle() })
             items.append(command("pomodoro-skip", "forward.end", L("Pomodoro: sıradakine geç", "Pomodoro: skip to next")) { pomodoro.skip() })
             items.append(command("pomodoro-stop", "stop.circle", L("Pomodoro'yu bitir", "Stop the Pomodoro")) { pomodoro.stop() })
