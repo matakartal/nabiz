@@ -1,8 +1,8 @@
 # Nabız — © 2026 Mehmet Ata Kartal. Licensed under GPL-3.0-or-later; see LICENSE.
 # Install: brew install --cask matakartal/nabiz/nabiz   (after: brew tap matakartal/nabiz https://github.com/matakartal/nabiz && brew trust matakartal/nabiz)
 cask "nabiz" do
-  version "1.10.0"
-  sha256 "a8dd6d252608093f62bcbfca76cf263b90916da09ce84806f502da05e1df2cab"
+  version "1.11.0"
+  sha256 "71042f9a38d9014c62ab5779b9c94d915b8b8507d4c07143d69994b500ad51f1"
 
   url "https://github.com/matakartal/nabiz/releases/download/v#{version}/Nabiz-#{version}.dmg"
   name "Nabız"
