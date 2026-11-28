@@ -2897,6 +2897,8 @@ private struct AccessibilityRow: View {
 
 private struct SnippetsPage: View {
     private let store = LauncherStore.shared
+    @AppStorage(Prefs.snippetExpand) private var expand = false
+    @AppStorage(Prefs.snippetPrefix) private var prefix = ";"
 
     var body: some View {
         Form {
@@ -2910,8 +2912,20 @@ private struct SnippetsPage: View {
                     store.save(snippet: Snippet(keyword: "", name: L("Yeni parçacık", "New snippet"), text: ""))
                 } label: { Label(L("Parçacık ekle", "Add a snippet"), systemImage: "plus") }
             } footer: {
-                Footnote(L("Başlatıcıda kısaltmayı ya da adını yaz, ↩ ile yapıştır. Metinde {date} bugünün tarihi, {time} saat, {clipboard} panodaki metin olur. Örnek: imza, adres, IBAN açıklaması, sık yazdığın yanıtlar.",
-                           "Type the keyword or name in the launcher and press ↩ to paste. In the text, {date} becomes today's date, {time} the time and {clipboard} what's on the clipboard. Good for a signature, an address, replies you write often."))
+                Footnote(L("Başlatıcıda kısaltmayı ya da adını yaz, ↩ ile yapıştır. Metinde {date} bugünün tarihi, {time} saat, {clipboard} panodaki metin olur; {cursor} imlecin duracağı yer. Örnek: imza, adres, IBAN açıklaması, sık yazdığın yanıtlar.",
+                           "Type the keyword or name in the launcher and press ↩ to paste. In the text, {date} becomes today's date, {time} the time and {clipboard} what's on the clipboard; {cursor} is where the cursor ends up. Good for a signature, an address, replies you write often."))
+            }
+            SettingsSection("snippets.expand") {
+                Toggle(L("Her uygulamada genişlet", "Expand in any app"), isOn: Binding(get: { expand }, set: { on in
+                    expand = on
+                    if on && !Paster.isTrusted { Paster.requestTrust() }
+                }))
+                TextField(L("Ön ek", "Prefix"), text: $prefix).frame(maxWidth: Theme.paletteWidth / 2)
+                    .disabled(!expand)
+                AccessibilityRow()
+            } footer: {
+                Footnote(L("Ön eki ve kısaltmayı yazınca (\(prefix)tarih) yerine parçacık gelir. Şifre alanlarında ve şifre yöneticilerinde çalışmaz. Erişilebilirlik izni gerekir.",
+                           "Type the prefix and a keyword (\(prefix)tarih) and it turns into the snippet. Never in password fields or password managers. Needs Accessibility permission."))
             }
         }
         .formStyle(.grouped)
