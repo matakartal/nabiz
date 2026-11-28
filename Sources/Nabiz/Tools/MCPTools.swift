@@ -56,7 +56,7 @@ enum MCPTools {
                     description: "This Mac right now: CPU and GPU load, memory used and pressure, swap, free disk, battery, temperature state, network speed, uptime, and the apps using the most memory and CPU.",
                     group: .basic) { _ in try systemStatus() },
             MCPTool(name: "ai_limits", title: "AI subscription limits",
-                    description: "How much of the user's Claude, ChatGPT/Codex and Gemini subscription windows (5-hour, weekly, per model) is used, when each resets, and whether it is on pace to run out. One entry per account; a second account of a provider carries its nickname in \"account\". Only the providers turned on in Nabız.",
+                    description: "How much of the user's Claude, ChatGPT/Codex, Gemini and Grok subscription windows (5-hour, weekly, per model) is used, when each resets, and whether it is on pace to run out. One entry per account; a second account of a provider carries its nickname in \"account\". Only the providers turned on in Nabız.",
                     group: .basic) { _ in try await aiLimits() },
             MCPTool(name: "calendar_events", title: "Calendar",
                     description: "The user's calendar events from now on, with times, location, and a meeting link when there is one.",

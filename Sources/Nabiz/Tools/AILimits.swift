@@ -31,7 +31,7 @@ struct AILimit: Identifiable, Sendable {
 }
 
 enum AIProvider: String, CaseIterable, Identifiable, Sendable {
-    case claude, codex, gemini
+    case claude, codex, gemini, grok
 
     var id: String { rawValue }
 
@@ -41,6 +41,7 @@ enum AIProvider: String, CaseIterable, Identifiable, Sendable {
         case .claude: "Claude"
         case .codex: "Codex"
         case .gemini: "Gemini"
+        case .grok: "Grok"
         }
     }
 
@@ -49,6 +50,7 @@ enum AIProvider: String, CaseIterable, Identifiable, Sendable {
         case .claude: "Claude"
         case .codex: "ChatGPT · Codex"
         case .gemini: "Gemini"
+        case .grok: "Grok"
         }
     }
 
@@ -61,6 +63,7 @@ enum AIProvider: String, CaseIterable, Identifiable, Sendable {
         case .claude: L("Claude Code oturumu (Anahtar Zinciri)", "Claude Code sign-in (Keychain)")
         case .codex: "~/.codex/auth.json"
         case .gemini: "~/.gemini/oauth_creds.json"
+        case .grok: "~/.grok/auth.json"
         }
     }
 
@@ -70,6 +73,7 @@ enum AIProvider: String, CaseIterable, Identifiable, Sendable {
         case .claude: "api.anthropic.com"
         case .codex: "chatgpt.com"
         case .gemini: "cloudcode-pa.googleapis.com"
+        case .grok: "cli-chat-proxy.grok.com"
         }
     }
 }
@@ -101,7 +105,9 @@ struct AIStatus: Identifiable, Sendable {
 }
 
 /// Reads subscription limits with the sign-ins the official CLIs already keep on this Mac, for every account found.
-/// Tokens never leave the Mac except to their own provider, are never stored by Nabız, and are never refreshed by it.
+/// Tokens never leave the Mac except to their own provider and are never stored by Nabız. An expired one is renewed
+/// with the CLI's own refresh token: Gemini's only in memory (Google keeps the refresh token), Grok's written back to
+/// the CLI's file, the way the CLI itself would, because xAI may replace the refresh token.
 @MainActor
 @Observable
 final class AILimitsStore {
@@ -312,6 +318,7 @@ private enum AIFetch {
         case .claude: await claude(account)
         case .codex: await codex(account)
         case .gemini: await gemini(account)
+        case .grok: await grok(account)
         }
         // Every account keeps its own pace history; the default one keeps the ids it always had.
         if !account.isDefault {
@@ -553,15 +560,26 @@ private enum AIFetch {
         var status = AIStatus(account: account)
         guard let data = FileManager.default.contents(atPath: account.file ?? NSHomeDirectory() + "/.gemini/oauth_creds.json"),
               let creds = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let token = creds["access_token"] as? String
+              let saved = creds["access_token"] as? String
         else {
             status.problem = L("Gemini CLI oturumu bulunamadı", "No Gemini CLI sign-in found")
             status.needsSignIn = true
             return status
         }
-        if let expires = number(creds["expiry_date"]), expires / 1000 < Date().timeIntervalSince1970 {
-            expired(&status, tr: "Gemini CLI'yi", en: "Gemini CLI")
-            return status
+        var token = saved
+        if let expires = number(creds["expiry_date"]), expires / 1000 < Date().timeIntervalSince1970 + 60 {
+            // The access token lasts an hour; Gemini CLI renews it only while it runs. Renew it here the same way,
+            // in memory: Google keeps the refresh token, so the CLI's file stays valid as it is.
+            guard let refresh = creds["refresh_token"] as? String, let client = GeminiCLI.client,
+                  let fresh = await renew(URL(string: "https://oauth2.googleapis.com/token")!, [
+                      "grant_type": "refresh_token", "refresh_token": refresh,
+                      "client_id": client.id, "client_secret": client.secret,
+                  ]), let access = fresh["access_token"] as? String
+            else {
+                expired(&status, tr: "Gemini CLI'yi", en: "Gemini CLI")
+                return status
+            }
+            token = access
         }
         let base = "https://cloudcode-pa.googleapis.com/v1internal:"
         func post(_ method: String, _ body: [String: Any]) -> URLRequest {
@@ -575,6 +593,13 @@ private enum AIFetch {
         let metadata = ["ideType": "IDE_UNSPECIFIED", "platform": "PLATFORM_UNSPECIFIED", "pluginType": "GEMINI"]
         guard let assist = await load(post("loadCodeAssist", ["metadata": metadata]), into: &status) else { return status }
         status.plan = (assist["currentTier"] as? [String: Any])?["name"] as? String
+        // Google closed Gemini CLI's individual tier and sends people to Antigravity: no tier, "UNSUPPORTED_CLIENT".
+        let ineligible = assist["ineligibleTiers"] as? [[String: Any]] ?? []
+        if status.plan == nil, ineligible.contains(where: { $0["reasonCode"] as? String == "UNSUPPORTED_CLIENT" }) {
+            status.problem = L("Google bu hesapta Gemini CLI kotasını kapattı (Antigravity'ye taşındı)",
+                               "Google ended Gemini CLI quota for this account (moved to Antigravity)")
+            return status
+        }
         let project = (assist["cloudaicompanionProject"] as? String)
             ?? ((assist["cloudaicompanionProject"] as? [String: Any])?["id"] as? String)
         var body: [String: Any] = [:]
@@ -599,7 +624,103 @@ private enum AIFetch {
         id.replacingOccurrences(of: "gemini-", with: "").split(separator: "-").map { $0.capitalized }.joined(separator: " ")
     }
 
+    // MARK: Grok
+
+    static func grok(_ account: AIAccount) async -> AIStatus {
+        var status = AIStatus(account: account)
+        let file = account.file ?? NSHomeDirectory() + "/.grok/auth.json"
+        guard let data = FileManager.default.contents(atPath: file),
+              var all = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let (entryKey, entry) = all.compactMap({ key, value in (value as? [String: Any]).map { (key, $0) } })
+                  .first(where: { $0.1["key"] is String }),
+              var token = entry["key"] as? String
+        else {
+            status.problem = L("Grok CLI oturumu bulunamadı", "No Grok CLI sign-in found")
+            status.needsSignIn = true
+            return status
+        }
+        if let expires = date(entry["expires_at"]), expires.timeIntervalSinceNow < 60 {
+            // The token lasts a day. Renew it as the CLI would and write the new pair back, so the CLI keeps working
+            // even if xAI replaced the refresh token.
+            guard let refresh = entry["refresh_token"] as? String,
+                  let client = entry["oidc_client_id"] as? String,
+                  let issuer = entry["oidc_issuer"] as? String, let url = URL(string: issuer + "/oauth2/token"),
+                  let fresh = await renew(url, ["grant_type": "refresh_token", "refresh_token": refresh, "client_id": client]),
+                  let access = fresh["access_token"] as? String
+            else {
+                expired(&status, tr: "Grok CLI'yi", en: "Grok CLI")
+                return status
+            }
+            token = access
+            var updated = entry
+            updated["key"] = access
+            if let next = fresh["refresh_token"] as? String { updated["refresh_token"] = next }
+            if let seconds = number(fresh["expires_in"]) {
+                let formatter = ISO8601DateFormatter()
+                formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                updated["expires_at"] = formatter.string(from: Date().addingTimeInterval(seconds))
+            }
+            all[entryKey] = updated
+            if let out = try? JSONSerialization.data(withJSONObject: all, options: [.prettyPrinted, .sortedKeys]) {
+                try? out.write(to: URL(fileURLWithPath: file), options: .atomic)
+                try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file)
+            }
+        }
+        func get(_ path: String) -> URLRequest {
+            var request = URLRequest(url: URL(string: "https://cli-chat-proxy.grok.com/v1/" + path)!, timeoutInterval: 10)
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.setValue("xai-grok-cli", forHTTPHeaderField: "X-XAI-Token-Auth")
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+            return request
+        }
+        // A team account answers 412 "no personal team": it has no quota of its own.
+        if let (body, response) = try? await URLSession.shared.data(for: get("billing?format=credits")),
+           (response as? HTTPURLResponse)?.statusCode == 412,
+           String(decoding: body, as: UTF8.self).localizedCaseInsensitiveContains("no personal team") {
+            status.problem = L("Takım hesabının kişisel kotası yok", "Team accounts have no personal quota")
+            return status
+        }
+        guard let billing = await load(get("billing?format=credits"), into: &status) else { return status }
+        // { "config": { "currentPeriod": { "type": "USAGE_PERIOD_TYPE_WEEKLY", "start": "…", "end": "…" },
+        //               "creditUsagePercent": 12.5, "onDemandCap": { "val": 0 } } } — a zero percent is left out.
+        let config = billing["config"] as? [String: Any] ?? [:]
+        let period = config["currentPeriod"] as? [String: Any] ?? [:]
+        if let start = date(period["start"]), let end = date(period["end"]), end > start {
+            let weekly = (period["type"] as? String) == "USAGE_PERIOD_TYPE_WEEKLY"
+            status.limits.append(AILimit(id: "grok.credits", label: weekly ? windowLabel("seven_day") : L("Dönem", "Period"),
+                                         used: min(max((number(config["creditUsagePercent"]) ?? 0) / 100, 0), 1),
+                                         resetsAt: end, primary: true, period: end.timeIntervalSince(start)))
+        }
+        if let settings = await loadQuietly(get("settings")),
+           let tier = (settings["subscription_tier_display"] as? String)?.trimmingCharacters(in: .whitespaces), !tier.isEmpty {
+            status.plan = tier
+        }
+        if status.limits.isEmpty { status.problem = L("Limit bilgisi yok", "No limit data") }
+        return status
+    }
+
     // MARK: Helpers
+
+    /// A form-encoded OAuth token request; the JSON answer, or nil when it was refused.
+    private static func renew(_ url: URL, _ fields: [String: String]) async -> [String: Any]? {
+        var request = URLRequest(url: url, timeoutInterval: 15)
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        var allowed = CharacterSet.alphanumerics
+        allowed.insert(charactersIn: "-._~")
+        request.httpBody = Data(fields.map { "\($0.key)=\($0.value.addingPercentEncoding(withAllowedCharacters: allowed) ?? "")" }
+            .joined(separator: "&").utf8)
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+        return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    }
+
+    /// Like `load`, for extras (a plan name) whose failure should not hide the limits.
+    private static func loadQuietly(_ request: URLRequest) async -> [String: Any]? {
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+        return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    }
 
     /// Loads a JSON object, or fills `status.problem` with why it could not.
     private static func load(_ request: URLRequest, into status: inout AIStatus) async -> [String: Any]? {
@@ -639,5 +760,36 @@ private enum AIFetch {
         let withFraction = ISO8601DateFormatter()
         withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return withFraction.date(from: text) ?? ISO8601DateFormatter().date(from: text)
+    }
+}
+
+/// Gemini CLI's own OAuth client, read from the installed CLI (an installed app's client "secret" ships in it, so
+/// it is not kept in Nabız's source). Found once, in the CLI's bundled JavaScript.
+private enum GeminiCLI {
+    static let client: (id: String, secret: String)? = {
+        let fm = FileManager.default
+        var roots = ["/opt/homebrew/lib/node_modules/@google/gemini-cli", "/usr/local/lib/node_modules/@google/gemini-cli"]
+        if let resolved = try? fm.destinationOfSymbolicLink(atPath: "/opt/homebrew/bin/gemini") {
+            let url = URL(fileURLWithPath: resolved, relativeTo: URL(fileURLWithPath: "/opt/homebrew/bin")).standardizedFileURL
+            roots.insert(url.deletingLastPathComponent().deletingLastPathComponent().path, at: 0)
+        }
+        for root in roots {
+            for dir in [root + "/bundle", root + "/dist", root] {
+                for name in (try? fm.contentsOfDirectory(atPath: dir)) ?? [] where name.hasSuffix(".js") {
+                    guard let text = try? String(contentsOfFile: dir + "/" + name, encoding: .utf8),
+                          text.contains("OAUTH_CLIENT_SECRET"),
+                          let id = value("OAUTH_CLIENT_ID", in: text), let secret = value("OAUTH_CLIENT_SECRET", in: text)
+                    else { continue }
+                    return (id, secret)
+                }
+            }
+        }
+        return nil
+    }()
+
+    /// `NAME = "value"` in the CLI's source.
+    private static func value(_ name: String, in text: String) -> String? {
+        guard let match = text.firstMatch(of: try! Regex("\\b\(name)\\s*=\\s*\"([^\"]+)\"")) else { return nil }
+        return match.output[1].substring.map(String.init)
     }
 }

@@ -41,6 +41,7 @@ extension AIProvider {
         case .claude: "CLAUDE_CONFIG_DIR"
         case .codex: "CODEX_HOME"
         case .gemini: "GEMINI_CLI_HOME"
+        case .grok: "GROK_HOME"
         }
     }
 
@@ -50,6 +51,8 @@ extension AIProvider {
         case .codex: "codex login"
         // Gemini CLI asks how to sign in on its first start.
         case .gemini: "gemini"
+        // Grok CLI signs in on its first start too.
+        case .grok: "grok"
         }
     }
 
@@ -85,6 +88,7 @@ enum AIAccounts {
         case .claude: claude(folder)
         case .codex: codex(folder)
         case .gemini: gemini(folder)
+        case .grok: grok(folder)
         }
     }
 
@@ -201,6 +205,19 @@ enum AIAccounts {
             return account
         }
         return nil
+    }
+
+    // MARK: Grok
+
+    private static func grok(_ folder: String?) -> AIAccount? {
+        let file = (folder ?? NSHomeDirectory() + "/.grok") + "/auth.json"
+        guard let all = json(file),
+              let entry = all.values.compactMap({ $0 as? [String: Any] }).first(where: { $0["key"] is String })
+        else { return nil }
+        var account = AIAccount(provider: .grok, folder: folder, file: file, updated: modified(file) ?? .distantPast)
+        account.email = entry["email"] as? String
+        account.identity = entry["user_id"] as? String ?? account.email
+        return account
     }
 
     // MARK: Helpers

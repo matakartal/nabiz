@@ -965,6 +965,7 @@ private struct AISection: View {
     @AppStorage("ai.claude") private var claude = false
     @AppStorage("ai.codex") private var codex = false
     @AppStorage("ai.gemini") private var gemini = false
+    @AppStorage("ai.grok") private var grok = false
     @AppStorage(Prefs.aiAsk) private var askOn = true
     private let store = AILimitsStore.shared
 
@@ -984,7 +985,7 @@ private struct AISection: View {
             .help(L("Başlatıcıda sor; seçili ya da kopyalanan metni özetle, düzelt, çevir.",
                     "Ask in the launcher; summarise, fix or translate selected or copied text."))
         }
-        if !(claude || codex || gemini) {
+        if !(claude || codex || gemini || grok) {
             PanelRow(icon: .symbol("gauge.with.dots.needle.33percent"), title: L("Abonelik limitlerini göster…", "Show subscription limits…"), action: {
                 actions.close()
                 SettingsWindow.show(.aiLimits)
@@ -1021,12 +1022,17 @@ private struct AISection: View {
         let bundles = switch provider {
         case .claude: ["com.anthropic.claudefordesktop"]
         case .codex: ["com.openai.codex", "com.openai.chat"]
-        case .gemini: [String]()
+        case .gemini, .grok: [String]()
         }
         for bundle in bundles {
             if let path = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundle)?.path { return .app(path) }
         }
-        return .symbol(provider == .gemini ? "sparkle" : "bubble.left.and.text.bubble.right")
+        let symbol = switch provider {
+        case .gemini: "sparkle"
+        case .grok: "xmark.square"
+        default: "bubble.left.and.text.bubble.right"
+        }
+        return .symbol(symbol)
     }
 }
 

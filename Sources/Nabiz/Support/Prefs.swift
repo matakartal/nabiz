@@ -230,7 +230,7 @@ enum Prefs {
             devEditor: "", devAgent: "claude", notaryWatch: true, notaryProfile: "", devStaleDays: 30,
             "expanded.projects": true, "expanded.docker": true, showDisplays: true, brightnessKeys: false,
             menuBarHider: false, menuBarHiderDelay: 10, showApps: true, showCurrency: true, showWeather: true, barWeather: false, weatherUnit: "system", weatherDetails: false, "expanded.weather": false, showTools: true, showAI: true,
-            "ai.claude": false, "ai.codex": false, "ai.gemini": false,
+            "ai.claude": false, "ai.codex": false, "ai.gemini": false, "ai.grok": false,
             memoryAppCount: 5, cpuAppCount: 3,
             baseCurrency: "TRY", watchedCurrencies: "USD,EUR,GBP",
             clipboardHotkey: true, clipboardEnabled: true, clipboardSave: true, clipboardLimit: 200, clipboardDays: 30,

@@ -728,6 +728,7 @@ private struct MenuBarPage: View {
     @AppStorage("ai.claude") private var claude = false
     @AppStorage("ai.codex") private var codex = false
     @AppStorage("ai.gemini") private var gemini = false
+    @AppStorage("ai.grok") private var grok = false
     @AppStorage(Prefs.menuBarHider) private var hider = false
     @AppStorage(Prefs.menuBarHiderDelay) private var hiderDelay = 10
 
@@ -761,7 +762,7 @@ private struct MenuBarPage: View {
             } header: {
                 Text(L("Diğer", "Other"))
             } footer: {
-                Footnote(claude || codex || gemini
+                Footnote(claude || codex || gemini || grok
                     ? L("AI limiti, açık sağlayıcılar arasında en çok dolmuş olanı gösterir. Döviz kuru, izlenen ilk kuru gösterir.",
                         "AI limit shows the fullest window among the providers you turned on. Exchange rate shows the first watched rate.")
                     : L("AI limitini göstermek için önce AI limitleri sayfasından bir sağlayıcı aç.",
@@ -1504,6 +1505,7 @@ private struct AILimitsPage: View {
     @AppStorage("ai.claude") private var claude = false
     @AppStorage("ai.codex") private var codex = false
     @AppStorage("ai.gemini") private var gemini = false
+    @AppStorage("ai.grok") private var grok = false
     @AppStorage(Prefs.aiRemaining) private var remaining = true
     @State private var adding: AIProvider?
     @State private var newNickname = ""
@@ -1523,8 +1525,8 @@ private struct AILimitsPage: View {
                     }
                 }
             } footer: {
-                Footnote(L("Nabız, resmi CLI'lerin bu Mac'te zaten tuttuğu oturumu okur ve yalnızca o sağlayıcının kendi sunucusuna sorar. Oturum bilgisi saklanmaz, yenilenmez ve başka bir yere gönderilmez. macOS ilk okumada izin isteyebilir.",
-                       "Nabız reads the sign-in the official CLIs already keep on this Mac and asks only that provider's own server. The sign-in is never stored, refreshed or sent anywhere else. macOS may ask for permission the first time."))
+                Footnote(L("Nabız, resmi CLI'lerin bu Mac'te zaten tuttuğu oturumu okur ve yalnızca o sağlayıcının kendi sunucusuna sorar. Oturum bilgisi saklanmaz ve başka bir yere gönderilmez; süresi dolan Gemini ve Grok oturumları CLI'nin yaptığı gibi yenilenir. macOS ilk okumada izin isteyebilir.",
+                       "Nabız reads the sign-in the official CLIs already keep on this Mac and asks only that provider's own server. The sign-in is never stored or sent anywhere else; an expired Gemini or Grok sign-in is renewed the way the CLI does. macOS may ask for permission the first time."))
             }
             SettingsSection("aiLimits.accounts") {
                 ForEach(store.accounts) { AIAccountRow(account: $0) }
@@ -1546,8 +1548,8 @@ private struct AILimitsPage: View {
             } header: {
                 Text(L("Hesaplar", "Accounts"))
             } footer: {
-                Footnote(L("Aynı sağlayıcıdan ikinci bir hesap için Hesap ekle'yi seç, takma ad ver ve açılan Terminal'de o hesapla giriş yap; varsayılan oturumun olduğu gibi kalır. Nabız ~/.claude-*, ~/.codex-* ve ~/.gemini-* klasörlerindeki oturumları kendisi bulur, iki yerde açık aynı hesabı bir kez gösterir. Takma ad yoksa panelde e-posta görünür.",
-                           "For a second account of the same provider, choose Add an account, give it a nickname and sign in with that account in the Terminal that opens; your default sign-in stays as it is. Nabız finds the sign-ins in ~/.claude-*, ~/.codex-* and ~/.gemini-* folders by itself and shows an account signed in twice only once. Without a nickname the panel shows the e-mail."))
+                Footnote(L("Aynı sağlayıcıdan ikinci bir hesap için Hesap ekle'yi seç, takma ad ver ve açılan Terminal'de o hesapla giriş yap; varsayılan oturumun olduğu gibi kalır. Nabız ~/.claude-*, ~/.codex-*, ~/.gemini-* ve ~/.grok-* klasörlerindeki oturumları kendisi bulur, iki yerde açık aynı hesabı bir kez gösterir. Takma ad yoksa panelde e-posta görünür.",
+                           "For a second account of the same provider, choose Add an account, give it a nickname and sign in with that account in the Terminal that opens; your default sign-in stays as it is. Nabız finds the sign-ins in ~/.claude-*, ~/.codex-*, ~/.gemini-* and ~/.grok-* folders by itself and shows an account signed in twice only once. Without a nickname the panel shows the e-mail."))
             }
             .alert(L("\(adding?.shortName ?? "") hesabı ekle", "Add a \(adding?.shortName ?? "") account"), isPresented: addingShown) {
                 TextField(L("Takma ad (ör. İş)", "Nickname (e.g. Work)"), text: $newNickname)
@@ -1590,7 +1592,7 @@ private struct AILimitsPage: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             store.refreshIfNeeded()
         }
-        .onChange(of: [claude, codex, gemini]) { store.refreshIfNeeded() }
+        .onChange(of: [claude, codex, gemini, grok]) { store.refreshIfNeeded() }
     }
 
     private var addingShown: Binding<Bool> {
@@ -1616,6 +1618,7 @@ private struct AILimitsPage: View {
         case .claude: $claude
         case .codex: $codex
         case .gemini: $gemini
+        case .grok: $grok
         }
     }
 }
