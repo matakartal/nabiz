@@ -170,6 +170,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             close: { [weak self] in self?.panel.close() }
         )
         Monitor.panelActions = actions
+        Updater.shared.reportFailedInstall()
         panel = StatusPanel(monitor: monitor, actions: actions)
         SettingsWindow.monitor = monitor
         monitor.onUpdate = { [weak self] in
@@ -236,6 +237,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.timerWasRunning = running
             }
         }
+        AppMover.offerIfNeeded()
         WelcomeWindow.showIfFirstLaunch { [weak self] in self?.togglePanel() }
     }
 

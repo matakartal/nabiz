@@ -2071,14 +2071,31 @@ private struct UpdateRow: View {
 
     var body: some View {
         if let release = updater.available {
-            Button(updater.installing ? L("Güncelleniyor…", "Updating…") : L("\(release.version) sürümüne güncelle", "Update to \(release.version)")) {
-                updater.install()
+            Button(updater.installing ? L("Güncelleniyor…", "Updating…") : L("\(release.version) sürümüne güncelle…", "Update to \(release.version)…")) {
+                updater.offer()
             }
             .buttonStyle(.borderedProminent)
             .tint(Theme.accent)
             .disabled(updater.installing)
         } else {
-            Button(L("Güncellemeleri denetle", "Check for updates")) { updater.check(force: true) }
+            Button(updater.status == .checking ? L("Denetleniyor…", "Checking…") : L("Güncellemeleri denetle", "Check for updates")) {
+                updater.check(force: true)
+            }
+            .disabled(updater.status == .checking)
+        }
+        switch updater.status {
+        case .upToDate:
+            Text(L("Güncelsin (\(Updater.current))", "You're up to date (\(Updater.current))"))
+                .font(Theme.small).foregroundStyle(Palette.green.mark)
+        case .failed(let reason):
+            Text(L("Denetlenemedi: \(reason)", "Couldn't check: \(reason)"))
+                .font(Theme.small).foregroundStyle(Theme.warning.mark)
+        default:
+            EmptyView()
+        }
+        if let checked = updater.checkedAt {
+            Text(verbatim: L("Son denetim: ", "Last checked ") + checked.formatted(.relative(presentation: .named).locale(Format.locale)))
+                .font(Theme.small).foregroundStyle(Theme.textMuted)
         }
         if let error = updater.lastError {
             Text(verbatim: error).font(Theme.small).foregroundStyle(Theme.warning.mark)

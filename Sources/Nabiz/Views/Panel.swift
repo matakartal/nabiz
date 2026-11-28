@@ -1307,7 +1307,8 @@ private struct PanelFooter: View {
         HStack(spacing: Theme.Spacing.xs) {
             if let release = Updater.shared.available {
                 Button {
-                    Updater.shared.install()
+                    actions.close()
+                    Updater.shared.offer()
                 } label: {
                     HStack(spacing: Theme.Spacing.xs) {
                         if Updater.shared.installing { ProgressView().controlSize(.mini) }
@@ -1320,7 +1321,7 @@ private struct PanelFooter: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(Updater.shared.installing)
-                .help(L("İndirir, kurar ve Nabız'ı yeniden açar.", "Downloads, installs and reopens Nabız."))
+                .help(L("Yenilikleri gösterir; sonra indirir, kurar ve Nabız'ı yeniden açar.", "Shows what's new, then downloads, installs and reopens Nabız."))
             } else {
                 Text(verbatim: detail).font(Theme.small).foregroundStyle(Theme.textMuted).lineLimit(1)
             }
