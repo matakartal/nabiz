@@ -73,7 +73,7 @@ extension MCPTools {
                     seconds (trim_end 0 = the end). auto_zooms: plan zooms again from the clicks and typing. speed_up_typing: add \
                     speed-ups over long typing. Times are seconds of the original recording. Check the result with recording_frame.
                     """,
-                    group: .commands, readOnly: false,
+                    group: .commands, readOnly: false, destructive: true,
                     properties: [
                         "id": ["type": "string", "description": "Default: the newest"],
                         "style": ["type": "object"],
@@ -88,12 +88,13 @@ extension MCPTools {
                 try editRecording(args)
             },
             MCPTool(name: "recording_frame", title: "See a frame of a recording",
-                    description: "Draws the finished video (with its style, zooms, pointer, captions and notes) at one moment and saves it as a PNG; returns the file's path to look at. time: seconds of the original recording.",
+                    description: "Draws the finished video (with its style, zooms, pointer, captions and notes) at one moment: returns the picture itself and the path of the PNG it was saved as. time: seconds of the original recording.",
                     group: .commands,
                     properties: ["id": ["type": "string"], "time": ["type": "number"], "width": ["type": "integer", "description": "Default 1600"]],
-                    required: ["time"]) { args in
-                try await frame(args)
-            },
+                    required: ["time"], content: { args in
+                let (url, png) = try await frame(args)
+                return [.image(png, mimeType: "image/png"), .text(url.path)]
+            }),
             MCPTool(name: "recording_export", title: "Export a screen recording",
                     description: "Makes the finished file: MP4 at full size, 4K or 1080p, or a GIF. Saved in the screenshots folder unless path is given. Returns the file's path.",
                     group: .commands, readOnly: false,
@@ -157,7 +158,7 @@ extension MCPTools {
     }
 
     /// The front window of an app, as the screen it is on and its frame there (points, top-left origin).
-    private static func frontWindow(of app: String) -> (NSScreen, CGRect, CGWindowID)? {
+    static func frontWindow(of app: String) -> (NSScreen, CGRect, CGWindowID)? {
         let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
         let wanted = app.lowercased()
         let mainHeight = NSScreen.screens.first?.frame.height ?? 0
@@ -281,7 +282,7 @@ extension MCPTools {
 
     // MARK: Frames and files
 
-    private static func frame(_ args: [String: Any]) async throws -> String {
+    private static func frame(_ args: [String: Any]) async throws -> (URL, Data) {
         let meta = try recording(args["id"])
         guard let time = double(args["time"]) else { throw MCPToolError("time is required") }
         let width = CGFloat(min(max(int(args["width"]) ?? 1600, 320), 3840))
@@ -306,7 +307,7 @@ extension MCPTools {
         guard let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]), (try? png.write(to: url)) != nil else {
             throw MCPToolError("Couldn't save the frame.")
         }
-        return url.path
+        return (url, png)
     }
 
     private static func export(_ args: [String: Any]) async throws -> String {

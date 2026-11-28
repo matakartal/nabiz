@@ -1675,6 +1675,9 @@ private struct MCPPage: View {
     @AppStorage(Prefs.mcpCommands) private var commands = true
     @AppStorage(Prefs.mcpNotes) private var notes = true
     @AppStorage(Prefs.mcpClipboard) private var clipboard = false
+    @AppStorage(Prefs.mcpClipboardNow) private var clipboardNow = false
+    @AppStorage(Prefs.mcpScreen) private var screen = false
+    @AppStorage(Prefs.mcpScripts) private var scripts = false
     @State private var message = ""
     @State private var working = false
     private let server = MCPServer.shared
@@ -1699,13 +1702,17 @@ private struct MCPPage: View {
                         .foregroundStyle(Theme.textMuted).multilineTextAlignment(.trailing)
                 }
                 Toggle(L("Mac'te işlem yapsın", "Act on the Mac"), isOn: $commands)
+                Toggle(L("Betiklerimi ve Kestirmelerimi çalıştırsın", "Let AI apps run my scripts and Shortcuts"), isOn: $scripts)
+                    .disabled(!commands)
                 Toggle(L("Notları ve parçacıkları okuyup yazsın", "Read and write notes and snippets"), isOn: $notes)
+                Toggle(L("Ekran görüntüsü alsın", "Take screenshots"), isOn: $screen)
+                Toggle(L("Panodaki metni okusun", "Read what's on the clipboard now"), isOn: $clipboardNow)
                 Toggle(L("Pano geçmişini okusun", "Read the clipboard history"), isOn: $clipboard)
             } header: {
                 Text(L("Neleri kullanabilsin", "What it may use"))
             } footer: {
-                Footnote(L("İşlemler: uygulama açma, pencere yerleştirme, ses, zamanlayıcı, odak modu, kendi komutların ve kestirmelerin. Yeniden başlatma, kapatma, çöpü boşaltma gibi geri alınamayanlar hiçbir zaman çalıştırılmaz. Pano geçmişinde şifre gibi şeyler olabilir; o yüzden kapalı başlar.",
-                           "Actions: opening apps, placing windows, sound, timers, focus mode, your own commands and Shortcuts. Things that can't be undone, like restart, shut down or emptying the Trash, are never run. The clipboard history may hold things like passwords, so it starts off."))
+                Footnote(L("İşlemler: uygulama açma, pencere yerleştirme, ses, zamanlayıcı, odak modu. Kendi betiklerin ve Kestirmelerin her şeyi yapabildiği için, uyku ve kilitle birlikte ayrıca izin ister. Yeniden başlatma, kapatma, çöpü boşaltma gibi geri alınamayanlar hiçbir zaman çalıştırılmaz. Ekran ve panoda şifre gibi şeyler olabilir; o yüzden bunlar kapalı başlar.",
+                           "Actions: opening apps, placing windows, sound, timers, focus mode. Your own scripts and Shortcuts can do anything, so they need their own yes, as do sleep and lock. Things that can't be undone, like restart, shut down or emptying the Trash, are never run. The screen and the clipboard may show things like passwords, so those start off."))
             }
             .disabled(!enabled)
             SettingsSection("mcp.connect") {

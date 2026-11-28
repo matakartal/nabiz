@@ -73,9 +73,17 @@ final class MCPServer {
     private(set) var lastCall: (tool: String, at: Date)?
     @ObservationIgnored private var source: DispatchSourceRead?
 
-    /// Starts or stops with the setting.
+    /// The tools offered when AI apps last heard, to tell them when that changes.
+    @ObservationIgnored private var offered: [String]?
+
+    /// Starts or stops with the setting; tells connected AI apps when the tools they may use change.
     func update() {
         if Prefs.bool(Prefs.mcpEnabled) { start() } else { stop() }
+        let names = MCPTools.available.map(\.name)
+        if let offered, offered != names, let note = MCPProtocol.encode(["jsonrpc": "2.0", "method": "notifications/tools/list_changed"]) {
+            MCPConnections.broadcast(note)
+        }
+        offered = names
     }
 
     func start() {
@@ -127,6 +135,29 @@ final class MCPServer {
     }
 }
 
+/// The AI apps connected now, for notifications.
+enum MCPConnections {
+    nonisolated(unsafe) private static var open: [ObjectIdentifier: MCPConnection] = [:]
+    private static let lock = NSLock()
+
+    static func add(_ connection: MCPConnection) {
+        lock.lock(); defer { lock.unlock() }
+        open[ObjectIdentifier(connection)] = connection
+    }
+
+    static func remove(_ connection: MCPConnection) {
+        lock.lock(); defer { lock.unlock() }
+        open[ObjectIdentifier(connection)] = nil
+    }
+
+    static func broadcast(_ data: Data) {
+        lock.lock()
+        let all = Array(open.values)
+        lock.unlock()
+        all.forEach { $0.send(data) }
+    }
+}
+
 /// One AI app's session: newline-separated JSON-RPC in both directions.
 final class MCPConnection: @unchecked Sendable {
     private let fd: Int32
@@ -139,6 +170,7 @@ final class MCPConnection: @unchecked Sendable {
         MCPSocket.noSigPipe(fd)
         // Blocking reads on its own thread; the listening socket is non-blocking, this one isn't.
         _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) & ~O_NONBLOCK)
+        MCPConnections.add(self)
         Thread.detachNewThread { self.readLoop() }
     }
 
@@ -146,14 +178,9 @@ final class MCPConnection: @unchecked Sendable {
         // Only processes of this same user.
         var uid: uid_t = 0, gid: gid_t = 0
         guard getpeereid(fd, &uid, &gid) == 0, uid == getuid() else { finish(); return }
-        // Requests are answered one after another, in order; the socket closes only after the last answer went out.
-        let (lines, input) = AsyncStream<Data>.makeStream()
-        Task { @MainActor in
-            for await line in lines {
-                if let reply = await MCPProtocol.handle(line) { self.send(reply) }
-            }
-            self.finish()
-        }
+        // Each request runs on its own, so a slow tool never holds up the others (answers can come out of order; the
+        // ids match them up), and a ping is answered at once. The socket closes only after the last answer went out.
+        let pending = DispatchGroup()
         var buffer = Data()
         var chunk = [UInt8](repeating: 0, count: 64 * 1024)
         while true {
@@ -167,13 +194,21 @@ final class MCPConnection: @unchecked Sendable {
                 let line = Data(buffer[buffer.startIndex..<newline])
                 buffer.removeSubrange(buffer.startIndex...newline)
                 guard !line.allSatisfy({ $0 == 0x20 || $0 == 0x0D }) else { continue }
-                input.yield(line)
+                if let pong = MCPProtocol.quickReply(line) {
+                    send(pong)
+                    continue
+                }
+                pending.enter()
+                Task { @MainActor in
+                    if let reply = await MCPProtocol.handle(line) { self.send(reply) }
+                    pending.leave()
+                }
             }
         }
-        input.finish()
+        pending.notify(queue: .global()) { self.finish() }
     }
 
-    private func send(_ data: Data) {
+    func send(_ data: Data) {
         lock.lock()
         defer { lock.unlock() }
         guard !closed else { return }
@@ -186,6 +221,7 @@ final class MCPConnection: @unchecked Sendable {
         guard !closed else { return }
         closed = true
         close(fd)
+        MCPConnections.remove(self)
     }
 }
 
@@ -194,6 +230,13 @@ final class MCPConnection: @unchecked Sendable {
 @MainActor
 enum MCPProtocol {
     static let versions = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"]
+
+    /// A ping, answered on the reading thread without waiting for anything; nil for every other message.
+    nonisolated static func quickReply(_ data: Data) -> Data? {
+        guard let message = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              message["method"] as? String == "ping", let id = message["id"], !(id is NSNull) else { return nil }
+        return encode(["jsonrpc": "2.0", "id": id, "result": [String: Any]()])
+    }
 
     static func handle(_ data: Data) async -> Data? {
         guard let message = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -209,7 +252,7 @@ enum MCPProtocol {
             if let client = (params["clientInfo"] as? [String: Any])?["name"] as? String { MCPServer.shared.noteClient(client) }
             result = [
                 "protocolVersion": versions.contains(asked) ? asked : versions[0],
-                "capabilities": ["tools": ["listChanged": false]],
+                "capabilities": ["tools": ["listChanged": true]],
                 "serverInfo": ["name": "nabiz", "title": "Nabız", "version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"],
                 "instructions": """
                 Nabız is the user's macOS menu bar app. Use it to read this Mac's live state (CPU, memory, disk, battery, \
@@ -223,17 +266,21 @@ enum MCPProtocol {
         case "tools/list":
             result = ["tools": MCPTools.available.map(\.descriptor)]
         case "tools/call":
-            guard let name = params["name"] as? String, let tool = MCPTools.available.first(where: { $0.name == name }) else {
+            guard let name = params["name"] as? String, MCPTools.all.contains(where: { $0.name == name }) else {
                 return error(id, -32602, "Unknown tool: \(params["name"] as? String ?? "")")
+            }
+            // A tool the user turned off (an AI app may still have the old list): a plain tool error it can read out.
+            guard let tool = MCPTools.available.first(where: { $0.name == name }) else {
+                result = toolResult([.text("\(name) is turned off in Settings → MCP. The user can turn it on in Nabız → Settings → MCP.")], isError: true)
+                break
             }
             MCPServer.shared.noteCall(name)
             let arguments = params["arguments"] as? [String: Any] ?? [:]
             do {
-                let text = try await tool.run(arguments)
-                result = ["content": [["type": "text", "text": text]], "isError": false] as [String: Any]
+                result = toolResult(try await tool.content(arguments), isError: false)
             } catch {
                 let message = (error as? MCPToolError)?.message ?? error.localizedDescription
-                result = ["content": [["type": "text", "text": message]], "isError": true] as [String: Any]
+                result = toolResult([.text(message)], isError: true)
             }
         case "resources/list":
             result = ["resources": [Any]()]
@@ -245,11 +292,16 @@ enum MCPProtocol {
         return encode(["jsonrpc": "2.0", "id": id, "result": result])
     }
 
+    /// A tools/call result: text and images, in order.
+    static func toolResult(_ content: [MCPContent], isError: Bool) -> [String: Any] {
+        ["content": content.map(\.json), "isError": isError]
+    }
+
     private static func error(_ id: Any, _ code: Int, _ message: String) -> Data? {
         encode(["jsonrpc": "2.0", "id": id, "error": ["code": code, "message": message]])
     }
 
-    static func encode(_ object: Any) -> Data? {
+    nonisolated static func encode(_ object: Any) -> Data? {
         try? JSONSerialization.data(withJSONObject: object, options: [.withoutEscapingSlashes])
     }
 }

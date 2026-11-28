@@ -74,6 +74,68 @@ struct MCPTests {
         #expect((reply?["result"] as? [String: Any])?["isError"] as? Bool == true)
     }
 
+    @Test func toolListCanChange() async {
+        let reply = await call(["jsonrpc": "2.0", "id": 8, "method": "initialize", "params": [:]])
+        let tools = ((reply?["result"] as? [String: Any])?["capabilities"] as? [String: Any])?["tools"] as? [String: Any]
+        #expect(tools?["listChanged"] as? Bool == true)
+    }
+
+    @Test func turnedOffToolsSaySo() async {
+        UserDefaults.standard.set(false, forKey: Prefs.mcpClipboardNow)
+        let reply = await call(["jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": ["name": "clipboard_read"]])
+        let result = reply?["result"] as? [String: Any]
+        let text = ((result?["content"] as? [[String: Any]])?.first?["text"] as? String) ?? ""
+        #expect(reply?["error"] == nil)
+        #expect(result?["isError"] as? Bool == true)
+        #expect(text.contains("turned off in Settings → MCP"))
+    }
+
+    @Test func pingIsAnsweredWithoutWaiting() throws {
+        let ping = try JSONSerialization.data(withJSONObject: ["jsonrpc": "2.0", "id": 10, "method": "ping"])
+        let reply = MCPProtocol.quickReply(ping).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+        #expect(reply?["id"] as? Int == 10 && reply?["result"] != nil)
+        let other = try JSONSerialization.data(withJSONObject: ["jsonrpc": "2.0", "id": 11, "method": "tools/list"])
+        #expect(MCPProtocol.quickReply(other) == nil)
+    }
+
+    @Test func annotationsSayWhatToolsDo() {
+        let tools = Dictionary(uniqueKeysWithValues: MCPTools.all.map { ($0.name, $0.descriptor["annotations"] as? [String: Any] ?? [:]) })
+        for name in ["stop_dev_server", "run_command", "focus_mode", "set_volume", "open_app", "place_window", "recording_edit"] {
+            #expect(tools[name]?["destructiveHint"] as? Bool == true, "\(name)")
+            #expect(tools[name]?["readOnlyHint"] as? Bool == false, "\(name)")
+        }
+        for name in ["system_status", "window_list", "screenshot", "clipboard_read", "dev_server_logs", "recording_frame"] {
+            #expect(tools[name]?["readOnlyHint"] as? Bool == true, "\(name)")
+            #expect(tools[name]?["destructiveHint"] as? Bool == false, "\(name)")
+        }
+        #expect(tools["market_prices"]?["openWorldHint"] as? Bool == true)
+    }
+
+    @Test func imagesComeBackAsImageContent() {
+        let result = MCPProtocol.toolResult([.image(Data([1, 2, 3]), mimeType: "image/png"), .text("/tmp/a.png")], isError: false)
+        let content = result["content"] as? [[String: Any]] ?? []
+        #expect(content.first?["type"] as? String == "image")
+        #expect(content.first?["data"] as? String == Data([1, 2, 3]).base64EncodedString())
+        #expect(content.first?["mimeType"] as? String == "image/png")
+        #expect(content.last?["text"] as? String == "/tmp/a.png")
+    }
+
+    @Test func commandsAreAllowedByList() {
+        #expect(MCPTools.access("win:leftHalf") == .allowed)
+        #expect(MCPTools.access("cmd:timer-5") == .allowed)
+        #expect(MCPTools.access("script:/Users/x/a.sh") == .scripts)
+        #expect(MCPTools.access("shortcut:Morning") == .scripts)
+        #expect(MCPTools.access("sys:sleep") == .scripts && MCPTools.access("sys:lock") == .scripts)
+        #expect(MCPTools.access("sys:emptyTrash") == .never && MCPTools.access("sys:shutDown") == .never)
+        // Something added later stays out until it's listed.
+        #expect(MCPTools.access("sys:somethingNew") == .never && MCPTools.access("tool:cleanup") == .never)
+        UserDefaults.standard.set(false, forKey: Prefs.mcpScripts)
+        #expect(!MCPTools.mayRun("shortcut:Morning"))
+        UserDefaults.standard.set(true, forKey: Prefs.mcpScripts)
+        #expect(MCPTools.mayRun("shortcut:Morning"))
+        UserDefaults.standard.set(false, forKey: Prefs.mcpScripts)
+    }
+
     @Test func findsMeetingLinks() {
         #expect(CalendarAgenda.meetingURL(nil, "Room 4", "Join: https://us02web.zoom.us/j/123?pwd=x")?.host() == "us02web.zoom.us")
         #expect(CalendarAgenda.meetingURL(URL(string: "https://meet.google.com/abc-defg-hij"), nil, nil) != nil)

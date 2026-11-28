@@ -6,20 +6,66 @@ struct MCPToolError: Error {
     init(_ message: String) { self.message = message }
 }
 
+/// One part of a tool's answer: text, or a picture the AI app can look at.
+enum MCPContent {
+    case text(String)
+    case image(Data, mimeType: String)
+
+    var json: [String: Any] {
+        switch self {
+        case .text(let text): ["type": "text", "text": text]
+        case .image(let data, let mimeType): ["type": "image", "data": data.base64EncodedString(), "mimeType": mimeType]
+        }
+    }
+}
+
 /// One thing an AI app can do with Nabız.
 @MainActor
 struct MCPTool {
-    enum Group { case basic, commands, notes, clipboard }
+    /// Which Settings → MCP switch it follows.
+    enum Group { case basic, commands, notes, clipboard, clipboardNow, screen }
 
     let name: String
     let title: String
     let description: String
     let group: Group
+    /// Only reads; changes nothing.
     var readOnly = true
+    /// Changes or ends something the user may not get back as it was (a stopped server, their volume, the clipboard).
+    var destructive = false
+    /// Reaches out to the internet.
+    var openWorld = false
     /// JSON Schema properties of the arguments.
     var properties: [String: [String: Any]] = [:]
     var required: [String] = []
-    let run: @MainActor ([String: Any]) async throws -> String
+    let content: @MainActor ([String: Any]) async throws -> [MCPContent]
+
+    init(name: String, title: String, description: String, group: Group, readOnly: Bool = true, destructive: Bool = false,
+         openWorld: Bool = false, properties: [String: [String: Any]] = [:], required: [String] = [],
+         run: @escaping @MainActor ([String: Any]) async throws -> String) {
+        self.init(name: name, title: title, description: description, group: group, readOnly: readOnly, destructive: destructive,
+                  openWorld: openWorld, properties: properties, required: required, content: { [.text(try await run($0))] })
+    }
+
+    init(name: String, title: String, description: String, group: Group, readOnly: Bool = true, destructive: Bool = false,
+         openWorld: Bool = false, properties: [String: [String: Any]] = [:], required: [String] = [],
+         content: @escaping @MainActor ([String: Any]) async throws -> [MCPContent]) {
+        self.name = name
+        self.title = title
+        self.description = description
+        self.group = group
+        self.readOnly = readOnly
+        self.destructive = destructive
+        self.openWorld = openWorld
+        self.properties = properties
+        self.required = required
+        self.content = content
+    }
+
+    /// The text of its answer (tests and simple callers).
+    func run(_ arguments: [String: Any]) async throws -> String {
+        try await content(arguments).compactMap { if case .text(let text) = $0 { text } else { nil } }.joined(separator: "\n")
+    }
 
     var descriptor: [String: Any] {
         [
@@ -27,15 +73,46 @@ struct MCPTool {
             "title": title,
             "description": description,
             "inputSchema": ["type": "object", "properties": properties, "required": required] as [String: Any],
-            "annotations": ["title": title, "readOnlyHint": readOnly, "destructiveHint": false, "openWorldHint": false],
+            "annotations": ["title": title, "readOnlyHint": readOnly, "destructiveHint": !readOnly && destructive,
+                            "idempotentHint": readOnly, "openWorldHint": openWorld],
         ]
     }
 }
 
 @MainActor
 enum MCPTools {
-    /// Launcher commands an AI app may not run: they end the session or throw work away.
-    static let unsafeCommands: Set<String> = ["sys:quitAll", "sys:emptyTrash", "sys:restart", "sys:shutDown", "sys:logOut"]
+    /// Whether run_command may run a launcher command.
+    enum CommandAccess: Equatable {
+        /// Safe and easy to undo: window layouts, sound, timers, focus, screenshots, Nabız's own windows.
+        case allowed
+        /// The user's own scripts and Shortcuts (they can do anything), and sleep, lock, display off, hide others,
+        /// eject: only with "Let AI apps run my scripts and Shortcuts".
+        case scripts
+        /// Everything else, including commands added later until they're listed here.
+        case never
+    }
+
+    static func access(_ id: String) -> CommandAccess {
+        let allowedPrefixes = ["win:", "layout:", "layoutset:", "audio:", "cmd:timer-", "cmd:volume-", "cmd:focus-", "cmd:pomodoro",
+                               "cmd:keepAwake-", "cmd:capture-"]
+        let allowedIDs: Set<String> = ["cmd:clipboard", "cmd:note", "cmd:note-new", "cmd:panel", "cmd:history", "cmd:settings",
+                                       "cmd:schedules", "cmd:ai-chat", "cmd:help", "cmd:mic", "cmd:rec-latest", "cmd:shot-clipboard",
+                                       "tool:color", "tool:darkMode", "tool:speedTest", "tool:ip", "tool:uuid", "tool:activity"]
+        let scriptPrefixes = ["script:", "shortcut:", "cmd:sleep-"]
+        let scriptIDs: Set<String> = ["sys:sleep", "sys:displayOff", "sys:hideOthers", "sys:lock", "cmd:lock", "tool:eject", "tool:clearClipboard"]
+        if allowedIDs.contains(id) || allowedPrefixes.contains(where: id.hasPrefix) { return .allowed }
+        if scriptIDs.contains(id) || scriptPrefixes.contains(where: id.hasPrefix) { return .scripts }
+        return .never
+    }
+
+    /// What run_command may run with the settings as they are.
+    static func mayRun(_ id: String) -> Bool {
+        switch access(id) {
+        case .allowed: true
+        case .scripts: Prefs.bool(Prefs.mcpScripts)
+        case .never: false
+        }
+    }
 
     /// The tools the person allowed in Settings → MCP.
     static var available: [MCPTool] {
@@ -45,6 +122,8 @@ enum MCPTools {
             case .commands: Prefs.bool(Prefs.mcpCommands)
             case .notes: Prefs.bool(Prefs.mcpNotes)
             case .clipboard: Prefs.bool(Prefs.mcpClipboard)
+            case .clipboardNow: Prefs.bool(Prefs.mcpClipboardNow)
+            case .screen: Prefs.bool(Prefs.mcpScreen)
             }
         }
     }
@@ -76,13 +155,13 @@ enum MCPTools {
             },
             MCPTool(name: "market_prices", title: "Market prices",
                     description: "Live prices and 24-hour change from Hyperliquid: crypto (BTC, ETH, SOL…) and HIP-3 stocks, indices and commodities. Without symbols, the markets the user watches.",
-                    group: .basic,
+                    group: .basic, openWorld: true,
                     properties: ["symbols": ["type": "array", "items": ["type": "string"], "description": "Market names such as BTC, ETH or xyz:NVDA."]]) { args in
                 try await marketPrices(args["symbols"] as? [String] ?? [])
             },
             MCPTool(name: "exchange_rates", title: "Exchange rates",
                     description: "European Central Bank reference rates, as the value of one unit of each currency in the base currency, with the daily change.",
-                    group: .basic,
+                    group: .basic, openWorld: true,
                     properties: ["base": ["type": "string", "description": "Base currency code; default the user's main currency."],
                                  "codes": ["type": "array", "items": ["type": "string"], "description": "Currency codes; default the user's watched ones."]]) { args in
                 try exchangeRates(base: args["base"] as? String, codes: args["codes"] as? [String])
@@ -170,17 +249,22 @@ enum MCPTools {
 
             // MARK: Acting on the Mac
             MCPTool(name: "list_commands", title: "List Mac commands",
-                    description: "Everything run_command can do, as id and title: lock screen, sleep, window layouts (halves, thirds, your own), sound output devices, mute, timers, focus mode, Pomodoro, screenshots, keep awake, the user's Shortcuts and scripts, and Nabız's tools.",
+                    description: "Everything run_command can do, as id and title: window layouts (halves, thirds, your own), sound output devices, mute, timers, focus mode, Pomodoro, screenshots, keep awake and Nabız's windows; lock screen, sleep and the user's Shortcuts and scripts only when the user allowed them in Settings → MCP.",
                     group: .commands) { _ in
                 commands().map { "\($0.id)\t\($0.title)" }.joined(separator: "\n")
             },
             MCPTool(name: "run_command", title: "Run a Mac command",
                     description: "Runs one command from list_commands by its id (for example win:leftHalf, sys:lock, cmd:focus-25). Window commands act on the window in front.",
-                    group: .commands, readOnly: false,
+                    group: .commands, readOnly: false, destructive: true,
                     properties: ["id": ["type": "string", "description": "A command id from list_commands."]],
                     required: ["id"]) { args in
                 let id = try string(args["id"], "id")
-                guard !unsafeCommands.contains(id) else { throw MCPToolError("For safety, \(id) can only be run by the user.") }
+                switch access(id) {
+                case .never: throw MCPToolError("For safety, \(id) can only be run by the user.")
+                case .scripts where !Prefs.bool(Prefs.mcpScripts):
+                    throw MCPToolError("\(id) is turned off in Settings → MCP (\"Let AI apps run my scripts and Shortcuts\").")
+                default: break
+                }
                 guard let command = commands().first(where: { $0.id == id }) else {
                     throw MCPToolError("No command \(id). Call list_commands for the ids.")
                 }
@@ -189,13 +273,13 @@ enum MCPTools {
             },
             MCPTool(name: "open_app", title: "Open an app",
                     description: "Opens (or brings forward) an app on this Mac by its name; close spellings are fine.",
-                    group: .commands, readOnly: false,
+                    group: .commands, readOnly: false, destructive: true,
                     properties: ["name": ["type": "string"]], required: ["name"]) { args in
                 try await openApp(try string(args["name"], "name"))
             },
             MCPTool(name: "set_volume", title: "Set the volume",
                     description: "Sets the Mac's output volume, 0 to 100, and unmutes it.",
-                    group: .commands, readOnly: false,
+                    group: .commands, readOnly: false, destructive: true,
                     properties: ["level": ["type": "integer", "minimum": 0, "maximum": 100]], required: ["level"]) { args in
                 guard let level = int(args["level"]), (0...100).contains(level) else { throw MCPToolError("level must be 0 to 100") }
                 SoundOutput.setVolume(level)
@@ -203,7 +287,7 @@ enum MCPTools {
             },
             MCPTool(name: "stop_dev_server", title: "Stop a dev server",
                     description: "Stops one of the dev servers dev_servers lists, by its port or pid (and the npm/pnpm wrapper that only ran it). Nothing else can be stopped this way.",
-                    group: .commands, readOnly: false,
+                    group: .commands, readOnly: false, destructive: true,
                     properties: ["port": ["type": "integer", "minimum": 1, "maximum": 65535], "pid": ["type": "integer"]]) { args in
                 let port = int(args["port"]), pid = int(args["pid"])
                 guard port != nil || pid != nil else { throw MCPToolError("Give the server's port or pid.") }
@@ -224,7 +308,7 @@ enum MCPTools {
             },
             MCPTool(name: "focus_mode", title: "Focus mode",
                     description: "Starts or stops Nabız's focus mode, which keeps chat apps (and blocked websites, if the user turned that on) away.",
-                    group: .commands, readOnly: false,
+                    group: .commands, readOnly: false, destructive: true,
                     properties: ["action": ["type": "string", "enum": ["start", "stop"]],
                                  "minutes": ["type": "integer", "description": "How long; leave out for until stopped.", "minimum": 1, "maximum": 600]],
                     required: ["action"]) { args in
@@ -238,8 +322,8 @@ enum MCPTools {
                 return minutes.map { "Focus mode on for \($0) min." } ?? "Focus mode on until stopped."
             },
             MCPTool(name: "copy_to_clipboard", title: "Copy to the clipboard",
-                    description: "Puts text on the Mac's clipboard so the user can paste it.",
-                    group: .commands, readOnly: false,
+                    description: "Puts text on the Mac's clipboard so the user can paste it (replacing what was there).",
+                    group: .commands, readOnly: false, destructive: true,
                     properties: ["text": ["type": "string"]], required: ["text"]) { args in
                 let text = try string(args["text"], "text")
                 NSPasteboard.general.clearContents()
@@ -293,7 +377,7 @@ enum MCPTools {
                     properties: ["query": ["type": "string"], "limit": ["type": "integer", "minimum": 1, "maximum": 100]]) { args in
                 clipboardHistory(args["query"] as? String ?? "", limit: int(args["limit"]) ?? 20)
             },
-        ] + recording
+        ] + recording + macTools
     }
 
     // MARK: Helpers
@@ -328,7 +412,7 @@ enum MCPTools {
     static func commands() -> [(id: String, title: String)] {
         AppIndex.shared.refreshIfNeeded()
         Extensions.shared.refreshIfNeeded()
-        return LauncherPanel.shared.model.commandList().filter { !unsafeCommands.contains($0.id) }
+        return LauncherPanel.shared.model.commandList().filter { mayRun($0.id) }
     }
 
     private static func systemStatus() throws -> String {
