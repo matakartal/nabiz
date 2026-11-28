@@ -526,20 +526,20 @@ enum AIRunner {
             } else {
                 list.append("--no-session-persistence")
             }
-            list += ["--output-format", "stream-json", "--include-partial-messages", "--verbose", "--system-prompt", request.system]
-            if !compatible { list.append("--safe-mode") }
+            // Safe mode always: an older Claude that doesn't know it gets an "update" error, never a run without it.
+            list += ["--output-format", "stream-json", "--include-partial-messages", "--verbose", "--system-prompt", request.system,
+                     "--safe-mode"]
             if !request.model.isEmpty { list += ["--model", request.model] }
             if !request.effort.isEmpty, !compatible { list += ["--effort", request.effort] }
             if !request.images.isEmpty { list += ["--input-format", "stream-json"] }
         case .codex:
             list = (request.web ? ["--search"] : []) + ["exec"] + request.images.flatMap { ["-i", $0.path] } + ["--json", "--skip-git-repo-check", "--sandbox", "read-only", "--color", "never"]
-            // No browser, computer control, apps, plugins, sub-agents or memories: it answers, it doesn't act.
-            if !compatible {
-                list += ["--ephemeral", "--ignore-user-config", "--ignore-rules"]
-                for feature in ["apps", "plugins", "browser_use", "browser_use_external", "in_app_browser", "computer_use",
-                                "multi_agent", "multi_agent_v2", "memories", "image_generation"] {
-                    list += ["--disable", feature]
-                }
+            // No browser, computer control, apps, plugins, sub-agents or memories: it answers, it doesn't act. These stay
+            // in compatible mode too; an older Codex that rejects them gets an "update" error instead.
+            list += ["--ephemeral", "--ignore-user-config", "--ignore-rules"]
+            for feature in ["apps", "plugins", "browser_use", "browser_use_external", "in_app_browser", "computer_use",
+                            "multi_agent", "multi_agent_v2", "memories", "image_generation"] {
+                list += ["--disable", feature]
             }
             if !request.model.isEmpty { list += ["-m", request.model] }
             if !request.effort.isEmpty { list += ["-c", "model_reasoning_effort=\"\(request.effort)\""] }
@@ -559,6 +559,58 @@ enum AIRunner {
             list = []
         }
         return list
+    }
+
+    /// The flags that keep a CLI from acting on the Mac (no tools, read-only, none of your own config, hooks or
+    /// plugins). Compatible mode never drops these: a CLI too old to know one isn't run at all.
+    static func safetyFlags(_ engine: AIEngine) -> [String] {
+        switch engine {
+        case .claude: ["--tools", "--allowedTools", "--safe-mode", "--no-session-persistence"]
+        case .codex: ["--sandbox", "--ephemeral", "--ignore-user-config", "--ignore-rules", "--disable"]
+        case .grok: ["--permission-mode", "--max-turns", "--no-subagents", "--disable-web-search", "--system-prompt-override"]
+        case .gemini: ["--approval-mode"]
+        case .auto, .onDevice: []
+        }
+    }
+
+    /// How to update a CLI, as you'd type it in Terminal.
+    static func updateCommand(_ engine: AIEngine) -> String {
+        switch engine {
+        case .claude: "claude update"
+        case .codex: "codex update"
+        case .grok: "grok update"
+        case .gemini: "npm install -g @google/gemini-cli@latest"
+        case .auto, .onDevice: ""
+        }
+    }
+
+    /// The CLI said it doesn't know an option.
+    static func isUnknownOption(_ text: String) -> Bool {
+        let text = text.lowercased()
+        return text.contains("unknown option") || text.contains("unknown argument") || text.contains("unexpected argument")
+            || text.contains("unrecognized option") || text.contains("unknown flag")
+    }
+
+    /// The error for a CLI too old for Nabız's safety flags.
+    static func updateError(_ engine: AIEngine) -> AIError {
+        let name = switch engine {
+        case .claude: "Claude Code"
+        case .codex: "Codex CLI"
+        case .gemini: "Gemini CLI"
+        default: "Grok CLI"
+        }
+        let command = updateCommand(engine)
+        return AIError(L("Nabız'da kullanmak için \(name)'ı güncelle: Terminal'de \(command) yaz",
+                         "Update \(name) to use it in Nabız: type \(command) in Terminal"))
+    }
+
+    /// What a failed run means: an option the CLI doesn't know is worth one more try without the optional ones, but
+    /// one of the safety flags (or anything still unknown after that try) means the CLI is too old to run safely.
+    static func unknownOptionError(_ problem: String, engine: AIEngine, compatible: Bool) -> AIError? {
+        guard isUnknownOption(problem) else { return nil }
+        let lowered = problem.lowercased()
+        if compatible || safetyFlags(engine).contains(where: { lowered.contains($0.lowercased()) }) { return updateError(engine) }
+        return AIError(problem, unknownOption: true)
     }
 
     /// What goes in on stdin: Claude gets the system prompt as a flag, the others read it first; Grok reads a file.
@@ -624,15 +676,22 @@ enum AIRunner {
 
         let parser = StreamParser(engine: request.engine)
         let errorText = ErrorBuffer()
-        let timer = ErrorBuffer()
+        let limits = Self.timeLimits(effort: request.effort)
+        let watchdog = AIWatchdog(idle: limits.idle, cap: limits.cap)
         // One queue reads and parses, so a late chunk can never land after the final read.
         let reading = DispatchQueue(label: "nabiz.ai.read")
         output.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            if !data.isEmpty { watchdog.touch() }
             reading.sync {
-                if parser.feed(handle.availableData) { continuation.yield(parser.progress) }
+                if parser.feed(data) { continuation.yield(parser.progress) }
             }
         }
-        errors.fileHandleForReading.readabilityHandler = { handle in errorText.append(handle.availableData) }
+        errors.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            if !data.isEmpty { watchdog.touch() }
+            errorText.append(data)
+        }
 
         let status: Int32 = try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (done: CheckedContinuation<Int32, Error>) in
@@ -652,18 +711,14 @@ enum AIRunner {
                     try? writer.write(contentsOf: question)
                     try? writer.close()
                 }
-                // A stuck CLI shouldn't hang here forever.
-                DispatchQueue.global().asyncAfter(deadline: .now() + 300) {
-                    if process.isRunning {
-                        timer.append(Data("timeout".utf8))
-                        Self.end(process)
-                    }
-                }
+                // A stuck CLI shouldn't hang here forever: it ends after a long silence, or after a long time in all.
+                watchdog.start { if process.isRunning { Self.end(process) } }
             }
         } onCancel: {
             // Before it started there's nothing to end (and ending it then would crash).
             if process.isRunning { Self.end(process) }
         }
+        watchdog.cancel()
         errors.fileHandleForReading.readabilityHandler = nil
         // What was still in the pipes when it finished.
         reading.sync {
@@ -674,13 +729,16 @@ enum AIRunner {
         try Task.checkCancellation()
 
         let progress = parser.progress
-        let timedOut = !timer.text.isEmpty
+        let timedOut = watchdog.fired
         if !progress.text.isEmpty {
             continuation.yield(progress)
             // Some text, then it broke off: keep the text, but say it isn't the whole answer.
-            if timedOut {
-                throw AIError(L("5 dakikada bitmediği için durduruldu; cevap yarım kalmış olabilir",
-                                "Stopped after 5 minutes; the answer may be cut short"))
+            if let reason = timedOut {
+                throw AIError(reason == .idle
+                    ? L("\(Self.minutes(limits.idle)) boyunca yeni bir şey yazmadığı için durduruldu; cevap yarım kalmış olabilir",
+                        "Stopped after \(Self.minutes(limits.idle)) without new output; the answer may be cut short")
+                    : L("\(Self.minutes(limits.cap)) sonra durduruldu; cevap yarım kalmış olabilir",
+                        "Stopped after \(Self.minutes(limits.cap)); the answer may be cut short"))
             }
             if parser.failure != nil || status != 0 {
                 throw AIError(L("Cevap yarıda kesildi: ", "The answer was cut off: ")
@@ -688,15 +746,28 @@ enum AIRunner {
             }
             return
         }
-        if timedOut {
-            throw AIError(L("\(request.engine.title) 5 dakikada cevap vermedi", "\(request.engine.title) didn't answer within 5 minutes"))
+        if let reason = timedOut {
+            let time = Self.minutes(reason == .idle ? limits.idle : limits.cap)
+            throw AIError(L("\(request.engine.title) \(time) içinde cevap vermedi", "\(request.engine.title) didn't answer within \(time)"))
         }
         let problem = parser.failure ?? errorText.text
-        if status != 0 && !compatible && (problem.contains("unknown option") || problem.contains("Unknown argument") || problem.contains("unexpected argument")) {
-            throw AIError(problem, unknownOption: true)
-        }
+        if status != 0, let error = Self.unknownOptionError(problem, engine: request.engine, compatible: compatible) { throw error }
         if parser.failure != nil || status != 0 { throw AIError(explain(problem, engine: request.engine)) }
         throw AIError(L("Boş cevap geldi", "The answer came back empty"))
+    }
+
+    /// How long a CLI may stay silent, and run in all, before it's stopped. Deep thinking can take long quiet stretches.
+    static func timeLimits(effort: String) -> (idle: TimeInterval, cap: TimeInterval) {
+        switch effort {
+        case "high", "xhigh", "max": (300, 30 * 60)
+        default: (120, 15 * 60)
+        }
+    }
+
+    /// "2 minutes", "30 minutes".
+    static func minutes(_ seconds: TimeInterval) -> String {
+        let count = Int((seconds / 60).rounded())
+        return L("\(count) dakika", count == 1 ? "1 minute" : "\(count) minutes")
     }
 
     /// An HTTP status as a whole number ("429", "status: 429"), not inside "14290 ms".
@@ -725,6 +796,66 @@ enum AIRunner {
         let line = raw.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }
             .last { !$0.isEmpty && !$0.hasPrefix("at ") && !$0.lowercased().hasPrefix("hook") } ?? ""
         return line.isEmpty ? L("\(engine.title) cevap veremedi", "\(engine.title) couldn't answer") : String(line.prefix(200))
+    }
+}
+
+/// Ends a CLI that has gone quiet for `idle` seconds or run longer than `cap`; every bit of output resets the quiet clock.
+final class AIWatchdog: @unchecked Sendable {
+    enum Reason: Equatable { case idle, cap }
+    private let idle: TimeInterval
+    private let cap: TimeInterval
+    private let lock = NSLock()
+    private var started = Date()
+    private var last = Date()
+    private var reason: Reason?
+    private var timer: DispatchSourceTimer?
+
+    init(idle: TimeInterval, cap: TimeInterval) {
+        self.idle = idle
+        self.cap = cap
+    }
+
+    func touch() {
+        lock.lock(); defer { lock.unlock() }
+        last = Date()
+    }
+
+    /// Why it fired, or nil.
+    var fired: Reason? { lock.lock(); defer { lock.unlock() }; return reason }
+
+    /// What has gone wrong at this moment, if anything.
+    func check(now: Date = Date()) -> Reason? {
+        lock.lock(); defer { lock.unlock() }
+        if now.timeIntervalSince(started) > cap { return .cap }
+        if now.timeIntervalSince(last) > idle { return .idle }
+        return nil
+    }
+
+    func start(onFire: @escaping @Sendable () -> Void) {
+        lock.lock()
+        started = Date()
+        last = started
+        lock.unlock()
+        let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
+        timer.schedule(deadline: .now() + 5, repeating: 5, leeway: .seconds(1))
+        timer.setEventHandler { [weak self] in
+            guard let self, let reason = self.check() else { return }
+            self.lock.lock()
+            self.reason = reason
+            self.lock.unlock()
+            self.cancel()
+            onFire()
+        }
+        lock.lock()
+        self.timer = timer
+        lock.unlock()
+        timer.resume()
+    }
+
+    func cancel() {
+        lock.lock(); defer { lock.unlock() }
+        timer?.cancel()
+        timer = nil
     }
 }
 

@@ -191,6 +191,48 @@ struct AIAssistantTests {
         #expect(codex.contains("computer_use") && codex.contains("plugins") && codex.contains("read-only"))
     }
 
+    @Test func compatibleModeKeepsEverySafetyFlag() {
+        for engine in [AIEngine.claude, .codex, .grok, .gemini] {
+            let request = AIRequest(engine: engine, system: "s", prompt: "p")
+            let normal = AIRunner.arguments(request, compatible: false)
+            let older = AIRunner.arguments(request, compatible: true)
+            for flag in AIRunner.safetyFlags(engine) where normal.contains(flag) {
+                #expect(older.contains(flag), "\(engine) dropped \(flag)")
+                #expect(older.filter { $0 == flag }.count == normal.filter { $0 == flag }.count)
+            }
+            if let index = normal.firstIndex(of: "--prompt-file") { try? FileManager.default.removeItem(atPath: normal[index + 1]) }
+            if let index = older.firstIndex(of: "--prompt-file") { try? FileManager.default.removeItem(atPath: older[index + 1]) }
+        }
+        let codex = AIRunner.arguments(AIRequest(engine: .codex, system: "s", prompt: "p"), compatible: true)
+        #expect(codex.contains("--ignore-user-config") && codex.contains("--ignore-rules") && codex.contains("computer_use"))
+    }
+
+    @Test func rejectedSafetyFlagAsksForAnUpdate() {
+        // A safety flag the CLI doesn't know: no retry without it, an update message instead.
+        let safety = AIRunner.unknownOptionError("error: unknown option '--safe-mode'", engine: .claude, compatible: false)
+        #expect(safety?.unknownOption == false)
+        #expect(safety?.message.contains("claude update") == true)
+        let codex = AIRunner.unknownOptionError("error: unexpected argument '--ignore-rules' found", engine: .codex, compatible: false)
+        #expect(codex?.unknownOption == false && codex?.message.contains("codex update") == true)
+        // An optional flag: one more try in compatible mode; still unknown there means update.
+        let optional = AIRunner.unknownOptionError("error: unknown option '--effort'", engine: .claude, compatible: false)
+        #expect(optional?.unknownOption == true)
+        let again = AIRunner.unknownOptionError("error: unknown option '--whatever'", engine: .claude, compatible: true)
+        #expect(again?.unknownOption == false && again?.message.contains("claude update") == true)
+        #expect(AIRunner.unknownOptionError("rate limit", engine: .claude, compatible: false) == nil)
+    }
+
+    @Test func idleTimerResetsWithOutput() {
+        let watchdog = AIWatchdog(idle: 120, cap: 1800)
+        #expect(watchdog.check() == nil)
+        #expect(watchdog.check(now: Date().addingTimeInterval(130)) == .idle)
+        watchdog.touch()
+        #expect(watchdog.check(now: Date().addingTimeInterval(100)) == nil)
+        #expect(watchdog.check(now: Date().addingTimeInterval(1900)) == .cap)
+        #expect(AIRunner.timeLimits(effort: "max").cap == 30 * 60)
+        #expect(AIRunner.timeLimits(effort: "").idle == 120)
+    }
+
     @Test func statusCodesMatchOnlyWholeNumbers() {
         #expect(AIRunner.hasStatus("http 429 too many", 429))
         #expect(!AIRunner.hasStatus("took 14290 ms", 429))
@@ -204,8 +246,9 @@ struct AIAssistantTests {
         #expect(arguments.contains("--tools") && arguments.contains("--safe-mode"))
         #expect(arguments.contains("opus") && arguments.contains("high"))
         #expect(AIRunner.input(request) == "Hi")
-        // An older CLI gets only the basic flags.
-        #expect(!AIRunner.arguments(request, compatible: true).contains("--safe-mode"))
+        // An older CLI loses only the optional flags, never the safety ones.
+        let older = AIRunner.arguments(request, compatible: true)
+        #expect(older.contains("--safe-mode") && older.contains("--tools") && !older.contains("--effort"))
         let codex = AIRequest(engine: .codex, model: "gpt-6-luna", effort: "low", system: "SYS", prompt: "Hi")
         #expect(AIRunner.arguments(codex, compatible: false).contains("model_reasoning_effort=\"low\""))
         #expect(AIRunner.input(codex).hasPrefix("SYS"))
