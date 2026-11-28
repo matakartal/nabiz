@@ -25,6 +25,7 @@ final class Brightness {
     private(set) var displays: [Display] = []
     @ObservationIgnored private var links: [CGDirectDisplayID: DisplayLink] = [:]
     @ObservationIgnored private var refreshing = false
+    @ObservationIgnored private var rescan = false
     @ObservationIgnored private var observer: NSObjectProtocol?
     @ObservationIgnored private let writer = LatestWriter()
 
@@ -39,14 +40,18 @@ final class Brightness {
         guard observer == nil else { return }
         observer = NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
                                                           object: nil, queue: .main) { _ in
-            MainActor.assumeIsolated { Brightness.shared.refresh() }
+            MainActor.assumeIsolated { Brightness.shared.refresh(screensChanged: true) }
         }
         refresh()
     }
 
     /// Finds the displays again and reads their brightness (DDC answers take ~0.1 s, so off the main thread).
-    func refresh() {
-        guard !refreshing else { return }
+    /// A screen plugged in or out while a scan runs may be missed by it, so one more scan follows.
+    func refresh(screensChanged: Bool = false) {
+        guard !refreshing else {
+            if screensChanged { rescan = true }
+            return
+        }
         refreshing = true
         let names = Self.screenNames()
         Task {
@@ -56,6 +61,10 @@ final class Brightness {
             let list = found.map(\.display)
             displays = list.contains { !$0.builtIn } ? list : []
             BrightnessKeys.shared.update()
+            if rescan {
+                rescan = false
+                refresh()
+            }
         }
     }
 

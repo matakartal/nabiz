@@ -181,7 +181,19 @@ final class FocusMode {
     /// Apps it kept in the background this session, for the summary.
     private(set) var blockedCount = 0
     @ObservationIgnored private var observer: NSObjectProtocol?
-    @ObservationIgnored private var hidDesktop = false
+    /// Kept on disk: if Nabız quits (or crashes) during focus, the next launch brings the desktop icons back.
+    @ObservationIgnored private var hidDesktop = UserDefaults.standard.bool(forKey: FocusMode.hidDesktopKey) {
+        didSet { UserDefaults.standard.set(hidDesktop, forKey: Self.hidDesktopKey) }
+    }
+    private static let hidDesktopKey = "focusHidDesktop"
+
+    init() {
+        // A session from an earlier launch can't still be on: undo what it hid.
+        if hidDesktop {
+            Toolbox.shared.setDesktopIcons(visible: true)
+            hidDesktop = false
+        }
+    }
 
     static let defaultBlocked = [
         "com.tinyspeck.slackmacgap", "com.hnc.Discord", "ru.keepcoder.Telegram", "org.telegram.desktop", "net.whatsapp.WhatsApp",
